@@ -1441,28 +1441,42 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun score(q: String, l: String): Int {
-        if (l.startsWith(q)) return 1000 - l.length
+        if (q.isEmpty() || l.isEmpty()) return 0
+
+        // Exact and direct prefix matches always win.
+        if (l == q) return 2000
+        if (l.startsWith(q)) return 1500 - l.length
+
         val words = l.split(Regex("[\\s._-]+")).filter { it.isNotEmpty() }
-        if (words.any { it.startsWith(q) }) return 800 - l.length
+        if (words.any { it.startsWith(q) }) return 1200 - l.length
+
+        // A continuous substring is better than scattered letters.
         val idx = l.indexOf(q)
-        if (idx >= 0) return 600 - idx
+        if (idx >= 0) return 900 - idx - l.length / 10
+
+        // Fuzzy subsequence: "fls" can match "Files".
         var qi = 0
         var gaps = 0
         var last = -1
         for (i in l.indices) {
             if (qi < q.length && l[i] == q[qi]) {
-                if (last >= 0 && i - last > 1) gaps++
+                if (last >= 0) gaps += i - last - 1
                 last = i
                 qi++
             }
         }
         if (qi == q.length && q.length >= 2) {
-            return (400 - gaps * 20 - (l.length - q.length)).coerceAtLeast(1)
+            return (650 - gaps * 35 - l.length / 5).coerceAtLeast(1)
         }
+
+        // Typo tolerance is a last resort, not a top-ranked result.
         if (q.length >= 3) {
-            val tol = if (q.length >= 6) 2 else 1
-            if (lev(q, l.take(q.length)) <= tol || lev(q, l.take(q.length + 1)) <= tol) return 200
+            val prefix = l.take((q.length + 1).coerceAtMost(l.length))
+            val distance = lev(q, prefix)
+            val tolerance = if (q.length >= 6) 2 else 1
+            if (distance <= tolerance) return 100 - distance * 10
         }
+
         return 0
     }
 
