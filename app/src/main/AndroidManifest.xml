@@ -12,7 +12,7 @@
         </intent>
     </queries>
     <application
-        android:label="iPad Launcher"
+        android:label="Omarchy Launcher"
         android:theme="@style/LauncherTheme">
         <activity
             android:name=".MainActivity"
