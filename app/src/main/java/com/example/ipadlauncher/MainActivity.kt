@@ -1188,6 +1188,14 @@ class MainActivity : AppCompatActivity() {
             cycle("opacity", opacities.size, 2)
         }
         row("launch style", mode) { cycle("mode", launchModes.size) }
+        row("default launcher", "change ›") {
+            closeSettings()
+            try {
+                startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
+            } catch (_: Exception) {
+                startActivity(Intent(Settings.ACTION_SETTINGS))
+            }
+        }
         row("fetch logo", logoNames[prefs.getInt("logo", 0).coerceIn(0, logoNames.size - 1)]) {
             val n = (prefs.getInt("logo", 0) + 1) % logoNames.size
             prefs.edit().putInt("logo", n).apply()
