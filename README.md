@@ -13,7 +13,7 @@ flat tiled "windows", a thin top bar, themes, and a type-to-launch terminal.
 
 | Settings | Quick settings |
 |---|---|
-| ![Settings](docs/screenshots/settings.png) | ![Quick settings](docs/screenshots/quick-settings.png) |
+| ![Settings](docs/screenshots/settings.png) | ![Quick settings](docs/screenshots/quick-settings.png?v=2) |
 
 ### Keyboard launch
 
