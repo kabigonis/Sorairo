@@ -45,11 +45,16 @@ Each one is requested only when you use the matching feature.
 
 **Android Studio:** open the folder, let Gradle sync, press Run.
 
-**GitHub Actions (no PC needed):** push to GitHub; the workflow in
-`.github/workflows/build.yml` builds a debug APK. Download it from the
-run's Artifacts (`IPadLauncher-apk`).
+**Download the APK:** visit the
+[Releases page](https://github.com/snorlaxmeow/omarchy-launcher/releases)
+and download the APK attached to the latest release. If no release is
+available yet, check the repository's Actions tab for a development build.
 
-Then press Home and choose this launcher as the default.
+**Build with GitHub Actions (no PC needed):** push to GitHub; the workflow
+in `.github/workflows/build.yml` builds a debug APK.
+
+After installing, press Home and choose Omarchy Launcher as your default
+launcher if you want to use it as your home screen.
 
 ## License
 
