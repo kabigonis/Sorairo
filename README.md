@@ -5,6 +5,20 @@ flat tiled "windows", a thin top bar, themes, and a type-to-launch terminal.
 
 > Work in progress. Built for tablets (tested on a Lenovo tablet, Android 16).
 
+## Screenshots
+
+| Home screen | App drawer |
+|---|---|
+| ![Home screen](docs/screenshots/home-screen.png) | ![App drawer](docs/screenshots/app-drawer.png) |
+
+| Settings | Quick settings |
+|---|---|
+| ![Settings](docs/screenshots/settings.png) | ![Quick settings](docs/screenshots/quick-settings.png) |
+
+### Keyboard launch
+
+![Keyboard launch](docs/screenshots/keyboard-launch.png)
+
 ## Features
 
 - 5 workspaces: swipe sideways or tap the numbers on the top bar
