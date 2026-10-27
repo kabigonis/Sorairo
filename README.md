@@ -1,4 +1,4 @@
-# Omarchy-style launcher for Android tablets
+# Sorairo - Android launcher
 
 A keyboard-first Android home screen inspired by Omarchy / Hyprland setups:
 flat tiled "windows", a thin top bar, themes, and a type-to-launch terminal.
@@ -67,7 +67,7 @@ available yet, check the repository's Actions tab for a development build.
 **Build with GitHub Actions (no PC needed):** push to GitHub; the workflow
 in `.github/workflows/build.yml` builds a debug APK.
 
-After installing, press Home and choose Omarchy Launcher as your default
+After installing, press Home and choose Sorairo as your default
 launcher if you want to use it as your home screen.
 
 ## License

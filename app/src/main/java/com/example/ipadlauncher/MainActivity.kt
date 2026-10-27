@@ -811,7 +811,7 @@ class MainActivity : AppCompatActivity() {
         sb.add("\n┌─ Software ───────────\n", p.cDim)
         kv("OS", "Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})")
         kv("Kernel", System.getProperty("os.version") ?: "?")
-        kv("Shell", "omarchy-launcher")
+        kv("Shell", "Sorairo")
         kv("Apps", "${apps.size} (${allApps.size - apps.size} hidden)")
         kv("Theme", pal.name)
         kv("Up", "${mins / 60}h ${mins % 60}m")

@@ -12,7 +12,9 @@
         </intent>
     </queries>
     <application
-        android:label="Omarchy Launcher"
+        android:icon="@drawable/sora"
+        android:roundIcon="@drawable/sora"
+        android:label="Sorairo"
         android:theme="@style/LauncherTheme">
         <activity
             android:name=".MainActivity"
