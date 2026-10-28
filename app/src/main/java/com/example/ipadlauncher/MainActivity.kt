@@ -652,8 +652,9 @@ class MainActivity : AppCompatActivity() {
         term.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
 
         var input: EditText? = null
+        var promptRow: LinearLayout? = null
         if (mode != "drawer") {
-            val promptRow = LinearLayout(this).apply {
+            promptRow = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
             }
@@ -678,11 +679,7 @@ class MainActivity : AppCompatActivity() {
                     true
                 }
             }
-            promptRow.addView(input, LinearLayout.LayoutParams(0, -2, 1f))
-            promptRow.setOnClickListener {
-                focusTerminal(false)
-                focusInput()
-            }
+            promptRow!!.addView(input, LinearLayout.LayoutParams(0, -2, 1f))
             term.addView(promptRow, LinearLayout.LayoutParams(-1, -2))
         }
         val field = input
@@ -698,6 +695,11 @@ class MainActivity : AppCompatActivity() {
             if (pinned != null) setWindowFocus(ws, 0, term, pinned)
             else focusedWindow[ws] = 0
             if (showKeyboard) focusInput()
+        }
+
+        promptRow?.setOnClickListener {
+            focusTerminal(false)
+            focusInput()
         }
 
         term.setOnClickListener { focusTerminal(false) }
