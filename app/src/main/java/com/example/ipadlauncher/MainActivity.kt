@@ -352,13 +352,12 @@ class MainActivity : AppCompatActivity() {
             if (queue.isEmpty()) {
                 queueView.addView(txt(10f, Color.GRAY, "Queue unavailable"))
             } else {
-                val currentId = controller?.metadata?.getLong(MediaMetadata.METADATA_KEY_TRACK_NUMBER) ?: -1L
-                queue.forEachIndexed { index, item ->
+                    queue.forEachIndexed { index, item ->
                     val itemTitle = item.description.title?.toString()?.takeIf { it.isNotBlank() }
                         ?: "Unknown track"
                     val itemArtist = item.description.subtitle?.toString().orEmpty()
                     val label = if (itemArtist.isBlank()) itemTitle else "$itemTitle - $itemArtist"
-                    val row = txt(10.5f, if (item.description.mediaId == metadata?.description?.mediaId) p.cAccent else p.cFg,
+                    val row = txt(10.5f, if (item.description.mediaId != null && item.description.mediaId == metadata?.description?.mediaId) Color.CYAN else Color.WHITE,
                         "${index + 1}. $label").apply {
                         typeface = Typeface.MONOSPACE
                         maxLines = 1
@@ -1067,7 +1066,7 @@ class MainActivity : AppCompatActivity() {
         val queueList = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
-        queueScroll.addView(queueList, ScrollView.LayoutParams(-1, -2))
+        queueScroll.addView(queueList)
         playerQueueViews[ws] = queueList
         content.addView(
             queueScroll,
