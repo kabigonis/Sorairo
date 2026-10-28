@@ -890,9 +890,10 @@ class MainActivity : AppCompatActivity() {
 
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
             setPadding(0, dp(8), 0, 0)
         }
-        val playerTitle = txt(12f, p.cFg).apply {
+        val playerTitle = txt(12f, p.cAccent).apply {
             typeface = Typeface.MONOSPACE
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
@@ -933,7 +934,7 @@ class MainActivity : AppCompatActivity() {
 
         val controls = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.START or Gravity.CENTER_VERTICAL
+            gravity = Gravity.CENTER
         }
 
         fun controlButton(label: String, action: () -> Unit): TextView =
@@ -980,7 +981,12 @@ class MainActivity : AppCompatActivity() {
             LinearLayout.LayoutParams(dp(48), dp(48))
         )
 
-        content.addView(controls, LinearLayout.LayoutParams(-1, -2))
+        content.addView(
+            controls,
+            LinearLayout.LayoutParams(-1, -2).apply {
+                topMargin = dp(2)
+            }
+        )
         bottomWindowContents[ws] = content
 
         val monitorColumn = LinearLayout(this).apply {
