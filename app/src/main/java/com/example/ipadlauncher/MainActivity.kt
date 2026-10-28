@@ -661,7 +661,7 @@ class MainActivity : AppCompatActivity() {
         pinWin.addView(txt(13f, p.cBlue, "~/pinned"))
         val pinList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         pinBoxes[ws] = pinList
-        pinWin.addView(pinList, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
+        pinWin.addView(pinList, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(10) })
         val defaultPrompt = txt(12.5f, p.cBlue, "Set as default launcher").apply {
             setPadding(0, dp(12), 0, dp(4))
             visibility = View.GONE
