@@ -228,11 +228,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var clock: TextView
     private lateinit var status: TextView
     private lateinit var pager: ViewPager2
-    private val fullscreenPlayers = arrayOfNulls<FrameLayout>(5)
-    private val fullscreenPlayerHeaders = arrayOfNulls<TextView>(5)
-    private val fullscreenPlayerTabs = arrayOfNulls<LinearLayout>(5)
-    private val fullscreenPlayerBodies = arrayOfNulls<LinearLayout>(5)
-    private var fullscreenPlayerOpen = false
     private val wsLabels = ArrayList<TextView>()
     private lateinit var drawer: FrameLayout
     private lateinit var panel: LinearLayout
@@ -251,6 +246,7 @@ class MainActivity : AppCompatActivity() {
     private val playerTitles = arrayOfNulls<TextView>(5)
     private val playerArtists = arrayOfNulls<TextView>(5)
     private val playerStatuses = arrayOfNulls<TextView>(5)
+    private val playerHeaders = arrayOfNulls<TextView>(5)
     private val playerPlayButtons = arrayOfNulls<TextView>(5)
     private val playerProgressBars = arrayOfNulls<android.widget.ProgressBar>(5)
     private val monitorSummaries = arrayOfNulls<TextView>(5)
@@ -339,6 +335,15 @@ class MainActivity : AppCompatActivity() {
         val duration = metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L
         val playbackState = controller?.playbackState
         val position = playbackState?.position ?: -1L
+        fun timeLabel(ms: Long): String {
+            val totalSeconds = (ms.coerceAtLeast(0L) / 1000L)
+            return "%02d:%02d".format(totalSeconds / 60L, totalSeconds % 60L)
+        }
+        val elapsed = if (position >= 0L) timeLabel(position) else "00:00"
+        val total = if (duration > 0L) timeLabel(duration) else "00:00"
+        val trackLabel = details.filter { it.isNotBlank() }.joinToString(" - ")
+        val headerTrack = if (trackLabel.isBlank()) "" else " — $trackLabel"
+        playerHeaders[ws]?.text = "$playback$headerTrack\n$elapsed / $total"
         val progressBar = playerProgressBars[ws]
         if (progressBar != null) {
             if (duration > 0L && position >= 0L && position <= duration) {
@@ -806,70 +811,6 @@ class MainActivity : AppCompatActivity() {
             holder.box.removeAllViews()
             holder.box.addView(buildPage(position), FrameLayout.LayoutParams(-1, -1))
 
-            val overlay = FrameLayout(this@MainActivity).apply {
-                setBackgroundColor(pal.cBg)
-                visibility = View.GONE
-                isClickable = true
-                isFocusable = true
-            }
-            fullscreenPlayers[position] = overlay
-
-            val shell = LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(dp(16), dp(12), dp(16), dp(12))
-            }
-
-            val headerRow = LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-            }
-            val header = txt(13f, pal.cAccent, "~/player")
-            fullscreenPlayerHeaders[position] = header
-            headerRow.addView(header, LinearLayout.LayoutParams(0, -2, 1f))
-
-            val close = txt(13f, pal.cDim, "[X]").apply {
-                setPadding(dp(10), dp(6), dp(4), dp(6))
-                setOnClickListener {
-                    overlay.visibility = View.GONE
-                    fullscreenPlayerOpen = false
-                }
-            }
-            headerRow.addView(close, LinearLayout.LayoutParams(-2, -2))
-            shell.addView(headerRow, LinearLayout.LayoutParams(-1, -2))
-
-            val tabs = LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(0, dp(12), 0, dp(8))
-            }
-            fullscreenPlayerTabs[position] = tabs
-
-            fun addPlayerTab(label: String, selected: Boolean) {
-                val tab = txt(12f, if (selected) pal.cAccent else pal.cDim, "[$label]").apply {
-                    setPadding(dp(8), dp(5), dp(8), dp(5))
-                    setOnClickListener {
-                        for (i in 0 until tabs.childCount) {
-                            (tabs.getChildAt(i) as? TextView)?.setTextColor(pal.cDim)
-                        }
-                        setTextColor(pal.cAccent)
-                    }
-                }
-                tabs.addView(tab, LinearLayout.LayoutParams(-2, -2))
-            }
-
-            addPlayerTab("Queue", true)
-            addPlayerTab("Now", false)
-            shell.addView(tabs, LinearLayout.LayoutParams(-1, -2))
-
-            val body = LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.TOP
-            }
-            fullscreenPlayerBodies[position] = body
-            shell.addView(body, LinearLayout.LayoutParams(-1, 0, 1f))
-
-            overlay.addView(shell, FrameLayout.LayoutParams(-1, -1))
-            holder.box.addView(overlay, FrameLayout.LayoutParams(-1, -1))
         }
 
         override fun getItemCount() = 5
@@ -932,13 +873,7 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        val title = txt(12.5f, p.cBlue, "~/monitor").apply {
-            setOnLongClickListener {
-                if (bottomWindowFor(ws) == "player") openFullscreenPlayer(ws)
-                else showSettings()
-                true
-            }
-        }
+        val title = txt(12.5f, p.cBlue, "~/monitor")
         bottomWindowTitles[ws] = title
         titleRow.addView(title, LinearLayout.LayoutParams(0, -2, 1f))
 
@@ -969,6 +904,38 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, dp(8), 0, 0)
         }
+        val playerHeader = txt(10.5f, p.cBlue).apply {
+            typeface = Typeface.MONOSPACE
+            maxLines = 2
+            includeFontPadding = false
+            text = "Not playing\n00:00 / 00:00"
+        }
+        playerHeaders[ws] = playerHeader
+        content.addView(playerHeader, LinearLayout.LayoutParams(-1, -2))
+
+        val playerTabs = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(4), 0, dp(4))
+        }
+        val queueTab = txt(10.5f, p.cDim, "[Queue]").apply {
+            typeface = Typeface.MONOSPACE
+            setPadding(dp(6), dp(3), dp(6), dp(3))
+        }
+        val nowTab = txt(10.5f, p.cAccent, "[Now]").apply {
+            typeface = Typeface.MONOSPACE
+            setPadding(dp(6), dp(3), dp(6), dp(3))
+        }
+        fun selectPlayerTab(nowSelected: Boolean) {
+            queueTab.setTextColor(if (nowSelected) p.cDim else p.cAccent)
+            nowTab.setTextColor(if (nowSelected) p.cAccent else p.cDim)
+        }
+        queueTab.setOnClickListener { selectPlayerTab(false) }
+        nowTab.setOnClickListener { selectPlayerTab(true) }
+        playerTabs.addView(queueTab, LinearLayout.LayoutParams(-2, -2))
+        playerTabs.addView(nowTab, LinearLayout.LayoutParams(-2, -2))
+        content.addView(playerTabs, LinearLayout.LayoutParams(-1, -2))
+
         val playerTitle = txt(12f, p.cAccent).apply {
             typeface = Typeface.MONOSPACE
             maxLines = 1
@@ -988,9 +955,10 @@ class MainActivity : AppCompatActivity() {
         playerTitles[ws] = playerTitle
         playerArtists[ws] = playerArtist
         playerStatuses[ws] = playerStatus
-        content.addView(playerTitle, LinearLayout.LayoutParams(-1, -2))
-        content.addView(playerArtist, LinearLayout.LayoutParams(-1, -2))
-        content.addView(playerStatus, LinearLayout.LayoutParams(-1, -2))
+        // Track details are shown in the two-line header above.
+        playerTitle.visibility = View.GONE
+        playerArtist.visibility = View.GONE
+        playerStatus.visibility = View.GONE
 
         val playerProgress = android.widget.ProgressBar(
             this, null, android.R.attr.progressBarStyleHorizontal
@@ -1986,13 +1954,6 @@ class MainActivity : AppCompatActivity() {
         for (i in 0..4) fillPins(i)
     }
 
-    private fun openFullscreenPlayer(ws: Int) {
-        val overlay = fullscreenPlayers[ws] ?: return
-        fullscreenPlayerOpen = true
-        overlay.visibility = View.VISIBLE
-        overlay.bringToFront()
-    }
-
     // ================= terminal =================
     private fun initHistory() {
         for (i in 0..4) history[i].clear()
@@ -2024,7 +1985,6 @@ class MainActivity : AppCompatActivity() {
                     "  clear          clear screen",
                     "  fetch          refresh system info",
                     "  panel <mode>   set bottom window: monitor/player",
-                    "  player full    open fullscreen music player",
                     "  logo [name]    android/arch/omarchy/image/none",
                     "  ws <1-5>       switch workspace",
                     "  theme [name]   change theme",
@@ -2042,13 +2002,6 @@ class MainActivity : AppCompatActivity() {
                     "  <app name>     launch (fuzzy match)"
                 ).forEach { say(it) }
                 "clear" -> sb.clear()
-                "player" -> {
-                    if (arg.equals("full", ignoreCase = true)) {
-                        openFullscreenPlayer(ws)
-                    } else {
-                        say("usage: player full", p.cDim)
-                    }
-                }
                 "fetch", "fastfetch", "neofetch" -> refreshFetch(ws)
                 "panel" -> {
                     if (arg == "monitor" || arg == "player") {
