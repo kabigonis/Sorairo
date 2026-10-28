@@ -9,6 +9,7 @@ import android.bluetooth.BluetoothManager
 import android.content.ComponentName
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.RectF
 import android.media.MediaMetadata
 import android.media.session.MediaController
@@ -49,6 +50,7 @@ import android.os.SystemClock
 import android.text.InputType
 import android.text.Spannable
 import android.text.SpannableStringBuilder
+import android.text.Spanned
 import android.text.TextUtils
 import android.text.style.ForegroundColorSpan
 import android.view.GestureDetector
@@ -241,6 +243,9 @@ class MainActivity : AppCompatActivity() {
     private val pinBoxes = arrayOfNulls<LinearLayout>(5)
     private val bottomWindowViews = arrayOfNulls<LinearLayout>(5)
     private val bottomWindowContents = arrayOfNulls<TextView>(5)
+    private val monitorSummaries = arrayOfNulls<TextView>(5)
+    private val monitorGraphs = arrayOfNulls<NetGraphView>(5)
+    private val sharedNetHistory = NetGraphHistory()
     private val bottomWindowTitles = arrayOfNulls<TextView>(5)
     private val defaultLauncherPrompts = arrayOfNulls<TextView>(5)
     private val fetchInfos = arrayOfNulls<TextView>(5)
@@ -389,10 +394,11 @@ class MainActivity : AppCompatActivity() {
 
     private val monitorTick = object : Runnable {
         override fun run() {
-            if (bottomWindowFor(curWs) == "monitor") {
-                bottomWindowContents[curWs]?.text = fetchText()
-                handler.postDelayed(this, 2000)
-            }
+            if (!activityResumed || bottomWindowFor(curWs) != "monitor") return
+            updateMonitorSummary(curWs)
+            sharedNetHistory.push(downBps.toFloat(), upBps.toFloat())
+        monitorGraphs.forEach { it?.invalidate() }
+            handler.postDelayed(this, 1000)
         }
     }
 
@@ -406,7 +412,8 @@ class MainActivity : AppCompatActivity() {
         }
         if (bottomWindowFor(curWs) == "monitor") {
             stopPlayerCallbacks()
-            bottomWindowContents[curWs]?.text = fetchText()
+            updateMonitorSummary(curWs)
+            monitorGraphs.forEach { it?.setColors(pal.cDim, pal.cBlue, pal.cGreen) }
             handler.post(monitorTick)
         } else {
             startPlayerCallbacks()
@@ -473,8 +480,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        activityResumed = true
         handler.removeCallbacks(tick)
         tick.run()
+        updateBottomWindowRuntime()
         refreshDefaultLauncherPrompts()
     }
 
@@ -487,7 +496,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
+        activityResumed = false
         handler.removeCallbacks(tick)
+        handler.removeCallbacks(monitorTick)
+        stopPlayerCallbacks()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -807,12 +819,35 @@ class MainActivity : AppCompatActivity() {
         win.addView(titleRow, LinearLayout.LayoutParams(-1, -2))
 
         val content = txt(11.5f, p.cFg).apply {
+            typeface = Typeface.MONOSPACE
             setLineSpacing(0f, 1.1f)
-            text = if (bottomWindowFor(ws) == "monitor") fetchText() else "No active media"
+            text = if (bottomWindowFor(ws) == "player") "No active media" else ""
             setPadding(0, dp(8), 0, 0)
         }
         bottomWindowContents[ws] = content
-        win.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
+
+        val monitorColumn = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(8), 0, 0)
+        }
+        val summary = txt(10.5f, p.cFg).apply {
+            typeface = Typeface.MONOSPACE
+            includeFontPadding = false
+        }
+        monitorSummaries[ws] = summary
+        monitorColumn.addView(summary, LinearLayout.LayoutParams(-1, -2))
+
+        val graph = NetGraphView(this, sharedNetHistory).also {
+            it.setColors(p.cDim, p.cBlue, p.cGreen)
+        }
+        monitorGraphs[ws] = graph
+        monitorColumn.addView(graph, LinearLayout.LayoutParams(-1, 0, 1f))
+
+        if (bottomWindowFor(ws) == "monitor") {
+            win.addView(monitorColumn, LinearLayout.LayoutParams(-1, 0, 1f))
+        } else {
+            win.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
+        }
         bottomWindowViews[ws] = win
         return win
     }
@@ -822,17 +857,36 @@ class MainActivity : AppCompatActivity() {
         val choice = bottomWindowFor(ws)
         val content = bottomWindowContents[ws]
         val title = bottomWindowTitles[ws]
+
         fun applyChoice() {
             title?.text = if (choice == "monitor") "~/monitor" else "~/player"
-            content?.text = if (choice == "monitor") fetchText() else "No active media"
             (win.getChildAt(0) as? LinearLayout)?.let { row ->
                 for (i in 1 until row.childCount) {
                     val tab = row.getChildAt(i) as? TextView ?: continue
                     tab.setTextColor(if (tab.text.toString() == choice) pal.cAccent else pal.cDim)
                 }
             }
+
+            val monitorColumn = monitorSummaries[ws]?.parent as? LinearLayout
+            if (choice == "monitor") {
+                if (monitorColumn != null && monitorColumn.parent == null) {
+                    win.removeView(content)
+                    win.addView(monitorColumn, LinearLayout.LayoutParams(-1, 0, 1f))
+                }
+                updateMonitorSummary(ws)
+                monitorGraphs[ws]?.setColors(pal.cDim, pal.cBlue, pal.cGreen)
+            } else {
+                if (content?.parent == null) {
+                    monitorColumn?.let { win.removeView(it) }
+                    if (content != null) {
+                        win.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
+                    }
+                }
+                content?.text = "No active media"
+            }
             win.alpha = 1f
         }
+
         if (animate) {
             win.animate().alpha(0f).setDuration(90).withEndAction {
                 applyChoice()
@@ -1064,6 +1118,60 @@ class MainActivity : AppCompatActivity() {
             setTextColor(if (name == "arch") p.cBlue else p.cGreen)
             layoutParams = LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(18) }
         }
+    }
+
+    private fun updateMonitorSummary(ws: Int) {
+        val view = monitorSummaries[ws] ?: return
+        val p = pal
+        val mi = ActivityManager.MemoryInfo()
+        (getSystemService(ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(mi)
+
+        fun line(label: String, used: Long, total: Long): SpannableStringBuilder {
+            val safeTotal = total.coerceAtLeast(1L)
+            val pct = ((used.coerceAtLeast(0L) * 100L) / safeTotal).toInt().coerceIn(0, 100)
+            val color = when {
+                pct > 90 -> Color.RED
+                pct > 75 -> Color.rgb(255, 191, 0)
+                else -> p.cGreen
+            }
+            val gb = 1024.0 * 1024 * 1024
+            return SpannableStringBuilder().apply {
+                append(label.padEnd(5))
+                val start = length
+                append(bar(pct))
+                setSpan(ForegroundColorSpan(color), start, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                append(" %.1f/%.1fG %3d%%".format(used.coerceAtLeast(0L) / gb, safeTotal / gb, pct))
+            }
+        }
+
+        val diskStats = StatFs(Environment.getDataDirectory().path)
+        val diskTotal = diskStats.blockCountLong * diskStats.blockSizeLong
+        val diskFree = diskStats.availableBlocksLong * diskStats.blockSizeLong
+        val diskUsed = (diskTotal - diskFree).coerceAtLeast(0L)
+
+        val sd = sdPath()
+        val sdStats = try {
+            sd?.let { StatFs(it) }
+        } catch (_: Exception) {
+            null
+        }
+        val sdTotal = sdStats?.let { it.blockCountLong * it.blockSizeLong } ?: 0L
+        val sdFree = sdStats?.let { it.availableBlocksLong * it.blockSizeLong } ?: 0L
+
+        val battery = (getSystemService(BATTERY_SERVICE) as BatteryManager)
+            .getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY).coerceIn(0, 100)
+
+        val text = SpannableStringBuilder()
+        text.append(line("RAM", mi.totalMem - mi.availMem, mi.totalMem)).append("\n")
+        text.append(line("Disk", diskUsed, diskTotal)).append("\n")
+        if (sdStats == null) {
+            text.append("SD   not inserted").append("\n")
+        } else {
+            text.append(line("SD", sdTotal - sdFree, sdTotal)).append("\n")
+        }
+        text.append(line("Batt", battery.toLong(), 100L)).append("\n")
+        text.append("down ${fmtSpeed(downBps)}  up ${fmtSpeed(upBps)}  peak ${fmtSpeed(sharedNetHistory.peak.toLong())}")
+        view.text = text
     }
 
     private fun fetchText(): SpannableStringBuilder {
@@ -2020,6 +2128,88 @@ class MainActivity : AppCompatActivity() {
     }
 }
 
+
+
+fun bar(pct: Int, width: Int = 12): String {
+    val f = (pct.coerceIn(0, 100) * width + 50) / 100
+    return "█".repeat(f) + "░".repeat(width - f)
+}
+
+class NetGraphHistory {
+    val size = 60
+    val down = FloatArray(size)
+    val up = FloatArray(size)
+    var count = 0
+        private set
+    var head = 0
+        private set
+    var peak = 1024f
+        private set
+
+    fun push(downBps: Float, upBps: Float) {
+        down[head] = downBps.coerceAtLeast(0f)
+        up[head] = upBps.coerceAtLeast(0f)
+        head = (head + 1) % size
+        if (count < size) count++
+
+        var maximum = 1024f
+        for (i in 0 until count) {
+            if (down[i] > maximum) maximum = down[i]
+            if (up[i] > maximum) maximum = up[i]
+        }
+        peak = maximum
+    }
+}
+
+class NetGraphView(
+    context: Context,
+    private val history: NetGraphHistory
+) : View(context) {
+    private val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 1f
+    }
+    private val downPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 3f
+    }
+    private val upPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 3f
+    }
+    private val path = Path()
+
+    fun setColors(grid: Int, d: Int, u: Int) {
+        gridPaint.color = grid
+        downPaint.color = d
+        upPaint.color = u
+        invalidate()
+    }
+
+    private fun series(c: Canvas, data: FloatArray, p: Paint, w: Float, h: Float) {
+        if (history.count < 2) return
+        val start = (history.head - history.count + history.size) % history.size
+        path.reset()
+        for (k in 0 until history.count) {
+            val v = data[(start + k) % history.size]
+            val x = w - w * (history.count - 1 - k) / (history.size - 1f)
+            val y = h - (v / history.peak) * h * 0.95f - 2f
+            if (k == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        c.drawPath(path, p)
+    }
+
+    override fun onDraw(c: Canvas) {
+        val w = width.toFloat()
+        val h = height.toFloat()
+        for (i in 1..3) {
+            val y = h * i / 4f
+            c.drawLine(0f, y, w, y, gridPaint)
+        }
+        series(c, history.down, downPaint, w, h)
+        series(c, history.up, upPaint, w, h)
+    }
+}
 
 /** Little animated equalizer bars shown next to the song name. */
 class VisualizerView(c: Context) : View(c) {
