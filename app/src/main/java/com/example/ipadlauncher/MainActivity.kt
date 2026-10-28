@@ -922,7 +922,6 @@ class MainActivity : AppCompatActivity() {
                         win.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
                     }
                 }
-                content?.text = "No active media"
             }
             win.alpha = 1f
         }
