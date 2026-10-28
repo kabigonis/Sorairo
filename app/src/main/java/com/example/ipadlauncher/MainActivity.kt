@@ -258,6 +258,34 @@ class MainActivity : AppCompatActivity() {
     private var listeningController: MediaController? = null
     private var playerCallback: MediaController.Callback? = null
 
+    private val handler = Handler(Looper.getMainLooper())
+
+    private var lastSongDetails = "No active media"
+    private var missingSessionReads = 0
+
+    private fun activeController(): MediaController? {
+        if (!mediaAccess()) return null
+        return try {
+            val manager = getSystemService(MEDIA_SESSION_SERVICE) as MediaSessionManager
+            val sessions = manager.getActiveSessions(
+                ComponentName(this, NowPlayingService::class.java)
+            )
+            sessions.firstOrNull {
+                it.playbackState?.state == PlaybackState.STATE_PLAYING
+            } ?: sessions.firstOrNull()
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private val playerRefresh = object : Runnable {
+        override fun run() {
+            if (!activityResumed || bottomWindowFor(curWs) != "player") return
+            startPlayerCallbacks()
+        }
+    }
+
+
     private fun stopPlayerCallbacks() {
         val controller = listeningController
         val callback = playerCallback
@@ -269,6 +297,7 @@ class MainActivity : AppCompatActivity() {
         }
         listeningController = null
         playerCallback = null
+        handler.removeCallbacks(playerRefresh)
     }
 
     private fun updatePlayerWindow(ws: Int) {
@@ -283,63 +312,72 @@ class MainActivity : AppCompatActivity() {
             PlaybackState.STATE_BUFFERING -> "Buffering"
             else -> "Not playing"
         }
-        val details = when {
-            title.isNullOrBlank() -> "No active media"
-            artist.isNullOrBlank() -> title
-            else -> "$title\n$artist"
+
+        if (!title.isNullOrBlank()) {
+            lastSongDetails = if (artist.isNullOrBlank()) title else "$title\n$artist"
+            missingSessionReads = 0
+        } else if (controller == null) {
+            missingSessionReads++
+            if (missingSessionReads >= 2) lastSongDetails = "No active media"
         }
-        bottomWindowContents[ws]?.text = "$playback\n\n$details"
+
+        bottomWindowContents[ws]?.text = "$playback\n\n$lastSongDetails"
     }
 
     private fun startPlayerCallbacks() {
         if (!activityResumed || bottomWindowFor(curWs) != "player") return
-        try {
-            val manager = getSystemService(MEDIA_SESSION_SERVICE) as MediaSessionManager
-            val sessions = manager.getActiveSessions(
-                ComponentName(this, NowPlayingService::class.java)
-            )
-            val controller = sessions.firstOrNull {
-                it.playbackState?.state == PlaybackState.STATE_PLAYING
-            } ?: sessions.firstOrNull()
-            if (controller == null) {
-                stopPlayerCallbacks()
-                ctrl = null
-                updatePlayerWindow(curWs)
-                return
-            }
-            if (listeningController !== controller) {
-                stopPlayerCallbacks()
-                val callback = object : MediaController.Callback() {
-                    override fun onMetadataChanged(metadata: MediaMetadata?) {
-                        updateNowPlaying()
-                        updatePlayerWindow(curWs)
-                    }
 
-                    override fun onPlaybackStateChanged(state: PlaybackState?) {
-                        updateNowPlaying()
-                        updatePlayerWindow(curWs)
-                    }
+        val controller = activeController()
+        if (controller == null) {
+            stopPlayerCallbacks()
+            ctrl = null
+            updatePlayerWindow(curWs)
+            handler.removeCallbacks(playerRefresh)
+            handler.postDelayed(playerRefresh, 1000)
+            return
+        }
 
-                    override fun onSessionDestroyed() {
-                        stopPlayerCallbacks()
-                        updateNowPlaying()
-                        updatePlayerWindow(curWs)
+        if (listeningController !== controller) {
+            stopPlayerCallbacks()
+            val callback = object : MediaController.Callback() {
+                override fun onMetadataChanged(metadata: MediaMetadata?) {
+                    updateNowPlaying()
+                    updatePlayerWindow(curWs)
+                }
+
+                override fun onPlaybackStateChanged(state: PlaybackState?) {
+                    updateNowPlaying()
+                    updatePlayerWindow(curWs)
+                }
+
+                override fun onSessionDestroyed() {
+                    stopPlayerCallbacks()
+                    ctrl = null
+                    updateNowPlaying()
+                    updatePlayerWindow(curWs)
+                    if (activityResumed && bottomWindowFor(curWs) == "player") {
+                        handler.postDelayed(playerRefresh, 1000)
                     }
                 }
-                listeningController = controller
-                playerCallback = callback
-                controller.registerCallback(callback)
             }
-            ctrl = controller
-            updatePlayerWindow(curWs)
-        } catch (_: Exception) {
-            updatePlayerWindow(curWs)
+            listeningController = controller
+            playerCallback = callback
+            try {
+                controller.registerCallback(callback)
+            } catch (_: Exception) {
+                listeningController = null
+                playerCallback = null
+            }
         }
+
+        ctrl = controller
+        updatePlayerWindow(curWs)
+        handler.removeCallbacks(playerRefresh)
+        handler.postDelayed(playerRefresh, 1000)
     }
 
     private var askedWrite = false
 
-    private val handler = Handler(Looper.getMainLooper())
     private var autoRun: Runnable? = null
 
     // network speed state
@@ -416,6 +454,7 @@ class MainActivity : AppCompatActivity() {
             monitorGraphs.forEach { it?.setColors(pal.cDim, pal.cBlue, pal.cGreen) }
             handler.post(monitorTick)
         } else {
+            updatePlayerWindow(curWs)
             startPlayerCallbacks()
         }
     }
@@ -483,6 +522,7 @@ class MainActivity : AppCompatActivity() {
         activityResumed = true
         handler.removeCallbacks(tick)
         tick.run()
+        updateNowPlaying()
         updateBottomWindowRuntime()
         refreshDefaultLauncherPrompts()
     }
@@ -1572,23 +1612,14 @@ class MainActivity : AppCompatActivity() {
     private fun updateNowPlaying() {
         var title: String? = null
         var playing = false
-        try {
-            val msm = getSystemService(MEDIA_SESSION_SERVICE) as MediaSessionManager
-            val list = msm.getActiveSessions(ComponentName(this, NowPlayingService::class.java))
-            val c = list.firstOrNull { it.playbackState?.state == PlaybackState.STATE_PLAYING }
-                ?: list.firstOrNull {
-                    val st = it.playbackState?.state
-                    st == PlaybackState.STATE_PAUSED || st == PlaybackState.STATE_BUFFERING
-                }
-            ctrl = c
-            val md = c?.metadata
-            val t = md?.getString(MediaMetadata.METADATA_KEY_TITLE)
-            val a = md?.getString(MediaMetadata.METADATA_KEY_ARTIST)
-            if (!t.isNullOrEmpty()) {
-                title = if (a.isNullOrEmpty()) t else "$t — $a"
-                playing = c?.playbackState?.state == PlaybackState.STATE_PLAYING
-            }
-        } catch (_: Exception) {
+        val c = activeController()
+        ctrl = c
+        val md = c?.metadata
+        val t = md?.getString(MediaMetadata.METADATA_KEY_TITLE)
+        val a = md?.getString(MediaMetadata.METADATA_KEY_ARTIST)
+        if (!t.isNullOrEmpty()) {
+            title = if (a.isNullOrEmpty()) t else "$t — $a"
+            playing = c?.playbackState?.state == PlaybackState.STATE_PLAYING
         }
         if (title == null) {
             song.visibility = View.GONE
