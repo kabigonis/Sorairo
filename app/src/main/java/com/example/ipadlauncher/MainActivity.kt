@@ -228,6 +228,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var clock: TextView
     private lateinit var status: TextView
     private lateinit var pager: ViewPager2
+    private val fullscreenPlayers = arrayOfNulls<FrameLayout>(5)
+    private val fullscreenPlayerHeaders = arrayOfNulls<TextView>(5)
+    private val fullscreenPlayerTabs = arrayOfNulls<LinearLayout>(5)
+    private val fullscreenPlayerBodies = arrayOfNulls<LinearLayout>(5)
+    private var fullscreenPlayerOpen = false
     private val wsLabels = ArrayList<TextView>()
     private lateinit var drawer: FrameLayout
     private lateinit var panel: LinearLayout
@@ -800,6 +805,71 @@ class MainActivity : AppCompatActivity() {
         override fun onBindViewHolder(holder: VH, position: Int) {
             holder.box.removeAllViews()
             holder.box.addView(buildPage(position), FrameLayout.LayoutParams(-1, -1))
+
+            val overlay = FrameLayout(this@MainActivity).apply {
+                setBackgroundColor(pal.cBg)
+                visibility = View.GONE
+                isClickable = true
+                isFocusable = true
+            }
+            fullscreenPlayers[position] = overlay
+
+            val shell = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(16), dp(12), dp(16), dp(12))
+            }
+
+            val headerRow = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            val header = txt(13f, pal.cAccent, "~/player")
+            fullscreenPlayerHeaders[position] = header
+            headerRow.addView(header, LinearLayout.LayoutParams(0, -2, 1f))
+
+            val close = txt(13f, pal.cDim, "[X]").apply {
+                setPadding(dp(10), dp(6), dp(4), dp(6))
+                setOnClickListener {
+                    overlay.visibility = View.GONE
+                    fullscreenPlayerOpen = false
+                }
+            }
+            headerRow.addView(close, LinearLayout.LayoutParams(-2, -2))
+            shell.addView(headerRow, LinearLayout.LayoutParams(-1, -2))
+
+            val tabs = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, dp(12), 0, dp(8))
+            }
+            fullscreenPlayerTabs[position] = tabs
+
+            fun addPlayerTab(label: String, selected: Boolean) {
+                val tab = txt(12f, if (selected) pal.cAccent else pal.cDim, "[$label]").apply {
+                    setPadding(dp(8), dp(5), dp(8), dp(5))
+                    setOnClickListener {
+                        for (i in 0 until tabs.childCount) {
+                            (tabs.getChildAt(i) as? TextView)?.setTextColor(pal.cDim)
+                        }
+                        setTextColor(pal.cAccent)
+                    }
+                }
+                tabs.addView(tab, LinearLayout.LayoutParams(-2, -2))
+            }
+
+            addPlayerTab("Queue", true)
+            addPlayerTab("Now", false)
+            shell.addView(tabs, LinearLayout.LayoutParams(-1, -2))
+
+            val body = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.TOP
+            }
+            fullscreenPlayerBodies[position] = body
+            shell.addView(body, LinearLayout.LayoutParams(-1, 0, 1f))
+
+            overlay.addView(shell, FrameLayout.LayoutParams(-1, -1))
+            holder.box.addView(overlay, FrameLayout.LayoutParams(-1, -1))
         }
 
         override fun getItemCount() = 5
@@ -862,7 +932,13 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        val title = txt(12.5f, p.cBlue, "~/monitor")
+        val title = txt(12.5f, p.cBlue, "~/monitor").apply {
+            setOnLongClickListener {
+                if (bottomWindowFor(ws) == "player") openFullscreenPlayer(ws)
+                else showSettings()
+                true
+            }
+        }
         bottomWindowTitles[ws] = title
         titleRow.addView(title, LinearLayout.LayoutParams(0, -2, 1f))
 
@@ -1910,6 +1986,13 @@ class MainActivity : AppCompatActivity() {
         for (i in 0..4) fillPins(i)
     }
 
+    private fun openFullscreenPlayer(ws: Int) {
+        val overlay = fullscreenPlayers[ws] ?: return
+        fullscreenPlayerOpen = true
+        overlay.visibility = View.VISIBLE
+        overlay.bringToFront()
+    }
+
     // ================= terminal =================
     private fun initHistory() {
         for (i in 0..4) history[i].clear()
@@ -1941,6 +2024,7 @@ class MainActivity : AppCompatActivity() {
                     "  clear          clear screen",
                     "  fetch          refresh system info",
                     "  panel <mode>   set bottom window: monitor/player",
+                    "  player full    open fullscreen music player",
                     "  logo [name]    android/arch/omarchy/image/none",
                     "  ws <1-5>       switch workspace",
                     "  theme [name]   change theme",
@@ -1958,6 +2042,13 @@ class MainActivity : AppCompatActivity() {
                     "  <app name>     launch (fuzzy match)"
                 ).forEach { say(it) }
                 "clear" -> sb.clear()
+                "player" -> {
+                    if (arg.equals("full", ignoreCase = true)) {
+                        openFullscreenPlayer(ws)
+                    } else {
+                        say("usage: player full", p.cDim)
+                    }
+                }
                 "fetch", "fastfetch", "neofetch" -> refreshFetch(ws)
                 "panel" -> {
                     if (arg == "monitor" || arg == "player") {
