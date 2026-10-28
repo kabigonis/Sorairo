@@ -247,6 +247,7 @@ class MainActivity : AppCompatActivity() {
     private val playerArtists = arrayOfNulls<TextView>(5)
     private val playerStatuses = arrayOfNulls<TextView>(5)
     private val playerHeaders = arrayOfNulls<TextView>(5)
+    private val playerQueueViews = arrayOfNulls<LinearLayout>(5)
     private val playerPlayButtons = arrayOfNulls<TextView>(5)
     private val playerProgressBars = arrayOfNulls<android.widget.ProgressBar>(5)
     private val monitorSummaries = arrayOfNulls<TextView>(5)
@@ -344,6 +345,37 @@ class MainActivity : AppCompatActivity() {
         val trackLabel = details.filter { it.isNotBlank() }.joinToString(" - ")
         val headerTrack = if (trackLabel.isBlank()) "" else " — $trackLabel"
         playerHeaders[ws]?.text = "$playback$headerTrack\n$elapsed / $total"
+        val queueView = playerQueueViews[ws]
+        if (queueView != null) {
+            queueView.removeAllViews()
+            val queue = controller?.queue.orEmpty()
+            if (queue.isEmpty()) {
+                queueView.addView(txt(10f, Color.GRAY, "Queue unavailable"))
+            } else {
+                val currentId = controller?.metadata?.getLong(MediaMetadata.METADATA_KEY_TRACK_NUMBER) ?: -1L
+                queue.forEachIndexed { index, item ->
+                    val itemTitle = item.description.title?.toString()?.takeIf { it.isNotBlank() }
+                        ?: "Unknown track"
+                    val itemArtist = item.description.subtitle?.toString().orEmpty()
+                    val label = if (itemArtist.isBlank()) itemTitle else "$itemTitle - $itemArtist"
+                    val row = txt(10.5f, if (item.description.mediaId == metadata?.description?.mediaId) p.cAccent else p.cFg,
+                        "${index + 1}. $label").apply {
+                        typeface = Typeface.MONOSPACE
+                        maxLines = 1
+                        ellipsize = TextUtils.TruncateAt.END
+                        setPadding(dp(6), dp(5), dp(6), dp(5))
+                        setOnClickListener {
+                            val c = ctrl ?: return@setOnClickListener
+                            if (c.playbackState?.actions?.and(PlaybackState.ACTION_SKIP_TO_QUEUE_ITEM) != 0L) {
+                                c.transportControls.skipToQueueItem(item.queueId)
+                            }
+                        }
+                    }
+                    queueView.addView(row, LinearLayout.LayoutParams(-1, -2))
+                }
+            }
+        }
+
         val progressBar = playerProgressBars[ws]
         if (progressBar != null) {
             if (duration > 0L && position >= 0L && position <= duration) {
@@ -924,7 +956,7 @@ class MainActivity : AppCompatActivity() {
         }
         queueTab.setTextColor(p.cAccent)
         playerTabs.addView(queueTab, LinearLayout.LayoutParams(-2, -2))
-        content.addView(playerTabs, LinearLayout.LayoutParams(-1, -2))
+
 
         val playerTitle = txt(12f, p.cAccent).apply {
             typeface = Typeface.MONOSPACE
@@ -1018,6 +1050,28 @@ class MainActivity : AppCompatActivity() {
         content.addView(
             controls,
             LinearLayout.LayoutParams(-1, -2).apply {
+                topMargin = dp(2)
+            }
+        )
+
+        val queueLabel = txt(10.5f, p.cAccent, "── QUEUE ──").apply {
+            typeface = Typeface.MONOSPACE
+            setPadding(dp(6), dp(4), dp(6), dp(2))
+        }
+        content.addView(queueLabel, LinearLayout.LayoutParams(-1, -2))
+
+        val queueScroll = ScrollView(this).apply {
+            isFillViewport = false
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+        }
+        val queueList = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        queueScroll.addView(queueList, ScrollView.LayoutParams(-1, -2))
+        playerQueueViews[ws] = queueList
+        content.addView(
+            queueScroll,
+            LinearLayout.LayoutParams(-1, dp(112)).apply {
                 topMargin = dp(2)
             }
         )
