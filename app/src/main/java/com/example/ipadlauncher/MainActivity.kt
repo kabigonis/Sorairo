@@ -2,6 +2,7 @@ package com.example.ipadlauncher
 
 import android.app.ActivityManager
 import android.app.NotificationManager
+import android.app.role.RoleManager
 import android.bluetooth.BluetoothManager
 import android.content.ComponentName
 import android.graphics.Canvas
@@ -160,6 +161,17 @@ class MainActivity : AppCompatActivity() {
         return if (t == 0) pal.cFg else t
     }
 
+    private fun isDefaultLauncher(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val roleManager = getSystemService(RoleManager::class.java)
+            return roleManager?.isRoleHeld(RoleManager.ROLE_HOME) == true
+        }
+
+        val homeIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        val resolved = packageManager.resolveActivity(homeIntent, 0)
+        return resolved?.activityInfo?.packageName == packageName
+    }
+
     private fun panelColor(): Int {
         val a = opacities[prefs.getInt("opacity", 2).coerceIn(0, opacities.size - 1)] * 255 / 100
         return (pal.cBg and 0x00FFFFFF) or (a shl 24)
@@ -188,6 +200,7 @@ class MainActivity : AppCompatActivity() {
     private val outViews = arrayOfNulls<TextView>(5)
     private val outScrolls = arrayOfNulls<ScrollView>(5)
     private val pinBoxes = arrayOfNulls<LinearLayout>(5)
+    private val defaultLauncherPrompts = arrayOfNulls<TextView>(5)
     private val fetchInfos = arrayOfNulls<TextView>(5)
     private lateinit var vis: VisualizerView
     private lateinit var song: TextView
@@ -312,6 +325,14 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         handler.removeCallbacks(tick)
         tick.run()
+        refreshDefaultLauncherPrompts()
+    }
+
+    private fun refreshDefaultLauncherPrompts() {
+        val showPrompt = !isDefaultLauncher()
+        defaultLauncherPrompts.forEach { prompt ->
+            prompt?.visibility = if (showPrompt) View.VISIBLE else View.GONE
+        }
     }
 
     override fun onPause() {
@@ -641,6 +662,21 @@ class MainActivity : AppCompatActivity() {
         val pinList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         pinBoxes[ws] = pinList
         pinWin.addView(pinList, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
+        val defaultPrompt = txt(12.5f, p.cBlue, "Set as default launcher").apply {
+            setPadding(0, dp(12), 0, dp(4))
+            visibility = View.GONE
+            setOnClickListener {
+                try {
+                    startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
+                } catch (_: Exception) {
+                    startActivity(Intent(Settings.ACTION_SETTINGS))
+                }
+            }
+        }
+        defaultLauncherPrompts[ws] = defaultPrompt
+        pinWin.addView(defaultPrompt, LinearLayout.LayoutParams(-1, -2).apply {
+            topMargin = dp(4)
+        })
         fillPins(ws)
         row.addView(pinWin, LinearLayout.LayoutParams(0, -1, 1f).apply { marginStart = dp(6) })
 
@@ -823,6 +859,7 @@ class MainActivity : AppCompatActivity() {
         val list = pinBoxes[ws] ?: return
         list.removeAllViews()
         val pinned = pins(ws).mapNotNull { k -> apps.find { it.pkg == k } }
+
         if (pinned.isEmpty()) {
             list.addView(
                 txt(
@@ -830,19 +867,22 @@ class MainActivity : AppCompatActivity() {
                     "nothing pinned yet.\nterminal: pin <app>\ndrawer: long-press an app"
                 ).apply { setOnLongClickListener { showSettings(); true } }
             )
-            return
+        } else {
+            pinned.forEach { app ->
+                list.addView(
+                    txt(16f, p.cFg, app.label).apply {
+                        setPadding(0, dp(9), 0, dp(9))
+                        maxLines = 1
+                        ellipsize = TextUtils.TruncateAt.END
+                        setOnClickListener { launchApp(app) }
+                        setOnLongClickListener { togglePin(ws, app); true }
+                    }
+                )
+            }
         }
-        pinned.forEach { app ->
-            list.addView(
-                txt(16f, p.cFg, app.label).apply {
-                    setPadding(0, dp(9), 0, dp(9))
-                    maxLines = 1
-                    ellipsize = TextUtils.TruncateAt.END
-                    setOnClickListener { launchApp(app) }
-                    setOnLongClickListener { togglePin(ws, app); true }
-                }
-            )
-        }
+
+        defaultLauncherPrompts[ws]?.visibility =
+            if (isDefaultLauncher()) View.GONE else View.VISIBLE
     }
 
     private fun updateWsBar() {
