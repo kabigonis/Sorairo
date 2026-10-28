@@ -1,5 +1,7 @@
 package com.example.ipadlauncher
 
+import android.animation.ArgbEvaluator
+import android.animation.ValueAnimator
 import android.app.ActivityManager
 import android.app.NotificationManager
 import android.app.role.RoleManager
@@ -186,6 +188,8 @@ class MainActivity : AppCompatActivity() {
     private val focusedWindow = IntArray(5) { 0 } // 0 = terminal, 1 = pinned
     private val pinWindowForFocus = arrayOfNulls<View>(5)
     private val terminalWindowForFocus = arrayOfNulls<View>(5)
+    private val focusBorderAnimators = java.util.WeakHashMap<View, ValueAnimator>()
+    private val focusBorderColors = java.util.WeakHashMap<View, Int>()
     private lateinit var wall: ImageView
     private lateinit var clock: TextView
     private lateinit var status: TextView
@@ -583,29 +587,38 @@ class MainActivity : AppCompatActivity() {
     ) {
         focusedWindow[ws] = focused
 
+        fun animateBorder(view: View, targetColor: Int) {
+            val drawable = view.background as? GradientDrawable ?: return
+            focusBorderAnimators.remove(view)?.cancel()
+
+            val currentColor = focusBorderColors[view]
+                ?: if (view === terminalWindowForFocus[ws]) pal.cAccent else pal.cDim
+            val animator = ValueAnimator.ofObject(
+                ArgbEvaluator(),
+                currentColor,
+                targetColor
+            ).apply {
+                duration = 180L
+                addUpdateListener { animation ->
+                    val color = animation.animatedValue as Int
+                    drawable.setStroke(dp(2), color)
+                    focusBorderColors[view] = color
+                }
+                addListener(object : android.animation.AnimatorListenerAdapter() {
+                    override fun onAnimationEnd(animation: android.animation.Animator) {
+                        if (focusBorderAnimators[view] === this@apply) {
+                            focusBorderAnimators.remove(view)
+                        }
+                    }
+                })
+            }
+            focusBorderAnimators[view] = animator
+            animator.start()
+        }
+
         val p = pal
-        val terminalBg = terminal.background
-        val pinnedBg = pinned.background
-
-        if (terminalBg is GradientDrawable) {
-            terminalBg.mutate()
-            terminalBg.setStroke(
-                dp(2),
-                if (focused == 0) p.cAccent else p.cDim
-            )
-        }
-        if (pinnedBg is GradientDrawable) {
-            pinnedBg.mutate()
-            pinnedBg.setStroke(
-                dp(2),
-                if (focused == 1) p.cAccent else p.cDim
-            )
-        }
-
-        val target = if (focused == 0) terminal else pinned
-        target.animate().cancel()
-        target.alpha = 0.92f
-        target.animate().alpha(1f).setDuration(180).start()
+        animateBorder(terminal, if (focused == 0) p.cAccent else p.cDim)
+        animateBorder(pinned, if (focused == 1) p.cAccent else p.cDim)
     }
 
     private fun buildPage(ws: Int): View {
@@ -675,24 +688,17 @@ class MainActivity : AppCompatActivity() {
                     .showSoftInput(field, InputMethodManager.SHOW_IMPLICIT)
             }
         }
-        if (field != null) {
-            term.setOnClickListener {
-                setWindowFocus(ws, 0, term, pinWindowForFocus[ws] ?: term)
-                focusInput()
-            }
-            out.setOnClickListener {
-                setWindowFocus(ws, 0, term, pinWindowForFocus[ws] ?: term)
-                focusInput()
-            }
-            col.setOnClickListener {
-                setWindowFocus(ws, 0, term, pinWindowForFocus[ws] ?: term)
-                focusInput()
-            }
-            scroll.setOnClickListener {
-                setWindowFocus(ws, 0, term, pinWindowForFocus[ws] ?: term)
-                focusInput()
-            }
+        fun focusTerminal(showKeyboard: Boolean) {
+            val pinned = pinWindowForFocus[ws]
+            if (pinned != null) setWindowFocus(ws, 0, term, pinned)
+            else focusedWindow[ws] = 0
+            if (showKeyboard) focusInput()
         }
+
+        term.setOnClickListener { focusTerminal(true) }
+        out.setOnClickListener { focusTerminal(true) }
+        col.setOnClickListener { focusTerminal(true) }
+        scroll.setOnClickListener { focusTerminal(true) }
         term.setOnLongClickListener { showSettings(); true }
         out.setOnLongClickListener { showSettings(); true }
         col.setOnLongClickListener { showSettings(); true }
