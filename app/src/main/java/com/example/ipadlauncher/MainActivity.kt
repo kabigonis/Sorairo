@@ -246,6 +246,7 @@ class MainActivity : AppCompatActivity() {
     private val playerTitles = arrayOfNulls<TextView>(5)
     private val playerArtists = arrayOfNulls<TextView>(5)
     private val playerStatuses = arrayOfNulls<TextView>(5)
+    private val playerPlayButtons = arrayOfNulls<TextView>(5)
     private val monitorSummaries = arrayOfNulls<TextView>(5)
     private val monitorGraphs = arrayOfNulls<NetGraphView>(5)
     private val sharedNetHistory = NetGraphHistory()
@@ -326,6 +327,8 @@ class MainActivity : AppCompatActivity() {
 
         val details = lastSongDetails.split("\n", limit = 2)
         playerStatuses[ws]?.text = playback
+        playerPlayButtons[ws]?.text =
+            if (state == PlaybackState.STATE_PLAYING) "pause" else "play"
         playerTitles[ws]?.text = details.firstOrNull().orEmpty()
         playerArtists[ws]?.apply {
             text = details.getOrNull(1).orEmpty()
@@ -893,6 +896,57 @@ class MainActivity : AppCompatActivity() {
         content.addView(playerTitle, LinearLayout.LayoutParams(-1, -2))
         content.addView(playerArtist, LinearLayout.LayoutParams(-1, -2))
         content.addView(playerStatus, LinearLayout.LayoutParams(-1, -2))
+
+        val controls = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.START or Gravity.CENTER_VERTICAL
+        }
+
+        fun controlButton(label: String, action: () -> Unit): TextView =
+            txt(11f, p.cFg, label).apply {
+                gravity = Gravity.CENTER
+                minWidth = dp(48)
+                minHeight = dp(48)
+                setOnClickListener { action() }
+            }
+
+        controls.addView(
+            controlButton("<<") {
+                val c = ctrl ?: return@controlButton
+                val actions = c.playbackState?.actions ?: 0L
+                if (actions and PlaybackState.ACTION_SKIP_TO_PREVIOUS != 0L) {
+                    c.transportControls.skipToPrevious()
+                }
+            },
+            LinearLayout.LayoutParams(dp(48), dp(48))
+        )
+
+        val playButton = controlButton("play") {
+            val c = ctrl
+            val actions = c?.playbackState?.actions ?: 0L
+            val playing = c?.playbackState?.state == PlaybackState.STATE_PLAYING
+            val supported = if (playing) {
+                actions and PlaybackState.ACTION_PAUSE != 0L
+            } else {
+                actions and PlaybackState.ACTION_PLAY != 0L
+            }
+            if (supported) togglePlay()
+        }
+        playerPlayButtons[ws] = playButton
+        controls.addView(playButton, LinearLayout.LayoutParams(dp(48), dp(48)))
+
+        controls.addView(
+            controlButton(">>") {
+                val c = ctrl ?: return@controlButton
+                val actions = c.playbackState?.actions ?: 0L
+                if (actions and PlaybackState.ACTION_SKIP_TO_NEXT != 0L) {
+                    c.transportControls.skipToNext()
+                }
+            },
+            LinearLayout.LayoutParams(dp(48), dp(48))
+        )
+
+        content.addView(controls, LinearLayout.LayoutParams(-1, -2))
         bottomWindowContents[ws] = content
 
         val monitorColumn = LinearLayout(this).apply {
