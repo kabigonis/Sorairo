@@ -1429,54 +1429,23 @@ class MainActivity : AppCompatActivity() {
             .sortedBy { it.label.lowercase() }
     }
 
-    private fun lev(a: String, b: String): Int {
-        val d = Array(a.length + 1) { IntArray(b.length + 1) }
-        for (i in 0..a.length) d[i][0] = i
-        for (j in 0..b.length) d[0][j] = j
-        for (i in 1..a.length) for (j in 1..b.length) {
-            val c = if (a[i - 1] == b[j - 1]) 0 else 1
-            d[i][j] = minOf(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + c)
-        }
-        return d[a.length][b.length]
-    }
 
     private fun score(q: String, l: String): Int {
         if (q.isEmpty() || l.isEmpty()) return 0
 
-        // Exact and direct prefix matches always win.
-        if (l == q) return 2000
-        if (l.startsWith(q)) return 1500 - l.length
+        // Exact match, then app-name prefix.
+        if (l == q) return 1000
+        if (l.startsWith(q)) return 900 - l.length
 
+        // Match the start of a word, e.g. "play" in "Google Play Store".
         val words = l.split(Regex("[\\s._-]+")).filter { it.isNotEmpty() }
-        if (words.any { it.startsWith(q) }) return 1200 - l.length
+        if (words.any { it.startsWith(q) }) return 800 - l.length
 
-        // A continuous substring is better than scattered letters.
+        // Match only consecutive letters, e.g. "flac" in "SpotiFLAC".
         val idx = l.indexOf(q)
-        if (idx >= 0) return 900 - idx - l.length / 10
+        if (idx >= 0) return 600 - idx
 
-        // Fuzzy subsequence: "fls" can match "Files".
-        var qi = 0
-        var gaps = 0
-        var last = -1
-        for (i in l.indices) {
-            if (qi < q.length && l[i] == q[qi]) {
-                if (last >= 0) gaps += i - last - 1
-                last = i
-                qi++
-            }
-        }
-        if (qi == q.length && q.length >= 2) {
-            return (650 - gaps * 35 - l.length / 5).coerceAtLeast(1)
-        }
-
-        // Typo tolerance is a last resort, not a top-ranked result.
-        if (q.length >= 3) {
-            val prefix = l.take((q.length + 1).coerceAtMost(l.length))
-            val distance = lev(q, prefix)
-            val tolerance = if (q.length >= 6) 2 else 1
-            if (distance <= tolerance) return 100 - distance * 10
-        }
-
+        // No scattered-letter or typo matches.
         return 0
     }
 
