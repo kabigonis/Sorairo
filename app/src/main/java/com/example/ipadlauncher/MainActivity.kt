@@ -248,6 +248,9 @@ class MainActivity : AppCompatActivity() {
     private val playerStatuses = arrayOfNulls<TextView>(5)
     private val playerHeaders = arrayOfNulls<TextView>(5)
     private val playerQueueViews = arrayOfNulls<LinearLayout>(5)
+    private val playerQueueSignatures = arrayOfNulls<String>(5)
+    private val playerQueueRows = Array(5) { mutableListOf<TextView>() }
+    private val playerQueueEmptyLabels = arrayOfNulls<TextView>(5)
     private val playerPlayButtons = arrayOfNulls<TextView>(5)
     private val playerProgressBars = arrayOfNulls<android.widget.ProgressBar>(5)
     private val monitorSummaries = arrayOfNulls<TextView>(5)
@@ -347,30 +350,60 @@ class MainActivity : AppCompatActivity() {
         playerHeaders[ws]?.text = "$playback$headerTrack\n$elapsed / $total"
         val queueView = playerQueueViews[ws]
         if (queueView != null) {
-            queueView.removeAllViews()
-            val queue = controller?.queue.orEmpty()
+            val queue = controller?.queue.orEmpty().take(100)
+            val activeQueueId = playbackState?.activeQueueItemId
+            val signature = queue.joinToString("|") {
+                "${it.queueId}:${it.description.title}:${it.description.subtitle}"
+            }
+            val rows = playerQueueRows[ws]
+
             if (queue.isEmpty()) {
-                queueView.addView(txt(10f, Color.GRAY, "Queue unavailable"))
+                if (playerQueueSignatures[ws] != "empty") {
+                    queueView.removeAllViews()
+                    rows.clear()
+                    val empty = txt(10f, pal.cDim, "Queue unavailable")
+                    queueView.addView(empty, LinearLayout.LayoutParams(-1, -2))
+                    playerQueueEmptyLabels[ws] = empty
+                    playerQueueSignatures[ws] = "empty"
+                }
             } else {
+                if (playerQueueSignatures[ws] != signature) {
+                    queueView.removeAllViews()
+                    rows.clear()
+                    playerQueueEmptyLabels[ws] = null
+
                     queue.forEachIndexed { index, item ->
-                    val itemTitle = item.description.title?.toString()?.takeIf { it.isNotBlank() }
-                        ?: "Unknown track"
-                    val itemArtist = item.description.subtitle?.toString().orEmpty()
-                    val label = if (itemArtist.isBlank()) itemTitle else "$itemTitle - $itemArtist"
-                    val row = txt(10.5f, if (item.description.mediaId != null && item.description.mediaId == metadata?.description?.mediaId) Color.CYAN else Color.WHITE,
-                        "${index + 1}. $label").apply {
-                        typeface = Typeface.MONOSPACE
-                        maxLines = 1
-                        ellipsize = TextUtils.TruncateAt.END
-                        setPadding(dp(6), dp(5), dp(6), dp(5))
-                        setOnClickListener {
-                            val c = ctrl ?: return@setOnClickListener
-                            if (c.playbackState?.actions?.and(PlaybackState.ACTION_SKIP_TO_QUEUE_ITEM) != 0L) {
-                                c.transportControls.skipToQueueItem(item.queueId)
+                        val itemTitle = item.description.title?.toString()
+                            ?.takeIf { it.isNotBlank() } ?: "Unknown track"
+                        val itemArtist = item.description.subtitle?.toString().orEmpty()
+                        val label = if (itemArtist.isBlank()) itemTitle else "$itemTitle - $itemArtist"
+                        val row = txt(10.5f, pal.cFg, "${index + 1}. $label").apply {
+                            typeface = Typeface.MONOSPACE
+                            maxLines = 1
+                            ellipsize = TextUtils.TruncateAt.END
+                            setPadding(dp(6), dp(5), dp(6), dp(5))
+                            setOnClickListener {
+                                val c = ctrl ?: return@setOnClickListener
+                                val stateNow = c.playbackState ?: return@setOnClickListener
+                                if ((stateNow.actions and PlaybackState.ACTION_SKIP_TO_QUEUE_ITEM) != 0L) {
+                                    c.transportControls.skipToQueueItem(item.queueId)
+                                }
                             }
                         }
+                        rows.add(row)
+                        queueView.addView(row, LinearLayout.LayoutParams(-1, -2))
                     }
-                    queueView.addView(row, LinearLayout.LayoutParams(-1, -2))
+                    playerQueueSignatures[ws] = signature
+                }
+
+                queue.forEachIndexed { index, item ->
+                    rows.getOrNull(index)?.setTextColor(
+                        if (activeQueueId != null && item.queueId == activeQueueId) {
+                            pal.cAccent
+                        } else {
+                            pal.cFg
+                        }
+                    )
                 }
             }
         }
