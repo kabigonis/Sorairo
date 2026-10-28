@@ -247,6 +247,7 @@ class MainActivity : AppCompatActivity() {
     private val playerArtists = arrayOfNulls<TextView>(5)
     private val playerStatuses = arrayOfNulls<TextView>(5)
     private val playerPlayButtons = arrayOfNulls<TextView>(5)
+    private val playerProgressBars = arrayOfNulls<android.widget.ProgressBar>(5)
     private val monitorSummaries = arrayOfNulls<TextView>(5)
     private val monitorGraphs = arrayOfNulls<NetGraphView>(5)
     private val sharedNetHistory = NetGraphHistory()
@@ -329,6 +330,23 @@ class MainActivity : AppCompatActivity() {
         playerStatuses[ws]?.text = playback
         playerPlayButtons[ws]?.text =
             if (state == PlaybackState.STATE_PLAYING) "pause" else "play"
+
+        val duration = metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L
+        val playbackState = controller?.playbackState
+        val position = playbackState?.position ?: -1L
+        val progressBar = playerProgressBars[ws]
+        if (progressBar != null) {
+            if (duration > 0L && position >= 0L && position <= duration) {
+                progressBar.max = 1000
+                progressBar.progress =
+                    ((position.toDouble() / duration.toDouble()) * 1000.0).toInt()
+                progressBar.visibility = View.VISIBLE
+            } else {
+                progressBar.progress = 0
+                progressBar.visibility = View.GONE
+            }
+        }
+
         playerTitles[ws]?.text = details.firstOrNull().orEmpty()
         playerArtists[ws]?.apply {
             text = details.getOrNull(1).orEmpty()
@@ -896,6 +914,22 @@ class MainActivity : AppCompatActivity() {
         content.addView(playerTitle, LinearLayout.LayoutParams(-1, -2))
         content.addView(playerArtist, LinearLayout.LayoutParams(-1, -2))
         content.addView(playerStatus, LinearLayout.LayoutParams(-1, -2))
+
+        val playerProgress = android.widget.ProgressBar(
+            this, null, android.R.attr.progressBarStyleHorizontal
+        ).apply {
+            max = 1000
+            progress = 0
+            visibility = View.GONE
+        }
+        playerProgressBars[ws] = playerProgress
+        content.addView(
+            playerProgress,
+            LinearLayout.LayoutParams(-1, dp(3)).apply {
+                topMargin = dp(4)
+                bottomMargin = dp(2)
+            }
+        )
 
         val controls = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
