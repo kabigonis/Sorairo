@@ -183,6 +183,9 @@ class MainActivity : AppCompatActivity() {
     private var allApps: List<App> = emptyList()
     private var apps: List<App> = emptyList()
     private var curWs = 0
+    private val focusedWindow = IntArray(5) { 0 } // 0 = terminal, 1 = pinned
+    private val pinWindowForFocus = arrayOfNulls<View>(5)
+    private val terminalWindowForFocus = arrayOfNulls<View>(5)
     private lateinit var wall: ImageView
     private lateinit var clock: TextView
     private lateinit var status: TextView
@@ -572,6 +575,39 @@ class MainActivity : AppCompatActivity() {
         override fun getItemCount() = 5
     }
 
+    private fun setWindowFocus(
+        ws: Int,
+        focused: Int,
+        terminal: View,
+        pinned: View
+    ) {
+        focusedWindow[ws] = focused
+
+        val p = pal
+        val terminalBg = terminal.background
+        val pinnedBg = pinned.background
+
+        if (terminalBg is GradientDrawable) {
+            terminalBg.mutate()
+            terminalBg.setStroke(
+                dp(2),
+                if (focused == 0) p.cAccent else p.cDim
+            )
+        }
+        if (pinnedBg is GradientDrawable) {
+            pinnedBg.mutate()
+            pinnedBg.setStroke(
+                dp(2),
+                if (focused == 1) p.cAccent else p.cDim
+            )
+        }
+
+        val target = if (focused == 0) terminal else pinned
+        target.animate().cancel()
+        target.alpha = 0.92f
+        target.animate().alpha(1f).setDuration(180).start()
+    }
+
     private fun buildPage(ws: Int): View {
         val p = pal
         val row = LinearLayout(this).apply {
@@ -640,15 +676,28 @@ class MainActivity : AppCompatActivity() {
             }
         }
         if (field != null) {
-            term.setOnClickListener { focusInput() }
-            out.setOnClickListener { focusInput() }
-            col.setOnClickListener { focusInput() }
-            scroll.setOnClickListener { focusInput() }
+            term.setOnClickListener {
+                setWindowFocus(ws, 0, term, pinWindowForFocus[ws] ?: term)
+                focusInput()
+            }
+            out.setOnClickListener {
+                setWindowFocus(ws, 0, term, pinWindowForFocus[ws] ?: term)
+                focusInput()
+            }
+            col.setOnClickListener {
+                setWindowFocus(ws, 0, term, pinWindowForFocus[ws] ?: term)
+                focusInput()
+            }
+            scroll.setOnClickListener {
+                setWindowFocus(ws, 0, term, pinWindowForFocus[ws] ?: term)
+                focusInput()
+            }
         }
         term.setOnLongClickListener { showSettings(); true }
         out.setOnLongClickListener { showSettings(); true }
         col.setOnLongClickListener { showSettings(); true }
 
+        terminalWindowForFocus[ws] = term
         row.addView(term, LinearLayout.LayoutParams(0, -1, 1f).apply { marginEnd = dp(6) })
 
         // ---- pinned window ----
@@ -658,6 +707,11 @@ class MainActivity : AppCompatActivity() {
             background = box(panelColor(), p.cDim)
             setOnLongClickListener { showSettings(); true }
         }
+        pinWindowForFocus[ws] = pinWin
+        pinWin.setOnClickListener {
+            setWindowFocus(ws, 1, term, pinWin)
+        }
+        setWindowFocus(ws, focusedWindow[ws], term, pinWin)
         pinWin.addView(txt(13f, p.cBlue, "~/pinned"))
         val pinList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         pinBoxes[ws] = pinList
@@ -874,7 +928,14 @@ class MainActivity : AppCompatActivity() {
                         setPadding(0, dp(9), 0, dp(9))
                         maxLines = 1
                         ellipsize = TextUtils.TruncateAt.END
-                        setOnClickListener { launchApp(app) }
+                        setOnClickListener {
+                            val terminal = terminalWindowForFocus[ws]
+                            val pinnedWindow = pinWindowForFocus[ws]
+                            if (terminal != null && pinnedWindow != null) {
+                                setWindowFocus(ws, 1, terminal, pinnedWindow)
+                            }
+                            launchApp(app)
+                        }
                         setOnLongClickListener { togglePin(ws, app); true }
                     }
                 )
