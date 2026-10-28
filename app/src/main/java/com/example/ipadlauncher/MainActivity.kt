@@ -922,18 +922,8 @@ class MainActivity : AppCompatActivity() {
             typeface = Typeface.MONOSPACE
             setPadding(dp(6), dp(3), dp(6), dp(3))
         }
-        val nowTab = txt(10.5f, p.cAccent, "[Now]").apply {
-            typeface = Typeface.MONOSPACE
-            setPadding(dp(6), dp(3), dp(6), dp(3))
-        }
-        fun selectPlayerTab(nowSelected: Boolean) {
-            queueTab.setTextColor(if (nowSelected) p.cDim else p.cAccent)
-            nowTab.setTextColor(if (nowSelected) p.cAccent else p.cDim)
-        }
-        queueTab.setOnClickListener { selectPlayerTab(false) }
-        nowTab.setOnClickListener { selectPlayerTab(true) }
+        queueTab.setTextColor(p.cAccent)
         playerTabs.addView(queueTab, LinearLayout.LayoutParams(-2, -2))
-        playerTabs.addView(nowTab, LinearLayout.LayoutParams(-2, -2))
         content.addView(playerTabs, LinearLayout.LayoutParams(-1, -2))
 
         val playerTitle = txt(12f, p.cAccent).apply {
