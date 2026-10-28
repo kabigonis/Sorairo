@@ -181,6 +181,37 @@ class MainActivity : AppCompatActivity() {
 
     private fun solidColor(): Int = (pal.cBg and 0x00FFFFFF) or (0xF2 shl 24)
 
+    private fun bottomWindowScopeAll(): Boolean =
+        prefs.getBoolean("bottom_window_scope_all", false)
+
+    private fun bottomWindowFor(ws: Int): String {
+        val key = if (bottomWindowScopeAll()) "bottom_window_shared" else "bottom_window_$ws"
+        return prefs.getString(key, "monitor")?.takeIf { it == "player" } ?: "monitor"
+    }
+
+    private fun setBottomWindowForCurrent(value: String) {
+        val choice = if (value == "player") "player" else "monitor"
+        val edit = prefs.edit()
+        if (bottomWindowScopeAll()) {
+            edit.putString("bottom_window_shared", choice)
+        } else {
+            edit.putString("bottom_window_$curWs", choice)
+        }
+        edit.apply()
+    }
+
+    private fun setBottomWindowForWorkspace(ws: Int, value: String) {
+        val choice = if (value == "player") "player" else "monitor"
+        val edit = prefs.edit()
+        if (bottomWindowScopeAll()) {
+            edit.putString("bottom_window_shared", choice)
+            for (i in 0..4) edit.putString("bottom_window_$i", choice)
+        } else {
+            edit.putString("bottom_window_$ws", choice)
+        }
+        edit.apply()
+    }
+
     // ---- state ----
     private var allApps: List<App> = emptyList()
     private var apps: List<App> = emptyList()
@@ -207,6 +238,9 @@ class MainActivity : AppCompatActivity() {
     private val outViews = arrayOfNulls<TextView>(5)
     private val outScrolls = arrayOfNulls<ScrollView>(5)
     private val pinBoxes = arrayOfNulls<LinearLayout>(5)
+    private val bottomWindowViews = arrayOfNulls<LinearLayout>(5)
+    private val bottomWindowContents = arrayOfNulls<TextView>(5)
+    private val bottomWindowTitles = arrayOfNulls<TextView>(5)
     private val defaultLauncherPrompts = arrayOfNulls<TextView>(5)
     private val fetchInfos = arrayOfNulls<TextView>(5)
     private lateinit var vis: VisualizerView
@@ -215,6 +249,88 @@ class MainActivity : AppCompatActivity() {
     private lateinit var qs: FrameLayout
     private lateinit var qsBox: LinearLayout
     private var ctrl: MediaController? = null
+    private var listeningController: MediaController? = null
+    private var playerCallback: MediaController.Callback? = null
+
+    private fun stopPlayerCallbacks() {
+        val controller = listeningController
+        val callback = playerCallback
+        if (controller != null && callback != null) {
+            try {
+                controller.unregisterCallback(callback)
+            } catch (_: Exception) {
+            }
+        }
+        listeningController = null
+        playerCallback = null
+    }
+
+    private fun updatePlayerWindow(ws: Int) {
+        val controller = ctrl
+        val metadata = controller?.metadata
+        val title = metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)
+        val artist = metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST)
+        val state = controller?.playbackState?.state
+        val playback = when (state) {
+            PlaybackState.STATE_PLAYING -> "Playing"
+            PlaybackState.STATE_PAUSED -> "Paused"
+            PlaybackState.STATE_BUFFERING -> "Buffering"
+            else -> "Not playing"
+        }
+        val details = when {
+            title.isNullOrBlank() -> "No active media"
+            artist.isNullOrBlank() -> title
+            else -> "$title\n$artist"
+        }
+        bottomWindowContents[ws]?.text = "$playback\n\n$details"
+    }
+
+    private fun startPlayerCallbacks() {
+        if (!activityResumed || bottomWindowFor(curWs) != "player") return
+        try {
+            val manager = getSystemService(MEDIA_SESSION_SERVICE) as MediaSessionManager
+            val sessions = manager.getActiveSessions(
+                ComponentName(this, NowPlayingService::class.java)
+            )
+            val controller = sessions.firstOrNull {
+                it.playbackState?.state == PlaybackState.STATE_PLAYING
+            } ?: sessions.firstOrNull()
+            if (controller == null) {
+                stopPlayerCallbacks()
+                ctrl = null
+                updatePlayerWindow(curWs)
+                return
+            }
+            if (listeningController !== controller) {
+                stopPlayerCallbacks()
+                val callback = object : MediaController.Callback() {
+                    override fun onMetadataChanged(metadata: MediaMetadata?) {
+                        updateNowPlaying()
+                        updatePlayerWindow(curWs)
+                    }
+
+                    override fun onPlaybackStateChanged(state: PlaybackState?) {
+                        updateNowPlaying()
+                        updatePlayerWindow(curWs)
+                    }
+
+                    override fun onSessionDestroyed() {
+                        stopPlayerCallbacks()
+                        updateNowPlaying()
+                        updatePlayerWindow(curWs)
+                    }
+                }
+                listeningController = controller
+                playerCallback = callback
+                controller.registerCallback(callback)
+            }
+            ctrl = controller
+            updatePlayerWindow(curWs)
+        } catch (_: Exception) {
+            updatePlayerWindow(curWs)
+        }
+    }
+
     private var askedWrite = false
 
     private val handler = Handler(Looper.getMainLooper())
@@ -267,6 +383,32 @@ class MainActivity : AppCompatActivity() {
         override fun run() {
             updateStatus()
             handler.postDelayed(this, 2000)
+        }
+    }
+
+    private val monitorTick = object : Runnable {
+        override fun run() {
+            if (bottomWindowFor(curWs) == "monitor") {
+                bottomWindowContents[curWs]?.text = fetchText()
+                handler.postDelayed(this, 2000)
+            }
+        }
+    }
+
+    private var activityResumed = false
+
+    private fun updateBottomWindowRuntime() {
+        handler.removeCallbacks(monitorTick)
+        if (!activityResumed) {
+            stopPlayerCallbacks()
+            return
+        }
+        if (bottomWindowFor(curWs) == "monitor") {
+            stopPlayerCallbacks()
+            bottomWindowContents[curWs]?.text = fetchText()
+            handler.post(monitorTick)
+        } else {
+            startPlayerCallbacks()
         }
     }
 
@@ -432,6 +574,7 @@ class MainActivity : AppCompatActivity() {
                 override fun onPageSelected(position: Int) {
                     curWs = position
                     updateWsBar()
+                    updateBottomWindowRuntime()
                 }
             })
         }
@@ -621,6 +764,76 @@ class MainActivity : AppCompatActivity() {
         animateBorder(pinned, if (focused == 1) p.cAccent else p.cDim)
     }
 
+    private fun buildBottomWindow(ws: Int): LinearLayout {
+        val p = pal
+        val win = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = box(panelColor(), p.cDim)
+            setOnLongClickListener { showSettings(); true }
+        }
+        val titleRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val title = txt(12.5f, p.cBlue, "~/monitor")
+        bottomWindowTitles[ws] = title
+        titleRow.addView(title, LinearLayout.LayoutParams(0, -2, 1f))
+
+        fun addChoice(label: String, choice: String) {
+            val tab = txt(11f, if (bottomWindowFor(ws) == choice) p.cAccent else p.cDim, label).apply {
+                setPadding(dp(4), dp(3), dp(4), dp(3))
+                setOnClickListener {
+                    if (bottomWindowFor(ws) != choice) {
+                        setBottomWindowForWorkspace(ws, choice)
+                        updateBottomWindowDisplay(ws, true)
+                        if (ws == curWs) updateBottomWindowRuntime()
+                    }
+                }
+            }
+            titleRow.addView(tab, LinearLayout.LayoutParams(-2, -2))
+        }
+        addChoice("monitor", "monitor")
+        addChoice("player", "player")
+        win.addView(titleRow, LinearLayout.LayoutParams(-1, -2))
+
+        val content = txt(11.5f, p.cFg).apply {
+            setLineSpacing(0f, 1.1f)
+            text = if (bottomWindowFor(ws) == "monitor") fetchText() else "No active media"
+            setPadding(0, dp(8), 0, 0)
+        }
+        bottomWindowContents[ws] = content
+        win.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
+        bottomWindowViews[ws] = win
+        return win
+    }
+
+    private fun updateBottomWindowDisplay(ws: Int, animate: Boolean) {
+        val win = bottomWindowViews[ws] ?: return
+        val choice = bottomWindowFor(ws)
+        val content = bottomWindowContents[ws]
+        val title = bottomWindowTitles[ws]
+        fun applyChoice() {
+            title?.text = if (choice == "monitor") "~/monitor" else "~/player"
+            content?.text = if (choice == "monitor") fetchText() else "No active media"
+            (win.getChildAt(0) as? LinearLayout)?.let { row ->
+                for (i in 1 until row.childCount) {
+                    val tab = row.getChildAt(i) as? TextView ?: continue
+                    tab.setTextColor(if (tab.text.toString() == choice) pal.cAccent else pal.cDim)
+                }
+            }
+            win.alpha = 1f
+        }
+        if (animate) {
+            win.animate().alpha(0f).setDuration(90).withEndAction {
+                applyChoice()
+                win.animate().alpha(1f).setDuration(120).start()
+            }.start()
+        } else {
+            applyChoice()
+        }
+    }
+
     private fun buildPage(ws: Int): View {
         val p = pal
         val row = LinearLayout(this).apply {
@@ -745,7 +958,22 @@ class MainActivity : AppCompatActivity() {
             topMargin = dp(4)
         })
         fillPins(ws)
-        row.addView(pinWin, LinearLayout.LayoutParams(0, -1, 1f).apply { marginStart = dp(6) })
+        val rightCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        rightCol.addView(pinWin, LinearLayout.LayoutParams(-1, 0, 1f))
+        val bottomWin = buildBottomWindow(ws)
+        bottomWin.setOnClickListener {
+            setWindowFocus(ws, 1, term, pinWin)
+        }
+        rightCol.addView(
+            bottomWin,
+            LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(6) }
+        )
+        row.addView(
+            rightCol,
+            LinearLayout.LayoutParams(0, -1, 1f).apply { marginStart = dp(6) }
+        )
 
         return row
     }
@@ -1324,6 +1552,27 @@ class MainActivity : AppCompatActivity() {
         row("media access", if (mediaAccess()) "granted" else "enable ›") {
             openSystem(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
         }
+        row("bottom window", bottomWindowFor(curWs)) {
+            val ws = curWs
+            val next = if (bottomWindowFor(ws) == "monitor") "player" else "monitor"
+            setBottomWindowForWorkspace(ws, next)
+            updateBottomWindowDisplay(ws, true)
+            updateBottomWindowRuntime()
+            fillSettings()
+        }
+        row("bottom window scope", if (bottomWindowScopeAll()) "all workspaces" else "this workspace") {
+            val current = bottomWindowFor(curWs)
+            val makeAll = !bottomWindowScopeAll()
+            val edit = prefs.edit().putBoolean("bottom_window_scope_all", makeAll)
+            if (makeAll) {
+                edit.putString("bottom_window_shared", current)
+                for (ws in 0..4) edit.putString("bottom_window_$ws", current)
+            }
+            edit.apply()
+            for (ws in 0..4) updateBottomWindowDisplay(ws, false)
+            updateBottomWindowRuntime()
+            fillSettings()
+        }
         row("vpn app", allApps.find { it.pkg == prefs.getString("vpn_pkg", null) }?.label ?: "choose ›") {
             fillVpnPicker(); setScroll.scrollTo(0, 0)
         }
@@ -1420,6 +1669,7 @@ class MainActivity : AppCompatActivity() {
                     "  help           this list",
                     "  clear          clear screen",
                     "  fetch          refresh system info",
+                    "  panel <mode>   set bottom window: monitor/player",
                     "  logo [name]    android/arch/omarchy/image/none",
                     "  ws <1-5>       switch workspace",
                     "  theme [name]   change theme",
@@ -1438,6 +1688,15 @@ class MainActivity : AppCompatActivity() {
                 ).forEach { say(it) }
                 "clear" -> sb.clear()
                 "fetch", "fastfetch", "neofetch" -> refreshFetch(ws)
+                "panel" -> {
+                    if (arg == "monitor" || arg == "player") {
+                        setBottomWindowForWorkspace(ws, arg)
+                        updateBottomWindowDisplay(ws, true)
+                        if (ws == curWs) updateBottomWindowRuntime()
+                    } else {
+                        say("usage: panel monitor|player", p.cDim)
+                    }
+                }
                 "ws" -> {
                     val n = arg.toIntOrNull()
                     if (n != null && n in 1..5) pager.setCurrentItem(n - 1, true)
