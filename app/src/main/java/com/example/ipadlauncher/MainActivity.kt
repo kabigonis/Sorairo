@@ -218,6 +218,7 @@ class MainActivity : AppCompatActivity() {
     private var curWs = 0
     private val focusedWindow = IntArray(5) { 0 } // 0 = terminal, 1 = pinned
     private val pinWindowForFocus = arrayOfNulls<View>(5)
+    private val bottomWindowForFocus = arrayOfNulls<View>(5)
     private val terminalWindowForFocus = arrayOfNulls<View>(5)
     private val focusBorderAnimators = java.util.WeakHashMap<View, ValueAnimator>()
     private val focusBorderColors = java.util.WeakHashMap<View, Int>()
@@ -762,6 +763,9 @@ class MainActivity : AppCompatActivity() {
         val p = pal
         animateBorder(terminal, if (focused == 0) p.cAccent else p.cDim)
         animateBorder(pinned, if (focused == 1) p.cAccent else p.cDim)
+        bottomWindowForFocus[ws]?.let { bottom ->
+            animateBorder(bottom, if (focused == 2) p.cAccent else p.cDim)
+        }
     }
 
     private fun buildBottomWindow(ws: Int): LinearLayout {
@@ -784,6 +788,11 @@ class MainActivity : AppCompatActivity() {
             val tab = txt(11f, if (bottomWindowFor(ws) == choice) p.cAccent else p.cDim, label).apply {
                 setPadding(dp(4), dp(3), dp(4), dp(3))
                 setOnClickListener {
+                    val terminal = terminalWindowForFocus[ws]
+                    val pinned = pinWindowForFocus[ws]
+                    if (terminal != null && pinned != null) {
+                        setWindowFocus(ws, 2, terminal, pinned)
+                    }
                     if (bottomWindowFor(ws) != choice) {
                         setBottomWindowForWorkspace(ws, choice)
                         updateBottomWindowDisplay(ws, true)
@@ -963,8 +972,9 @@ class MainActivity : AppCompatActivity() {
         }
         rightCol.addView(pinWin, LinearLayout.LayoutParams(-1, 0, 1f))
         val bottomWin = buildBottomWindow(ws)
+        bottomWindowForFocus[ws] = bottomWin
         bottomWin.setOnClickListener {
-            setWindowFocus(ws, 1, term, pinWin)
+            setWindowFocus(ws, 2, term, pinWin)
         }
         rightCol.addView(
             bottomWin,
