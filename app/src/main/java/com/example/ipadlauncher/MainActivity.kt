@@ -242,7 +242,10 @@ class MainActivity : AppCompatActivity() {
     private val outScrolls = arrayOfNulls<ScrollView>(5)
     private val pinBoxes = arrayOfNulls<LinearLayout>(5)
     private val bottomWindowViews = arrayOfNulls<LinearLayout>(5)
-    private val bottomWindowContents = arrayOfNulls<TextView>(5)
+    private val bottomWindowContents = arrayOfNulls<LinearLayout>(5)
+    private val playerTitles = arrayOfNulls<TextView>(5)
+    private val playerArtists = arrayOfNulls<TextView>(5)
+    private val playerStatuses = arrayOfNulls<TextView>(5)
     private val monitorSummaries = arrayOfNulls<TextView>(5)
     private val monitorGraphs = arrayOfNulls<NetGraphView>(5)
     private val sharedNetHistory = NetGraphHistory()
@@ -321,7 +324,13 @@ class MainActivity : AppCompatActivity() {
             if (missingSessionReads >= 2) lastSongDetails = "No active media"
         }
 
-        bottomWindowContents[ws]?.text = "$playback\n\n$lastSongDetails"
+        val details = lastSongDetails.split("\n", limit = 2)
+        playerStatuses[ws]?.text = playback
+        playerTitles[ws]?.text = details.firstOrNull().orEmpty()
+        playerArtists[ws]?.apply {
+            text = details.getOrNull(1).orEmpty()
+            visibility = if (text.isBlank()) View.GONE else View.VISIBLE
+        }
     }
 
     private fun startPlayerCallbacks() {
@@ -858,12 +867,32 @@ class MainActivity : AppCompatActivity() {
         addChoice("player", "player")
         win.addView(titleRow, LinearLayout.LayoutParams(-1, -2))
 
-        val content = txt(11.5f, p.cFg).apply {
-            typeface = Typeface.MONOSPACE
-            setLineSpacing(0f, 1.1f)
-            text = if (bottomWindowFor(ws) == "player") "No active media" else ""
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             setPadding(0, dp(8), 0, 0)
         }
+        val playerTitle = txt(12f, p.cFg).apply {
+            typeface = Typeface.MONOSPACE
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            text = "No active media"
+        }
+        val playerArtist = txt(10.5f, p.cDim).apply {
+            typeface = Typeface.MONOSPACE
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            visibility = View.GONE
+        }
+        val playerStatus = txt(10.5f, p.cBlue).apply {
+            typeface = Typeface.MONOSPACE
+            maxLines = 1
+        }
+        playerTitles[ws] = playerTitle
+        playerArtists[ws] = playerArtist
+        playerStatuses[ws] = playerStatus
+        content.addView(playerTitle, LinearLayout.LayoutParams(-1, -2))
+        content.addView(playerArtist, LinearLayout.LayoutParams(-1, -2))
+        content.addView(playerStatus, LinearLayout.LayoutParams(-1, -2))
         bottomWindowContents[ws] = content
 
         val monitorColumn = LinearLayout(this).apply {
