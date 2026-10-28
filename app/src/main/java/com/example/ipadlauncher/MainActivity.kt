@@ -1452,10 +1452,18 @@ class MainActivity : AppCompatActivity() {
     private fun matches(query: String): List<App> {
         val q = query.trim().lowercase()
         if (q.isEmpty()) return apps
-        return apps.map { it to score(q, it.label.lowercase()) }
-            .filter { it.second > 0 }
+
+        fun rank(label: String): Int = when {
+            label.startsWith(q) -> 0
+            label.split(Regex("[\\s._-]+")).any { it.startsWith(q) } -> 1
+            label.contains(q) -> 2
+            else -> -1
+        }
+
+        return apps.map { it to rank(it.label.lowercase()) }
+            .filter { it.second >= 0 }
             .sortedWith(
-                compareByDescending<Pair<App, Int>> { it.second }
+                compareBy<Pair<App, Int>> { it.second }
                     .thenBy { it.first.label.lowercase() }
             )
             .map { it.first }
