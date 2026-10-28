@@ -644,6 +644,7 @@ class MainActivity : AppCompatActivity() {
         col.addView(out, LinearLayout.LayoutParams(-1, -2))
         val scroll = ScrollView(this).apply {
             isVerticalScrollBarEnabled = false
+            isFillViewport = true
             addView(col, FrameLayout.LayoutParams(-1, -2))
         }
         outViews[ws] = out
@@ -678,6 +679,10 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             promptRow.addView(input, LinearLayout.LayoutParams(0, -2, 1f))
+            promptRow.setOnClickListener {
+                focusTerminal(false)
+                focusInput()
+            }
             term.addView(promptRow, LinearLayout.LayoutParams(-1, -2))
         }
         val field = input
@@ -695,10 +700,10 @@ class MainActivity : AppCompatActivity() {
             if (showKeyboard) focusInput()
         }
 
-        term.setOnClickListener { focusTerminal(true) }
-        out.setOnClickListener { focusTerminal(true) }
-        col.setOnClickListener { focusTerminal(true) }
-        scroll.setOnClickListener { focusTerminal(true) }
+        term.setOnClickListener { focusTerminal(false) }
+        out.setOnClickListener { focusTerminal(false) }
+        col.setOnClickListener { focusTerminal(false) }
+        scroll.setOnClickListener { focusTerminal(false) }
         term.setOnLongClickListener { showSettings(); true }
         out.setOnLongClickListener { showSettings(); true }
         col.setOnLongClickListener { showSettings(); true }
