@@ -3,7 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 android {
-    namespace = "com.example.ipadlauncher"
+    namespace = "com.kabigonis.sorairo"
     compileSdk = 34
     defaultConfig {
         applicationId = "com.example.ipadlauncher"
