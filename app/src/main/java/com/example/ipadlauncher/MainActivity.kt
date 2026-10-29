@@ -616,6 +616,9 @@ class MainActivity : AppCompatActivity() {
     private var lastTx = 0L
     private var downBps = 0L
     private var upBps = 0L
+    private var monitorLastT = 0L
+    private var monitorLastRx = 0L
+    private var monitorLastTx = 0L
 
     private val pickWall = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -682,8 +685,10 @@ class MainActivity : AppCompatActivity() {
         override fun run() {
             if (!activityResumed || bottomWindowFor(curWs) != "monitor") return
             updateMonitorSummary(curWs)
-            sharedNetHistory.push(downBps.toFloat(), upBps.toFloat())
-        monitorGraphs.forEach { it?.invalidate() }
+            sampleMonitorNetwork()?.let { (down, up) ->
+                sharedNetHistory.push(down, up)
+            }
+            monitorGraphs[curWs]?.invalidate()
             handler.postDelayed(this, 1000)
         }
     }
@@ -698,6 +703,7 @@ class MainActivity : AppCompatActivity() {
         }
         if (bottomWindowFor(curWs) == "monitor") {
             stopPlayerCallbacks()
+            monitorLastT = 0L
             updateMonitorSummary(curWs)
             monitorGraphs.forEach { it?.setColors(pal.cDim, pal.cBlue, pal.cGreen) }
             handler.post(monitorTick)
@@ -2585,6 +2591,34 @@ class MainActivity : AppCompatActivity() {
         } catch (_: Exception) {
             "net"
         }
+    }
+
+    private fun sampleMonitorNetwork(): Pair<Float, Float>? {
+        val now = SystemClock.elapsedRealtime()
+        val rx = TrafficStats.getTotalRxBytes()
+        val tx = TrafficStats.getTotalTxBytes()
+
+        if (rx < 0L || tx < 0L) {
+            monitorLastT = 0L
+            return null
+        }
+
+        if (monitorLastT == 0L || rx < monitorLastRx || tx < monitorLastTx) {
+            monitorLastT = now
+            monitorLastRx = rx
+            monitorLastTx = tx
+            return null
+        }
+
+        val elapsed = now - monitorLastT
+        if (elapsed <= 0L) return null
+
+        val down = ((rx - monitorLastRx) * 1000f / elapsed).coerceAtLeast(0f)
+        val up = ((tx - monitorLastTx) * 1000f / elapsed).coerceAtLeast(0f)
+        monitorLastT = now
+        monitorLastRx = rx
+        monitorLastTx = tx
+        return down to up
     }
 
     private fun updateStatus() {
