@@ -893,7 +893,14 @@ class MainActivity : AppCompatActivity() {
             adapter = PageAdapter()
             offscreenPageLimit = 1
             setCurrentItem(curWs, false)
+            // Trial: subtle wallpaper parallax, inspired by Omalauncher's workspace background.
+            wall.scaleX = 1.08f
+            updateWallpaperParallax(curWs.toFloat())
             registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
+                override fun onPageScrolled(position: Int, positionOffset: Float, positionOffsetPixels: Int) {
+                    updateWallpaperParallax(position + positionOffset)
+                }
+
                 override fun onPageSelected(position: Int) {
                     curWs = position
                     updateWsBar()
@@ -2549,6 +2556,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ================= wallpaper / status =================
+    /**
+     * Moves the wallpaper slightly behind workspace swipes instead of making it feel
+     * completely fixed. The 8% horizontal overscan keeps edges covered while shifting.
+     */
+    private fun updateWallpaperParallax(progress: Float) {
+        if (!::wall.isInitialized) return
+        val fraction = (progress / 4f).coerceIn(0f, 1f)
+        wall.translationX = ((0.5f - fraction) * dp(36)).coerceIn(-dp(18).toFloat(), dp(18).toFloat())
+    }
+
     private fun loadWallpaper() {
         val s = prefs.getString("wall", null) ?: return
         try {
