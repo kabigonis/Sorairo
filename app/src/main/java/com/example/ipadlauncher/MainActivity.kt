@@ -257,6 +257,7 @@ class MainActivity : AppCompatActivity() {
     private val playerStatuses = arrayOfNulls<TextView>(5)
     private val playerHeaders = arrayOfNulls<TextView>(5)
     private val playerQueueViews = arrayOfNulls<LinearLayout>(5)
+    private val playerQueueScrolls = arrayOfNulls<ScrollView>(5)
     private val playerQueueSignatures = arrayOfNulls<String>(5)
     private val playerQueueRows = Array(5) { mutableListOf<TextView>() }
     private val playerQueueEmptyLabels = arrayOfNulls<TextView>(5)
@@ -485,7 +486,7 @@ class MainActivity : AppCompatActivity() {
                 if (playerQueueSignatures[ws] != "empty") {
                     queueView.removeAllViews()
                     rows.clear()
-                    val empty = txt(10f, pal.cDim, "Queue unavailable")
+                    val empty = txt(10f, pal.cDim, "this app doesn't share its queue")
                     queueView.addView(empty, LinearLayout.LayoutParams(-1, -2))
                     playerQueueEmptyLabels[ws] = empty
                     playerQueueSignatures[ws] = "empty"
@@ -638,12 +639,30 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private var touchDownScreenX = 0f
+    private var touchDownScreenY = 0f
+
+    private fun touchDownStartedInCurrentQueue(): Boolean {
+        if (bottomWindowFor(curWs) != "player") return false
+        val queueScroll = playerQueueScrolls.getOrNull(curWs) ?: return false
+        if (!queueScroll.isShown || queueScroll.width <= 0 || queueScroll.height <= 0) return false
+        return try {
+            val location = IntArray(2)
+            queueScroll.getLocationOnScreen(location)
+            touchDownScreenX >= location[0] && touchDownScreenX < location[0] + queueScroll.width &&
+                touchDownScreenY >= location[1] && touchDownScreenY < location[1] + queueScroll.height
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     private val detector by lazy {
         GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
             override fun onFling(e1: MotionEvent?, e2: MotionEvent, vx: Float, vy: Float): Boolean {
                 if (mode != "terminal" && e1 != null &&
                     e1.y - e2.y > dp(80) && vy < -800 && abs(vx) < abs(vy)
                 ) {
+                    if (touchDownStartedInCurrentQueue()) return false
                     openDrawer()
                     return true
                 }
@@ -711,6 +730,10 @@ class MainActivity : AppCompatActivity() {
 
     private inner class HomeLayer(c: Context) : FrameLayout(c) {
         override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+            if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
+                touchDownScreenX = ev.rawX
+                touchDownScreenY = ev.rawY
+            }
             detector.onTouchEvent(ev)
             return super.dispatchTouchEvent(ev)
         }
@@ -1292,6 +1315,7 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
         }
         queueScroll.addView(queueList)
+        playerQueueScrolls[ws] = queueScroll
         playerQueueViews[ws] = queueList
         content.addView(
             queueScroll,
