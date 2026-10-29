@@ -2666,10 +2666,7 @@ class MainActivity : AppCompatActivity() {
         val parts = ArrayList<String>()
         headphones()?.let { parts.add("♪ $it") }
         val net = netLabel()
-        parts.add(
-            if (net == "offline") "offline"
-            else "$net ↓${fmtSpeed(downBps)} ↑${fmtSpeed(upBps)}"
-        )
+        parts.add(net)
         status.text = parts.joinToString("   ")
         battText.text = "▮ ${bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)}%"
         updateNowPlaying()
