@@ -698,7 +698,7 @@ class MainActivity : AppCompatActivity() {
                 sharedNetHistory.push(down, up)
             }
             monitorGraphs[curWs]?.invalidate()
-            handler.postDelayed(this, 250)
+            handler.postDelayed(this, 1000)
         }
     }
 
@@ -1684,7 +1684,6 @@ class MainActivity : AppCompatActivity() {
             text.append(line("SD", sdTotal - sdFree, sdTotal)).append("\n")
         }
         text.append(line("Batt", battery.toLong(), 100L)).append("\n")
-        text.append("down ${fmtSpeed(downBps)}  up ${fmtSpeed(upBps)}  peak ${fmtSpeed(sharedNetHistory.peak.toLong())}")
         view.text = text
     }
 
@@ -2669,7 +2668,7 @@ fun bar(pct: Int, width: Int = 12): String {
 }
 
 class NetGraphHistory {
-    val size = 120
+    val size = 60
     val down = FloatArray(size)
     val up = FloatArray(size)
     var count = 0
@@ -2679,28 +2678,9 @@ class NetGraphHistory {
     var peak = 1024f
         private set
 
-    private var smoothDown = 0f
-    private var smoothUp = 0f
-    private var hasSample = false
-
     fun push(downBps: Float, upBps: Float) {
-        val rawDown = downBps.coerceAtLeast(0f)
-        val rawUp = upBps.coerceAtLeast(0f)
-
-        // Exponential moving average keeps brief packet bursts from becoming
-        // full-height spikes, while still following sustained traffic changes.
-        val alpha = 0.22f
-        if (!hasSample) {
-            smoothDown = rawDown
-            smoothUp = rawUp
-            hasSample = true
-        } else {
-            smoothDown += (rawDown - smoothDown) * alpha
-            smoothUp += (rawUp - smoothUp) * alpha
-        }
-
-        down[head] = smoothDown
-        up[head] = smoothUp
+        down[head] = downBps.coerceAtLeast(0f)
+        up[head] = upBps.coerceAtLeast(0f)
         head = (head + 1) % size
         if (count < size) count++
 
