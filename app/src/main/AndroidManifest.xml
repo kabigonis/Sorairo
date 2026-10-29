@@ -16,8 +16,8 @@
         </intent>
     </queries>
     <application
-        android:icon="@drawable/sora"
-        android:roundIcon="@drawable/sora"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:label="Sorairo"
         android:theme="@style/LauncherTheme">
         <activity
