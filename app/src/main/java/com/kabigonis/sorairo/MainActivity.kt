@@ -2188,14 +2188,6 @@ class MainActivity : AppCompatActivity() {
         row("media access", if (mediaAccess()) "granted" else "enable ›") {
             openSystem(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
         }
-        row("bottom window", bottomWindowFor(curWs)) {
-            val ws = curWs
-            val next = if (bottomWindowFor(ws) == "monitor") "player" else "monitor"
-            setBottomWindowForWorkspace(ws, next)
-            updateBottomWindowDisplay(ws, true)
-            updateBottomWindowRuntime()
-            fillSettings()
-        }
         row("bottom window scope", if (bottomWindowScopeAll()) "all workspaces" else "this workspace") {
             val current = bottomWindowFor(curWs)
             val makeAll = !bottomWindowScopeAll()
