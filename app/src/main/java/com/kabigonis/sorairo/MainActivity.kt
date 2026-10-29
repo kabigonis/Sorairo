@@ -1,6 +1,7 @@
 package com.kabigonis.sorairo
 
 import android.animation.ArgbEvaluator
+import android.animation.LayoutTransition
 import android.animation.ValueAnimator
 import android.app.ActivityManager
 import android.app.NotificationManager
@@ -232,6 +233,9 @@ class MainActivity : AppCompatActivity() {
     private val focusedWindow = IntArray(5) { 0 } // 0 = terminal, 1 = pinned
     private val pinWindowForFocus = arrayOfNulls<View>(5)
     private val bottomWindowForFocus = arrayOfNulls<View>(5)
+    private val workspaceRows = arrayOfNulls<LinearLayout>(5)
+    private val workspaceRightColumns = arrayOfNulls<LinearLayout>(5)
+    private var keyboardVisible = false
     private val terminalWindowForFocus = arrayOfNulls<View>(5)
     private val focusBorderAnimators = java.util.WeakHashMap<View, ValueAnimator>()
     private val focusBorderColors = java.util.WeakHashMap<View, Int>()
@@ -1022,10 +1026,17 @@ class MainActivity : AppCompatActivity() {
         root.addView(settings, FrameLayout.LayoutParams(-1, -1))
 
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
-            // Stable insets: layout never shifts when the system status bar is pulled down
+            // Keep the workspace geometry stable while the IME animates. When the keyboard
+            // is open, give the terminal the full row so the music/monitor panel cannot be
+            // compressed into a clipped half-height layout.
             val stable = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars())
             val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
-            content.setPadding(dp(12), dp(6), dp(12), maxOf(stable.bottom, ime.bottom) + dp(12))
+            val imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime())
+            if (keyboardVisible != imeVisible) {
+                keyboardVisible = imeVisible
+                updateKeyboardWorkspaceLayout()
+            }
+            content.setPadding(dp(12), dp(6), dp(12), stable.bottom + dp(12))
             val avail = (dm.heightPixels - ime.bottom - panelTop - dp(16)).coerceAtLeast(dp(200))
             panel.layoutParams = (panel.layoutParams as FrameLayout.LayoutParams).apply {
                 height = min((dm.heightPixels * 0.6f).toInt(), avail)
@@ -1036,6 +1047,29 @@ class MainActivity : AppCompatActivity() {
         setContentView(root)
         updateWsBar()
         updateStatus()
+    }
+
+    private fun updateKeyboardWorkspaceLayout() {
+        for (ws in 0..4) {
+            val row = workspaceRows[ws] ?: continue
+            val terminal = terminalWindowForFocus[ws] ?: continue
+            val right = workspaceRightColumns[ws] ?: continue
+            val showTerminalOnly = keyboardVisible && ws == curWs
+            val terminalParams = terminal.layoutParams as? LinearLayout.LayoutParams ?: continue
+            if (showTerminalOnly) {
+                terminalParams.width = -1
+                terminalParams.weight = 0f
+                terminalParams.marginEnd = 0
+                right.visibility = View.GONE
+            } else {
+                terminalParams.width = 0
+                terminalParams.weight = 1f
+                terminalParams.marginEnd = dp(6)
+                right.visibility = View.VISIBLE
+            }
+            terminal.layoutParams = terminalParams
+            row.requestLayout()
+        }
     }
 
     inner class PageAdapter : RecyclerView.Adapter<PageAdapter.VH>() {
@@ -1425,8 +1459,13 @@ class MainActivity : AppCompatActivity() {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, dp(8), 0, 0)
+            layoutTransition = LayoutTransition().apply {
+                enableTransitionType(LayoutTransition.CHANGING)
+                setDuration(220)
+            }
             setOnLongClickListener { showSettings(); true }
         }
+        workspaceRows[ws] = row
 
         // ---- terminal window ----
         val term = LinearLayout(this).apply {
@@ -1561,6 +1600,11 @@ class MainActivity : AppCompatActivity() {
             rightCol,
             LinearLayout.LayoutParams(0, -1, 1f).apply { marginStart = dp(6) }
         )
+        workspaceRightColumns[ws] = rightCol
+        if (keyboardVisible && ws == curWs) {
+            term.layoutParams = LinearLayout.LayoutParams(-1, -1)
+            rightCol.visibility = View.GONE
+        }
 
         return row
     }
