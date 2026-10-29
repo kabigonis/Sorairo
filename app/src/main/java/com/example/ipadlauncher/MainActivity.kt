@@ -2680,8 +2680,21 @@ class NetGraphHistory {
         private set
 
     fun push(downBps: Float, upBps: Float) {
-        down[head] = downBps.coerceAtLeast(0f)
-        up[head] = upBps.coerceAtLeast(0f)
+        val rawDown = downBps.coerceAtLeast(0f)
+        val rawUp = upBps.coerceAtLeast(0f)
+
+        // Exponential smoothing dampens short packet bursts while still following
+        // sustained traffic. A fresh history starts from the first real sample.
+        if (count == 0) {
+            down[head] = rawDown
+            up[head] = rawUp
+        } else {
+            val previous = (head - 1 + size) % size
+            val alpha = 0.22f
+            down[head] = down[previous] + alpha * (rawDown - down[previous])
+            up[head] = up[previous] + alpha * (rawUp - up[previous])
+        }
+
         head = (head + 1) % size
         if (count < size) count++
 
