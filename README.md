@@ -31,6 +31,26 @@ Sorairo is a keyboard-first Android home-screen launcher inspired by Omarchy and
 - **Top bar:** clock, Wi-Fi link speed, headphones, battery, now-playing information, and a small animated visualizer.
 - **Quick settings panel:** status tiles for Wi-Fi, Bluetooth, silent mode, airplane mode, battery saver, mic, camera, and VPN, plus brightness and volume sliders.
 
+## Future Updates
+
+These are ideas for future versions, not promises that they are already implemented:
+
+- **Collapsible windows:** minimize and expand any window when needed.
+- **Interchangeable windows:** rearrange, swap, and customize windows to create a preferred layout.
+- **More flexible tabs and windows:** support opening many tabs or windows without a fixed app-imposed limit, inspired by the flexibility of Hyprland workspaces.
+- **Remembered window state:** remember where tabs/windows were opened and restore their positions and state between sessions instead of resetting everything each time.
+- **More commands:** add commands and shortcuts for faster navigation and control.
+- **More customization:** add more ways to personalize the launcher's appearance, layout, and behavior.
+- **Streaming queue integration:** where a supported streaming service exposes its queue, display that queue directly in Sorairo's built-in player.
+
+## Known Issues
+
+The bottom window/panel, including its monitor and music-player areas, is still being refined. Some bugs remain, and I plan to address them before the final v1.1.0 release.
+
+## Compatibility and Security Notice
+
+Sorairo is still under development and may not work the same way on every device or Android version. Because it is distributed outside Google Play and some features use sensitive Android permissions, Google Play Protect or a device's security software may show a warning or prevent installation. This can vary by device and build; it does not by itself prove that an app is malicious. Review the requested permissions and only install APKs from a source you trust. Do not bypass a warning unless you understand and accept the risk.
+
 ## Android limitations
 
 Android does not let ordinary third-party apps directly toggle every system setting. Some quick-settings tiles show the current state and open the corresponding Android settings screen instead. The VPN tile opens the VPN app you choose; Sorairo is not itself a VPN.
@@ -50,13 +70,21 @@ Permissions are requested when you use the matching feature.
 
 ## Install
 
-Download the APK from the [Sorairo Releases page](https://github.com/snorlaxmeow/Sorairo/releases). For development builds, open the [GitHub Actions page](https://github.com/snorlaxmeow/Sorairo/actions), select a successful **Build APK** run, and download the **Sorairo-apk** artifact.
+Download the APK from the [Sorairo Releases page](https://github.com/snorlaxmeow/Sorairo/releases). For a development build, open [GitHub Actions](https://github.com/snorlaxmeow/Sorairo/actions), select the latest successful **Build APK** run, and download its **Sorairo-apk-<run number>** artifact. That artifact is the APK produced by that exact workflow run.
+
+When a version tag such as `v1.1.0` is pushed, the workflow builds one APK file, uploads that same file as the workflow artifact, and attaches it to the matching GitHub Release. Downloading both from the same tagged run/release gives you the same APK file.
 
 After installing, press Home and choose **Sorairo** if you want to use it as your default launcher.
 
 ## Build
 
-Open the repository in Android Studio, allow Gradle to sync, and run the app. The GitHub Actions workflow also builds a debug APK using the Gradle assembleDebug task.
+Open the repository in Android Studio, allow Gradle to sync, and run the app. GitHub Actions also builds a debug APK using the Gradle `assembleDebug` task.
+
+## Developer
+
+Sorairo is developed by a 16-year-old student who is still learning to code. I rely heavily on AI coding tools such as Claude Code and OpenAI Codex to help write and understand the code, and I am still learning the fundamentals myself.
+
+Since I have school to focus on, development will mostly happen on weekends. Updates may be slow, but I'll keep working on Sorairo whenever I have time.
 
 ## Credits
 
