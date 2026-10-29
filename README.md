@@ -82,9 +82,9 @@ Open the repository in Android Studio, allow Gradle to sync, and run the app. Gi
 
 ## Developer
 
-Sorairo is developed by a 16-year-old student who is still learning to code. I rely heavily on AI coding tools such as Claude Code and OpenAI Codex to help write and understand the code, and I am still learning the fundamentals myself.
+Sorairo is an independent project maintained by its developer. AI coding tools are part of the development workflow, alongside ongoing testing, learning, and refinement.
 
-Since I have school to focus on, development will mostly happen on weekends. Updates may be slow, but I'll keep working on Sorairo whenever I have time.
+Development is ongoing, so updates may be slower during busy periods.
 
 ## Credits
 
