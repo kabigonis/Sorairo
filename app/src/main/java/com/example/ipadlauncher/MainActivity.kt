@@ -619,6 +619,7 @@ class MainActivity : AppCompatActivity() {
     private var monitorLastT = 0L
     private var monitorLastRx = 0L
     private var monitorLastTx = 0L
+    private var monitorLastSummaryT = 0L
 
     private val pickWall = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -683,13 +684,21 @@ class MainActivity : AppCompatActivity() {
 
     private val monitorTick = object : Runnable {
         override fun run() {
-            if (!activityResumed || bottomWindowFor(curWs) != "monitor") return
-            updateMonitorSummary(curWs)
+            if (!activityResumed) return
+
+            val now = SystemClock.elapsedRealtime()
+            if (bottomWindowFor(curWs) == "monitor" &&
+                (monitorLastSummaryT == 0L || now - monitorLastSummaryT >= 1000L)
+            ) {
+                updateMonitorSummary(curWs)
+                monitorLastSummaryT = now
+            }
+
             sampleMonitorNetwork()?.let { (down, up) ->
                 sharedNetHistory.push(down, up)
             }
             monitorGraphs[curWs]?.invalidate()
-            handler.postDelayed(this, 1000)
+            handler.postDelayed(this, 250)
         }
     }
 
@@ -703,14 +712,15 @@ class MainActivity : AppCompatActivity() {
         }
         if (bottomWindowFor(curWs) == "monitor") {
             stopPlayerCallbacks()
-            monitorLastT = 0L
             updateMonitorSummary(curWs)
+            monitorLastSummaryT = SystemClock.elapsedRealtime()
             monitorGraphs.forEach { it?.setColors(pal.cDim, pal.cBlue, pal.cGreen) }
-            handler.post(monitorTick)
         } else {
             updatePlayerWindow(curWs)
             startPlayerCallbacks()
         }
+        // Keep collecting network history while the player panel is visible too.
+        handler.post(monitorTick)
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
@@ -2659,7 +2669,7 @@ fun bar(pct: Int, width: Int = 12): String {
 }
 
 class NetGraphHistory {
-    val size = 60
+    val size = 120
     val down = FloatArray(size)
     val up = FloatArray(size)
     var count = 0
