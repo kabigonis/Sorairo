@@ -1023,21 +1023,15 @@ class MainActivity : AppCompatActivity() {
         root.addView(settings, FrameLayout.LayoutParams(-1, -1))
 
         fun applyAnimatedInsets(insets: WindowInsetsCompat) {
-            // Apply the IME inset continuously during the system keyboard animation.
-            // This resizes the existing two-column workspace together instead of swapping
-            // the terminal to full width or allowing the player panel to be clipped.
+            // Animate only the workspace's bottom inset with the keyboard.
+            // Do not resize the app-drawer search panel here: it is a separate overlay,
+            // and changing its height on every IME frame causes unnecessary competing
+            // layout passes while the workspace windows are already resizing.
             val stable = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars())
             val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
             val bottomInset = maxOf(stable.bottom, ime.bottom)
             if (content.paddingBottom != bottomInset + dp(12)) {
                 content.setPadding(dp(12), dp(6), dp(12), bottomInset + dp(12))
-            }
-            val avail = (dm.heightPixels - ime.bottom - panelTop - dp(16)).coerceAtLeast(dp(200))
-            val targetHeight = min((dm.heightPixels * 0.6f).toInt(), avail)
-            val params = panel.layoutParams as FrameLayout.LayoutParams
-            if (params.height != targetHeight) {
-                params.height = targetHeight
-                panel.layoutParams = params
             }
         }
 
