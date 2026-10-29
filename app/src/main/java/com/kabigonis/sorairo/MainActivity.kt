@@ -1110,7 +1110,10 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        val title = txt(12.5f, p.cBlue, "~/monitor")
+        val title = txt(
+            12.5f, p.cBlue,
+            if (bottomWindowFor(ws) == "monitor") "~/monitor" else "~/player"
+        )
         bottomWindowTitles[ws] = title
         titleRow.addView(title, LinearLayout.LayoutParams(0, -2, 1f))
 
@@ -1138,7 +1141,9 @@ class MainActivity : AppCompatActivity() {
 
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_VERTICAL
+            // Keep track metadata and controls anchored at the top of the player panel.
+            // Centering the whole content stack can push the song title off/clipped.
+            gravity = Gravity.TOP
             setPadding(0, dp(8), 0, 0)
         }
         val playerHeader = txt(10.5f, p.cBlue).apply {
