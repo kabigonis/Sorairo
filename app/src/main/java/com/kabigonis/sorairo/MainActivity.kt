@@ -76,6 +76,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsAnimationCompat
 import androidx.core.widget.doAfterTextChanged
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -1021,17 +1022,39 @@ class MainActivity : AppCompatActivity() {
         )
         root.addView(settings, FrameLayout.LayoutParams(-1, -1))
 
-        ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
-            // Stable insets: layout never shifts when the system status bar is pulled down
+        fun applyInsets(insets: WindowInsetsCompat) {
+            // Keep the existing two-column workspace and resize it with the keyboard.
+            // Interpolated IME insets below make both windows move smoothly in sync.
             val stable = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars())
             val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
             content.setPadding(dp(12), dp(6), dp(12), maxOf(stable.bottom, ime.bottom) + dp(12))
             val avail = (dm.heightPixels - ime.bottom - panelTop - dp(16)).coerceAtLeast(dp(200))
-            panel.layoutParams = (panel.layoutParams as FrameLayout.LayoutParams).apply {
-                height = min((dm.heightPixels * 0.6f).toInt(), avail)
+            val desiredHeight = min((dm.heightPixels * 0.6f).toInt(), avail)
+            val params = panel.layoutParams as FrameLayout.LayoutParams
+            if (params.height != desiredHeight) {
+                params.height = desiredHeight
+                panel.layoutParams = params
             }
+        }
+
+        ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
+            applyInsets(insets)
             insets
         }
+        ViewCompat.setWindowInsetsAnimationCallback(
+            root,
+            object : WindowInsetsAnimationCompat.Callback(
+                WindowInsetsAnimationCompat.Callback.DISPATCH_MODE_CONTINUE_ON_SUBTREE
+            ) {
+                override fun onProgress(
+                    insets: WindowInsetsCompat,
+                    runningAnimations: MutableList<WindowInsetsAnimationCompat>
+                ): WindowInsetsCompat {
+                    applyInsets(insets)
+                    return insets
+                }
+            }
+        )
 
         setContentView(root)
         updateWsBar()
