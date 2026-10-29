@@ -2679,9 +2679,28 @@ class NetGraphHistory {
     var peak = 1024f
         private set
 
+    private var smoothDown = 0f
+    private var smoothUp = 0f
+    private var hasSample = false
+
     fun push(downBps: Float, upBps: Float) {
-        down[head] = downBps.coerceAtLeast(0f)
-        up[head] = upBps.coerceAtLeast(0f)
+        val rawDown = downBps.coerceAtLeast(0f)
+        val rawUp = upBps.coerceAtLeast(0f)
+
+        // Exponential moving average keeps brief packet bursts from becoming
+        // full-height spikes, while still following sustained traffic changes.
+        val alpha = 0.22f
+        if (!hasSample) {
+            smoothDown = rawDown
+            smoothUp = rawUp
+            hasSample = true
+        } else {
+            smoothDown += (rawDown - smoothDown) * alpha
+            smoothUp += (rawUp - smoothUp) * alpha
+        }
+
+        down[head] = smoothDown
+        up[head] = smoothUp
         head = (head + 1) % size
         if (count < size) count++
 
