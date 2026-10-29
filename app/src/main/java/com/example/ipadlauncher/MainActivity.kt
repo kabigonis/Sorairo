@@ -698,7 +698,7 @@ class MainActivity : AppCompatActivity() {
                 sharedNetHistory.push(down, up)
             }
             monitorGraphs[curWs]?.invalidate()
-            handler.postDelayed(this, 250)
+            handler.postDelayed(this, 500)
         }
     }
 
@@ -2690,7 +2690,7 @@ class NetGraphHistory {
             up[head] = rawUp
         } else {
             val previous = (head - 1 + size) % size
-            val alpha = 0.22f
+            val alpha = 0.45f
             down[head] = down[previous] + alpha * (rawDown - down[previous])
             up[head] = up[previous] + alpha * (rawUp - up[previous])
         }
