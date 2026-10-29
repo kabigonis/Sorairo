@@ -19,6 +19,7 @@ import android.os.PowerManager
 import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import android.content.Context
@@ -85,6 +86,14 @@ import kotlin.math.abs
 import kotlin.math.min
 
 class MainActivity : AppCompatActivity() {
+    private companion object {
+        const val POWERAMP_PACKAGE = "com.maxmpz.audioplayer"
+        const val POWERAMP_API_COMMAND = "com.maxmpz.audioplayer.API_COMMAND"
+        const val POWERAMP_API_RECEIVER = "com.maxmpz.audioplayer.player.PowerampAPIReceiver"
+        const val POWERAMP_MODE_CHANGED = "com.maxmpz.audioplayer.PLAYING_MODE_CHANGED"
+        const val POWERAMP_EXTRA_SHUFFLE = "shuffle"
+        const val POWERAMP_EXTRA_REPEAT = "repeat"
+    }
 
     data class App(val label: String, val pkg: String)
 
@@ -252,6 +261,11 @@ class MainActivity : AppCompatActivity() {
     private val playerQueueRows = Array(5) { mutableListOf<TextView>() }
     private val playerQueueEmptyLabels = arrayOfNulls<TextView>(5)
     private val playerPlayButtons = arrayOfNulls<TextView>(5)
+    private val powerampShuffleButtons = arrayOfNulls<TextView>(5)
+    private val powerampRepeatButtons = arrayOfNulls<TextView>(5)
+    private var powerampShuffleMode = 0
+    private var powerampRepeatMode = 0
+    private var powerampModeReceiver: android.content.BroadcastReceiver? = null
     private val playerProgressBars = arrayOfNulls<android.widget.ProgressBar>(5)
     private val monitorSummaries = arrayOfNulls<TextView>(5)
     private val monitorGraphs = arrayOfNulls<NetGraphView>(5)
@@ -297,6 +311,7 @@ class MainActivity : AppCompatActivity() {
 
 
     private fun stopPlayerCallbacks() {
+        unregisterPowerampModeReceiver()
         val controller = listeningController
         val callback = playerCallback
         if (controller != null && callback != null) {
@@ -308,6 +323,114 @@ class MainActivity : AppCompatActivity() {
         listeningController = null
         playerCallback = null
         handler.removeCallbacks(playerRefresh)
+    }
+
+    private fun unregisterPowerampModeReceiver() {
+        val receiver = powerampModeReceiver ?: return
+        try {
+            unregisterReceiver(receiver)
+        } catch (_: Exception) {
+        } finally {
+            powerampModeReceiver = null
+        }
+    }
+
+    private fun registerPowerampModeReceiverIfNeeded(controller: MediaController?) {
+        if (!activityResumed || bottomWindowFor(curWs) != "player" ||
+            controller?.packageName != POWERAMP_PACKAGE
+        ) {
+            unregisterPowerampModeReceiver()
+            return
+        }
+        if (powerampModeReceiver != null) return
+        try {
+            val receiver = object : android.content.BroadcastReceiver() {
+                override fun onReceive(context: Context?, intent: Intent?) {
+                    try {
+                        if (intent?.action != POWERAMP_MODE_CHANGED) return
+                        if (intent.hasExtra(POWERAMP_EXTRA_SHUFFLE)) {
+                            val mode = intent.getIntExtra(POWERAMP_EXTRA_SHUFFLE, powerampShuffleMode)
+                            if (mode in 0..4) powerampShuffleMode = mode
+                        }
+                        if (intent.hasExtra(POWERAMP_EXTRA_REPEAT)) {
+                            powerampRepeatMode = intent.getIntExtra(POWERAMP_EXTRA_REPEAT, powerampRepeatMode)
+                                .coerceIn(0, 5)
+                        }
+                        updatePowerampButtons(curWs)
+                    } catch (_: Exception) {
+                        Toast.makeText(this@MainActivity, "Poweramp state unavailable", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            val sticky = ContextCompat.registerReceiver(
+                this,
+                receiver,
+                IntentFilter(POWERAMP_MODE_CHANGED),
+                ContextCompat.RECEIVER_EXPORTED
+            )
+            powerampModeReceiver = receiver
+            if (sticky != null) {
+                if (sticky.hasExtra(POWERAMP_EXTRA_SHUFFLE)) {
+                    val mode = sticky.getIntExtra(POWERAMP_EXTRA_SHUFFLE, powerampShuffleMode)
+                    if (mode in 0..4) powerampShuffleMode = mode
+                }
+                if (sticky.hasExtra(POWERAMP_EXTRA_REPEAT)) {
+                    powerampRepeatMode = sticky.getIntExtra(POWERAMP_EXTRA_REPEAT, powerampRepeatMode).coerceIn(0, 5)
+                }
+            }
+            updatePowerampButtons(curWs)
+        } catch (_: Exception) {
+            powerampModeReceiver = null
+            Toast.makeText(this, "Poweramp state unavailable", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun powerampShuffleLabel(mode: Int): String = when (mode) {
+        0 -> "none"
+        1 -> "all"
+        2 -> "songs"
+        3 -> "cats"
+        4 -> "songs+cats"
+        else -> "none"
+    }
+
+    private fun powerampRepeatLabel(mode: Int): String = when (mode) {
+        0 -> "none"
+        1 -> "on"
+        2 -> "advance"
+        3 -> "song"
+        4 -> "single"
+        5 -> "advance+stop"
+        else -> "none"
+    }
+
+    private fun updatePowerampButtons(ws: Int) {
+        val visible = ctrl?.packageName == POWERAMP_PACKAGE &&
+            activityResumed && bottomWindowFor(curWs) == "player"
+        powerampShuffleButtons[ws]?.apply {
+            visibility = if (visible) View.VISIBLE else View.GONE
+            text = "shuffle: ${powerampShuffleLabel(powerampShuffleMode)}"
+            setTextColor(if (powerampShuffleMode != 0) pal.cAccent else pal.cDim)
+        }
+        powerampRepeatButtons[ws]?.apply {
+            visibility = if (visible) View.VISIBLE else View.GONE
+            text = "repeat: ${powerampRepeatLabel(powerampRepeatMode)}"
+            setTextColor(if (powerampRepeatMode != 0) pal.cAccent else pal.cDim)
+        }
+    }
+
+    private fun sendPowerampModeCommand(command: Int, extra: String, mode: Int, label: String) {
+        try {
+            val intent = Intent(POWERAMP_API_COMMAND).setComponent(
+                ComponentName(POWERAMP_PACKAGE, POWERAMP_API_RECEIVER)
+            ).putExtra("cmd", command).putExtra(extra, mode)
+            sendBroadcast(intent)
+            if (extra == POWERAMP_EXTRA_SHUFFLE) powerampShuffleMode = mode
+            else powerampRepeatMode = mode
+            updatePowerampButtons(curWs)
+        } catch (_: Exception) {
+            Toast.makeText(this, "Poweramp $label failed", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun updatePlayerWindow(ws: Int) {
@@ -333,6 +456,7 @@ class MainActivity : AppCompatActivity() {
 
         val details = lastSongDetails.split("\n", limit = 2)
         playerStatuses[ws]?.text = playback
+        updatePowerampButtons(ws)
         playerPlayButtons[ws]?.text =
             if (state == PlaybackState.STATE_PLAYING) "pause" else "play"
 
@@ -475,6 +599,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         ctrl = controller
+        registerPowerampModeReceiverIfNeeded(controller)
         updatePlayerWindow(curWs)
         handler.removeCallbacks(playerRefresh)
         handler.postDelayed(playerRefresh, 1000)
@@ -1078,6 +1203,73 @@ class MainActivity : AppCompatActivity() {
             },
             LinearLayout.LayoutParams(dp(48), dp(48))
         )
+
+        val shuffleButton = txt(9.5f, p.cDim, "shuffle: none").apply {
+            gravity = Gravity.CENTER
+            minWidth = dp(48)
+            minHeight = dp(48)
+            maxLines = 2
+            setPadding(dp(2), 0, dp(2), 0)
+            visibility = View.GONE
+            setOnClickListener {
+                try {
+                    if (ctrl?.packageName != POWERAMP_PACKAGE) return@setOnClickListener
+                    val next = if (powerampShuffleMode == 0) 2 else 0
+                    sendPowerampModeCommand(9, POWERAMP_EXTRA_SHUFFLE, next, "shuffle")
+                } catch (_: Exception) {
+                    Toast.makeText(this@MainActivity, "Poweramp shuffle failed", Toast.LENGTH_SHORT).show()
+                }
+            }
+            setOnLongClickListener {
+                try {
+                    if (ctrl?.packageName != POWERAMP_PACKAGE) return@setOnLongClickListener true
+                    val next = (powerampShuffleMode + 1) % 5
+                    sendPowerampModeCommand(9, POWERAMP_EXTRA_SHUFFLE, next, "shuffle")
+                    Toast.makeText(this@MainActivity, "Shuffle: ${powerampShuffleLabel(next)}", Toast.LENGTH_SHORT).show()
+                } catch (_: Exception) {
+                    Toast.makeText(this@MainActivity, "Poweramp shuffle failed", Toast.LENGTH_SHORT).show()
+                }
+                true
+            }
+        }
+        powerampShuffleButtons[ws] = shuffleButton
+        controls.addView(shuffleButton, LinearLayout.LayoutParams(0, dp(48), 1f))
+
+        val repeatButton = txt(9.5f, p.cDim, "repeat: none").apply {
+            gravity = Gravity.CENTER
+            minWidth = dp(48)
+            minHeight = dp(48)
+            maxLines = 2
+            setPadding(dp(2), 0, dp(2), 0)
+            visibility = View.GONE
+            setOnClickListener {
+                try {
+                    if (ctrl?.packageName != POWERAMP_PACKAGE) return@setOnClickListener
+                    val next = when (powerampRepeatMode) {
+                        0 -> 1
+                        1 -> 3
+                        3 -> 0
+                        else -> 0
+                    }
+                    sendPowerampModeCommand(8, POWERAMP_EXTRA_REPEAT, next, "repeat")
+                } catch (_: Exception) {
+                    Toast.makeText(this@MainActivity, "Poweramp repeat failed", Toast.LENGTH_SHORT).show()
+                }
+            }
+            setOnLongClickListener {
+                try {
+                    if (ctrl?.packageName != POWERAMP_PACKAGE) return@setOnLongClickListener true
+                    val next = (powerampRepeatMode + 1) % 6
+                    sendPowerampModeCommand(8, POWERAMP_EXTRA_REPEAT, next, "repeat")
+                    Toast.makeText(this@MainActivity, "Repeat: ${powerampRepeatLabel(next)}", Toast.LENGTH_SHORT).show()
+                } catch (_: Exception) {
+                    Toast.makeText(this@MainActivity, "Poweramp repeat failed", Toast.LENGTH_SHORT).show()
+                }
+                true
+            }
+        }
+        powerampRepeatButtons[ws] = repeatButton
+        controls.addView(repeatButton, LinearLayout.LayoutParams(0, dp(48), 1f))
 
         content.addView(
             controls,
