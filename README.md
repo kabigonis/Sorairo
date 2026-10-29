@@ -6,17 +6,17 @@ Sorairo is a keyboard-first Android home-screen launcher inspired by Omarchy and
 
 ## Screenshots
 
-| Home workspace | App drawer and search |
+| Home workspace — System monitor | Home workspace — Music player |
 |---|---|
-| ![Sorairo home workspace](docs/screenshots/home-screen.png) | ![Sorairo app drawer](docs/screenshots/app-drawer.png) |
+| ![Sorairo home workspace with system monitor graph](docs/screenshots/home-screen-graph.png) | ![Sorairo home workspace with music player](docs/screenshots/home-screen-music.png) |
 
-| Quick settings | Keyboard launch |
+| App drawer and search | Quick settings |
 |---|---|
-| ![Sorairo quick settings panel](docs/screenshots/quick-settings.png) | ![Sorairo keyboard app search](docs/screenshots/keyboard-launch.png) |
+| ![Sorairo app drawer](docs/screenshots/app-drawer.png) | ![Sorairo quick settings panel](docs/screenshots/quick-settings.png) |
 
-| Settings |
-|---|
-| ![Sorairo settings](docs/screenshots/settings.png) |
+| Keyboard launch | Settings |
+|---|---|
+| ![Sorairo keyboard app search](docs/screenshots/keyboard-launch.png) | ![Sorairo settings](docs/screenshots/settings.png) |
 
 ## Features
 
