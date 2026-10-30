@@ -49,9 +49,11 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.os.UserHandle
 import android.os.StatFs
 import android.os.SystemClock
 import android.text.InputType
+import android.text.Normalizer
 import android.text.Spannable
 import android.text.SpannableStringBuilder
 import android.text.Spanned
@@ -614,7 +616,7 @@ class MainActivity : AppCompatActivity() {
 
     private var askedWrite = false
 
-    private var autoRun: Runnable? = null
+    private var autoLaunchedQuery: String? = null
 
     // network speed state
     private var lastT = 0L
@@ -942,24 +944,25 @@ class MainActivity : AppCompatActivity() {
             imeOptions = EditorInfo.IME_ACTION_GO
             setPadding(dp(4), dp(8), dp(4), dp(12))
             setOnEditorActionListener { _, _, _ ->
-                adapter.items.firstOrNull()?.let { launchApp(it) }
+                if (adapter.items.isEmpty()) {
+                    val query = text.toString().trim()
+                    if (query.isNotEmpty()) {
+                        try {
+                            startActivity(Intent(Intent.ACTION_WEB_SEARCH).putExtra("query", query))
+                        } catch (_: Exception) {
+                            Toast.makeText(this@MainActivity, "No app found", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } else {
+                    launchApp(adapter.items.first())
+                }
                 true
             }
-            doAfterTextChanged { t ->
-                val q = t?.toString()?.trim().orEmpty()
-                adapter.items = matches(q)
+            doAfterTextChanged { editable ->
+                val query = editable?.toString().orEmpty()
+                adapter.items = matches(query)
                 adapter.notifyDataSetChanged()
-                autoRun?.let { handler.removeCallbacks(it) }
-                if (q.length >= 2 && adapter.items.size == 1) {
-                    val app = adapter.items[0]
-                    val r = Runnable {
-                        if (drawer.visibility == View.VISIBLE &&
-                            adapter.items.size == 1 && adapter.items[0] == app
-                        ) launchApp(app)
-                    }
-                    autoRun = r
-                    handler.postDelayed(r, 400)
-                }
+                autoLaunchSearchResult(query)
             }
         }
         adapter.items = apps
@@ -2484,24 +2487,37 @@ class MainActivity : AppCompatActivity() {
         return 0
     }
 
+    // Olauncher GPL-3.0 app-label filtering, adapted to Sorairo's App model.
+    private val searchSeparators = Regex("[-_+,.\\x60'\\s\\p{Z}]")
+    private val searchDiacritics = Regex("\\p{InCombiningDiacriticalMarks}+")
+
+    private fun normalizeAppSearch(value: CharSequence): String =
+        Normalizer.normalize(value, Normalizer.Form.NFD)
+            .replace(searchDiacritics, "")
+            .replace(searchSeparators, "")
+
     private fun matches(query: String): List<App> {
-        val q = query.trim().lowercase()
-        if (q.isEmpty()) return apps
-
-        fun rank(label: String): Int = when {
-            label.startsWith(q) -> 0
-            label.split(Regex("[\\s._-]+")).any { it.startsWith(q) } -> 1
-            label.contains(q) -> 2
-            else -> -1
+        if (query.isBlank()) return apps
+        val normalizedQuery = normalizeAppSearch(query)
+        return apps.filter { app ->
+            val label = displayAppLabel(app)
+            label.contains(query.trim(), ignoreCase = true) ||
+                (normalizedQuery.isNotEmpty() &&
+                    normalizeAppSearch(label).contains(normalizedQuery, ignoreCase = true))
         }
+    }
 
-        return apps.map { it to rank(displayAppLabel(it).lowercase()) }
-            .filter { it.second >= 0 }
-            .sortedWith(
-                compareBy<Pair<App, Int>> { it.second }
-                    .thenBy { it.first.label.lowercase() }
-            )
-            .map { it.first }
+    // Olauncher-style: launch a unique match once per query after filtering completes.
+    private fun autoLaunchSearchResult(query: String) {
+        if (query == autoLaunchedQuery) return
+        autoLaunchedQuery = null
+        if (query.isBlank() || query.startsWith("!") || adapter.items.size != 1 ||
+            drawer.visibility != View.VISIBLE
+        ) return
+        val app = adapter.items.first()
+        if (app.pkg.isBlank()) return
+        autoLaunchedQuery = query
+        launchApp(app)
     }
 
     private fun displayAppLabel(app: App): String = prefs.getString("app_name_${app.pkg}", null)?.takeIf { it.isNotBlank() } ?: app.label
