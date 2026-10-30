@@ -250,6 +250,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var setScroll: ScrollView
     private val adapter = RowAdapter()
     private var selectedDrawerApp: App? = null
+    private var activeDrawerActionHolder: RowAdapter.VH? = null
 
     private val history = Array(5) { SpannableStringBuilder() }
     private val outViews = arrayOfNulls<TextView>(5)
@@ -2505,14 +2506,17 @@ class MainActivity : AppCompatActivity() {
 
     private fun displayAppLabel(app: App): String = prefs.getString("app_name_${app.pkg}", null)?.takeIf { it.isNotBlank() } ?: app.label
 
-    private fun beginDrawerAppActions(app: App) {
+    private fun beginDrawerAppActions(app: App, holder: RowAdapter.VH) {
+        if (activeDrawerActionHolder !== holder) activeDrawerActionHolder?.hideActions()
         selectedDrawerApp = app
-        adapter.notifyDataSetChanged()
+        activeDrawerActionHolder = holder
+        holder.showActions()
     }
 
     private fun endDrawerAppActions() {
         selectedDrawerApp = null
-        adapter.notifyDataSetChanged()
+        activeDrawerActionHolder?.hideActions()
+        activeDrawerActionHolder = null
     }
 
     private fun addDrawerAction(bar: LinearLayout, label: String, glyph: String, onClick: () -> Unit) {
@@ -2542,7 +2546,7 @@ class MainActivity : AppCompatActivity() {
                 endDrawerAppActions()
             }
             "Rename" -> showRenameDialog(app)
-            "Hide" -> { toggleHidden(app); endDrawerAppActions() }
+            "Hide" -> { endDrawerAppActions(); toggleHidden(app) }
             "Info" -> {
                 try { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${app.pkg}"))) }
                 catch (_: Exception) { Toast.makeText(this, "Unable to open app info", Toast.LENGTH_SHORT).show() }
@@ -2665,29 +2669,38 @@ class MainActivity : AppCompatActivity() {
             val actions: LinearLayout
         ) : RecyclerView.ViewHolder(row) {
             var boundPackage: String? = null
-            var boundSelected: Boolean = false
+
+            // Olauncher toggles visibility on the existing ViewHolder itself.
+            fun showActions() {
+                name.visibility = View.INVISIBLE
+                actions.visibility = View.VISIBLE
+            }
+
+            fun hideActions() {
+                actions.visibility = View.GONE
+                name.visibility = View.VISIBLE
+            }
         }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
             val row = FrameLayout(parent.context).apply {
                 layoutParams = RecyclerView.LayoutParams(-1, -2)
-                // Match Olauncher's adapter_app_drawer.xml: animateLayoutChanges on
-                // the row cross-fades the app title and its contextual action strip.
                 layoutTransition = LayoutTransition()
             }
             val name = txt(16f, pal.cFg).apply {
                 setPadding(dp(10), dp(11), dp(10), dp(11))
                 maxLines = 1
                 ellipsize = TextUtils.TruncateAt.END
-                layoutParams = FrameLayout.LayoutParams(-1, dp(48), Gravity.CENTER_VERTICAL)
+                layoutParams = FrameLayout.LayoutParams(-1, -2, Gravity.CENTER_VERTICAL)
             }
             val actions = LinearLayout(parent.context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER
                 visibility = View.GONE
+                isClickable = true
+                isFocusable = true
                 setPadding(dp(4), 0, dp(4), 0)
-                layoutParams = FrameLayout.LayoutParams(-1, dp(48), Gravity.CENTER_VERTICAL)
-                // Olauncher's appHideLayout also has animateLayoutChanges enabled.
+                layoutParams = FrameLayout.LayoutParams(-1, FrameLayout.LayoutParams.MATCH_PARENT, Gravity.CENTER_VERTICAL)
                 layoutTransition = LayoutTransition()
             }
             row.addView(name)
@@ -2698,31 +2711,42 @@ class MainActivity : AppCompatActivity() {
         override fun onBindViewHolder(h: VH, i: Int) {
             val app = items[i]
             val selected = selectedDrawerApp?.pkg == app.pkg
+
+            if (h.boundPackage != app.pkg) {
+                h.actions.removeAllViews()
+                addDrawerAction(h.actions, "Uninstall", "▣") { runDrawerAction(app, "Uninstall") }
+                addDrawerAction(h.actions, "Rename", "✎") { runDrawerAction(app, "Rename") }
+                addDrawerAction(h.actions, "Hide", "◉") { runDrawerAction(app, "Hide") }
+                addDrawerAction(h.actions, "Info", "ⓘ") { runDrawerAction(app, "Info") }
+                addDrawerAction(h.actions, "Close", "×") { runDrawerAction(app, "Close") }
+                h.boundPackage = app.pkg
+            }
+
             h.name.text = displayAppLabel(app)
             h.name.setTextColor(if (app.pkg in pins(curWs)) pal.cAccent else pal.cFg)
             h.name.setBackgroundColor(if (i == 0) pal.cSel else Color.TRANSPARENT)
             h.name.setOnClickListener { launchApp(app) }
-            h.name.setOnLongClickListener { beginDrawerAppActions(app); true }
-
-            // Only rebuild the action strip when this holder changes app/selection.
-            // Rebinding an unchanged row must not restart its layout transition.
-            if (h.boundPackage != app.pkg || h.boundSelected != selected) {
-                h.actions.removeAllViews()
-                if (selected) {
-                    addDrawerAction(h.actions, "Uninstall", "▣") { runDrawerAction(app, "Uninstall") }
-                    addDrawerAction(h.actions, "Rename", "✎") { runDrawerAction(app, "Rename") }
-                    addDrawerAction(h.actions, "Hide", "◉") { runDrawerAction(app, "Hide") }
-                    addDrawerAction(h.actions, "Info", "ⓘ") { runDrawerAction(app, "Info") }
-                    addDrawerAction(h.actions, "Close", "×") { runDrawerAction(app, "Close") }
-                }
-                h.boundPackage = app.pkg
-                h.boundSelected = selected
+            h.name.setOnLongClickListener {
+                beginDrawerAppActions(app, h)
+                true
             }
 
-            // INVISIBLE preserves the title's row bounds while the options fade in,
-            // exactly like Olauncher's appTitle/appHideLayout visibility swap.
-            h.name.visibility = if (selected) View.INVISIBLE else View.VISIBLE
-            h.actions.visibility = if (selected) View.VISIBLE else View.GONE
+            if (selected) {
+                activeDrawerActionHolder = h
+                h.showActions()
+            } else {
+                if (activeDrawerActionHolder === h) activeDrawerActionHolder = null
+                h.hideActions()
+            }
+        }
+
+        override fun onViewRecycled(holder: VH) {
+            if (activeDrawerActionHolder === holder) {
+                activeDrawerActionHolder = null
+                selectedDrawerApp = null
+            }
+            holder.hideActions()
+            super.onViewRecycled(holder)
         }
 
         override fun getItemCount() = items.size
