@@ -1,6 +1,7 @@
 package com.kabigonis.sorairo
 
 import android.animation.ArgbEvaluator
+import android.animation.LayoutTransition
 import android.animation.ValueAnimator
 import android.app.ActivityManager
 import android.app.NotificationManager
@@ -72,6 +73,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -247,6 +249,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var setBox: LinearLayout
     private lateinit var setScroll: ScrollView
     private val adapter = RowAdapter()
+    private var selectedDrawerApp: App? = null
+    private var activeDrawerActionHolder: RowAdapter.VH? = null
 
     private val history = Array(5) { SpannableStringBuilder() }
     private val outViews = arrayOfNulls<TextView>(5)
@@ -1524,7 +1528,9 @@ class MainActivity : AppCompatActivity() {
             setWindowFocus(ws, 1, term, pinWin)
         }
         setWindowFocus(ws, focusedWindow[ws], term, pinWin)
-        pinWin.addView(txt(13f, p.cBlue, "~/pinned"))
+        val pinTitle = txt(13f, p.cBlue, "~/pinned")
+        pinTitle.setOnLongClickListener { showPinnedPicker(ws); true }
+        pinWin.addView(pinTitle)
         val pinList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         pinBoxes[ws] = pinList
         pinWin.addView(pinList, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(10) })
@@ -1794,23 +1800,48 @@ class MainActivity : AppCompatActivity() {
         sb.add("\ntype help for commands\n", p.cDim)
     }
 
+    private fun showPinnedPicker(ws: Int) {
+        closeQs()
+        fillPinnedPicker(ws)
+        setScroll.scrollTo(0, 0)
+        showOverlay()
+    }
+
+    private fun fillPinnedPicker(ws: Int) {
+        val p = pal
+        setBox.removeAllViews()
+        setBox.addView(txt(15f, p.cBlue, "~/pinned"))
+        setBox.addView(txt(11f, p.cDim, "pick the apps pinned to workspace ${ws + 1}").apply { setPadding(0, dp(2), 0, dp(6)) })
+        setBox.addView(txt(14f, p.cAccent, "← back").apply {
+            setPadding(0, dp(8), 0, dp(8))
+            setOnClickListener { closeSettings() }
+        })
+        allApps.forEach { app ->
+            val chosen = app.pkg in pins(ws)
+            setBox.addView(txt(14f, if (chosen) p.cAccent else p.cFg, displayAppLabel(app)).apply {
+                setPadding(0, dp(9), 0, dp(9))
+                setOnClickListener { togglePin(ws, app); fillPinnedPicker(ws) }
+            })
+        }
+    }
+
     private fun fillPins(ws: Int) {
         val p = pal
         val list = pinBoxes[ws] ?: return
         list.removeAllViews()
-        val pinned = pins(ws).mapNotNull { k -> apps.find { it.pkg == k } }
+        val pinned = pins(ws).mapNotNull { k -> allApps.find { it.pkg == k } }
 
         if (pinned.isEmpty()) {
             list.addView(
                 txt(
                     12.5f, p.cDim,
-                    "nothing pinned yet.\nterminal: pin <app>\ndrawer: long-press an app"
+                    "nothing pinned yet.\nlong-press ~/pinned to choose apps"
                 ).apply { setOnLongClickListener { showSettings(); true } }
             )
         } else {
             pinned.forEach { app ->
                 list.addView(
-                    txt(16f, p.cFg, app.label).apply {
+                    txt(16f, p.cFg, displayAppLabel(app)).apply {
                         setPadding(0, dp(9), 0, dp(9))
                         maxLines = 1
                         ellipsize = TextUtils.TruncateAt.END
@@ -1822,7 +1853,7 @@ class MainActivity : AppCompatActivity() {
                             }
                             launchApp(app)
                         }
-                        setOnLongClickListener { togglePin(ws, app); true }
+                        setOnLongClickListener { true }
                     }
                 )
             }
@@ -1927,7 +1958,7 @@ class MainActivity : AppCompatActivity() {
         allApps.forEach { app ->
             val chosen = app.pkg == prefs.getString("vpn_pkg", null)
             setBox.addView(
-                txt(14f, if (chosen) p.cAccent else p.cFg, app.label).apply {
+                txt(14f, if (chosen) p.cAccent else p.cFg, displayAppLabel(app)).apply {
                     setPadding(0, dp(9), 0, dp(9))
                     setOnClickListener {
                         prefs.edit().putString("vpn_pkg", app.pkg).apply()
@@ -2264,7 +2295,10 @@ class MainActivity : AppCompatActivity() {
         apps = visibleApps()
         adapter.items = apps
         adapter.notifyDataSetChanged()
-        for (i in 0..4) fillPins(i)
+        for (i in 0..4) {
+            fillPins(i)
+            refreshFetch(i)
+        }
     }
 
     // ================= terminal =================
@@ -2461,13 +2495,126 @@ class MainActivity : AppCompatActivity() {
             else -> -1
         }
 
-        return apps.map { it to rank(it.label.lowercase()) }
+        return apps.map { it to rank(displayAppLabel(it).lowercase()) }
             .filter { it.second >= 0 }
             .sortedWith(
                 compareBy<Pair<App, Int>> { it.second }
                     .thenBy { it.first.label.lowercase() }
             )
             .map { it.first }
+    }
+
+    private fun displayAppLabel(app: App): String = prefs.getString("app_name_${app.pkg}", null)?.takeIf { it.isNotBlank() } ?: app.label
+
+    private fun beginDrawerAppActions(app: App, holder: RowAdapter.VH) {
+        if (activeDrawerActionHolder !== holder) activeDrawerActionHolder?.hideActions()
+        selectedDrawerApp = app
+        activeDrawerActionHolder = holder
+        holder.showActions()
+    }
+
+    private fun endDrawerAppActions() {
+        selectedDrawerApp = null
+        activeDrawerActionHolder?.hideActions()
+        activeDrawerActionHolder = null
+    }
+
+    private fun addDrawerAction(bar: LinearLayout, label: String, glyph: String, onClick: () -> Unit) {
+        bar.addView(
+            txt(10f, pal.cFg, "$glyph\n$label").apply {
+                gravity = Gravity.CENTER
+                contentDescription = label
+                setPadding(dp(2), dp(2), dp(2), dp(2))
+                setOnClickListener { onClick() }
+            },
+            LinearLayout.LayoutParams(0, -1, 1f)
+        )
+    }
+
+    private fun runDrawerAction(app: App, action: String) {
+        when (action) {
+            "Uninstall" -> {
+                try {
+                    val uninstall = Intent(
+                        Intent.ACTION_UNINSTALL_PACKAGE,
+                        Uri.parse("package:${app.pkg}")
+                    ).putExtra(Intent.EXTRA_RETURN_RESULT, true)
+                    startActivity(uninstall)
+                } catch (_: Exception) {
+                    Toast.makeText(this, "Unable to open uninstall screen", Toast.LENGTH_SHORT).show()
+                }
+                endDrawerAppActions()
+            }
+            "Rename" -> showRenameDialog(app)
+            "Hide" -> { endDrawerAppActions(); toggleHidden(app) }
+            "Info" -> {
+                try { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${app.pkg}"))) }
+                catch (_: Exception) { Toast.makeText(this, "Unable to open app info", Toast.LENGTH_SHORT).show() }
+                endDrawerAppActions()
+            }
+            "Close" -> endDrawerAppActions()
+        }
+    }
+
+    private fun showRenameDialog(app: App) {
+        val p = pal
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = box(p.cBg, p.cAccent)
+            setPadding(dp(18), dp(16), dp(18), dp(12))
+        }
+        content.addView(
+            txt(15f, p.cBlue, "~/rename-app").apply {
+                setPadding(0, 0, 0, dp(12))
+            }
+        )
+        val edit = EditText(this).apply {
+            setSingleLine(true)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            setText(displayAppLabel(app))
+            setSelection(text.length)
+            setTextColor(p.cFg)
+            setHintTextColor(p.cDim)
+            typeface = font
+            textSize = 15f
+            background = box(p.cBg, p.cDim)
+            setPadding(dp(10), dp(9), dp(10), dp(9))
+            hint = "App name"
+        }
+        content.addView(edit, LinearLayout.LayoutParams(-1, -2))
+        val buttons = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            setPadding(0, dp(12), 0, 0)
+        }
+        fun dialogButton(label: String, color: Int, onClick: () -> Unit) {
+            buttons.addView(
+                txt(12f, color, label).apply {
+                    gravity = Gravity.CENTER
+                    setPadding(dp(12), dp(10), dp(8), dp(10))
+                    setOnClickListener { onClick() }
+                }
+            )
+        }
+        val dialog = AlertDialog.Builder(this).setView(content).create()
+        dialogButton("CANCEL", p.cDim) { dialog.dismiss() }
+        dialogButton("SAVE", p.cAccent) {
+            val name = edit.text.toString().trim()
+            if (name.isNotEmpty()) {
+                prefs.edit().putString("app_name_${app.pkg}", name).apply()
+                adapter.notifyDataSetChanged()
+                endDrawerAppActions()
+            }
+            dialog.dismiss()
+        }
+        content.addView(buttons, LinearLayout.LayoutParams(-1, -2))
+        dialog.show()
+        dialog.window?.apply {
+            setBackgroundDrawableResource(android.R.color.transparent)
+            setLayout(min(dp(520), resources.displayMetrics.widthPixels - dp(48)), -2)
+            setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
+        }
+        edit.requestFocus()
     }
 
     private fun launchApp(app: App) {
@@ -2505,6 +2652,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun closeDrawer() {
         autoRun?.let { handler.removeCallbacks(it) }
+        endDrawerAppActions()
         if (drawer.visibility != View.VISIBLE) return
         (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager)
             .hideSoftInputFromWindow(search.windowToken, 0)
@@ -2515,33 +2663,90 @@ class MainActivity : AppCompatActivity() {
     inner class RowAdapter : RecyclerView.Adapter<RowAdapter.VH>() {
         var items: List<App> = emptyList()
 
-        inner class VH(val t: TextView) : RecyclerView.ViewHolder(t)
+        inner class VH(
+            val row: FrameLayout,
+            val name: TextView,
+            val actions: LinearLayout
+        ) : RecyclerView.ViewHolder(row) {
+            var boundPackage: String? = null
+
+            // Olauncher toggles visibility on the existing ViewHolder itself.
+            fun showActions() {
+                name.visibility = View.INVISIBLE
+                actions.visibility = View.VISIBLE
+            }
+
+            fun hideActions() {
+                actions.visibility = View.GONE
+                name.visibility = View.VISIBLE
+            }
+        }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
-            val t = txt(16f, pal.cFg).apply {
+            val row = FrameLayout(parent.context).apply {
+                layoutParams = RecyclerView.LayoutParams(-1, -2)
+                layoutTransition = LayoutTransition()
+            }
+            val name = txt(16f, pal.cFg).apply {
                 setPadding(dp(10), dp(11), dp(10), dp(11))
                 maxLines = 1
                 ellipsize = TextUtils.TruncateAt.END
-                layoutParams = RecyclerView.LayoutParams(-1, -2)
+                layoutParams = FrameLayout.LayoutParams(-1, -2, Gravity.CENTER_VERTICAL)
             }
-            return VH(t)
+            val actions = LinearLayout(parent.context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+                visibility = View.GONE
+                isClickable = true
+                isFocusable = true
+                setPadding(dp(4), 0, dp(4), 0)
+                layoutParams = FrameLayout.LayoutParams(-1, FrameLayout.LayoutParams.MATCH_PARENT, Gravity.CENTER_VERTICAL)
+                layoutTransition = LayoutTransition()
+            }
+            row.addView(name)
+            row.addView(actions)
+            return VH(row, name, actions)
         }
 
         override fun onBindViewHolder(h: VH, i: Int) {
             val app = items[i]
-            h.t.text = app.label
-            h.t.setTextColor(if (app.pkg in pins(curWs)) pal.cAccent else pal.cFg)
-            h.t.setBackgroundColor(if (i == 0) pal.cSel else Color.TRANSPARENT)
-            h.t.setOnClickListener { launchApp(app) }
-            h.t.setOnLongClickListener {
-                val added = togglePin(curWs, app)
-                Toast.makeText(
-                    this@MainActivity,
-                    (if (added) "Pinned " else "Unpinned ") + app.label + " (workspace ${curWs + 1})",
-                    Toast.LENGTH_SHORT
-                ).show()
+            val selected = selectedDrawerApp?.pkg == app.pkg
+
+            if (h.boundPackage != app.pkg) {
+                h.actions.removeAllViews()
+                addDrawerAction(h.actions, "Uninstall", "▣") { runDrawerAction(app, "Uninstall") }
+                addDrawerAction(h.actions, "Rename", "✎") { runDrawerAction(app, "Rename") }
+                addDrawerAction(h.actions, "Hide", "◉") { runDrawerAction(app, "Hide") }
+                addDrawerAction(h.actions, "Info", "ⓘ") { runDrawerAction(app, "Info") }
+                addDrawerAction(h.actions, "Close", "×") { runDrawerAction(app, "Close") }
+                h.boundPackage = app.pkg
+            }
+
+            h.name.text = displayAppLabel(app)
+            h.name.setTextColor(if (app.pkg in pins(curWs)) pal.cAccent else pal.cFg)
+            h.name.setBackgroundColor(if (i == 0) pal.cSel else Color.TRANSPARENT)
+            h.name.setOnClickListener { launchApp(app) }
+            h.name.setOnLongClickListener {
+                beginDrawerAppActions(app, h)
                 true
             }
+
+            if (selected) {
+                activeDrawerActionHolder = h
+                h.showActions()
+            } else {
+                if (activeDrawerActionHolder === h) activeDrawerActionHolder = null
+                h.hideActions()
+            }
+        }
+
+        override fun onViewRecycled(holder: VH) {
+            if (activeDrawerActionHolder === holder) {
+                activeDrawerActionHolder = null
+                selectedDrawerApp = null
+            }
+            holder.hideActions()
+            super.onViewRecycled(holder)
         }
 
         override fun getItemCount() = items.size
