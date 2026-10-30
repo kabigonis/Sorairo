@@ -1851,6 +1851,7 @@ class MainActivity : AppCompatActivity() {
                             }
                             launchApp(app)
                         }
+                        setOnLongClickListener { true }
                     }
                 )
             }
@@ -2512,7 +2513,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun addDrawerAction(bar: LinearLayout, label: String, glyph: String, onClick: () -> Unit) {
         bar.addView(
-            txt(10f, pal.cFg, "$glyph\\n$label").apply {
+            txt(10f, pal.cFg, "$glyph\n$label").apply {
                 gravity = Gravity.CENTER
                 setPadding(dp(2), dp(2), dp(2), dp(2))
                 setOnClickListener { onClick() }
