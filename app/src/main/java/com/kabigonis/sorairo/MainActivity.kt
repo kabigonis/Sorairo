@@ -66,6 +66,7 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -994,7 +995,10 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(2), 0, dp(2), dp(8))
         }
-        panel.addView(drawerPinnedApps, LinearLayout.LayoutParams(-1, -2))
+        panel.addView(HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(drawerPinnedApps, ViewGroup.LayoutParams(-2, -2))
+        }, LinearLayout.LayoutParams(-1, -2))
         panel.addView(View(this).apply { setBackgroundColor(p.cDim) }, LinearLayout.LayoutParams(-1, dp(1)))
         panel.addView(list, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(6) })
         refreshDrawerPins()
