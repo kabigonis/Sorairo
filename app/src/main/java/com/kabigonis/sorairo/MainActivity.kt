@@ -1,6 +1,7 @@
 package com.kabigonis.sorairo
 
 import android.animation.ArgbEvaluator
+import android.animation.LayoutTransition
 import android.animation.ValueAnimator
 import android.app.ActivityManager
 import android.app.NotificationManager
@@ -2658,29 +2659,39 @@ class MainActivity : AppCompatActivity() {
     inner class RowAdapter : RecyclerView.Adapter<RowAdapter.VH>() {
         var items: List<App> = emptyList()
 
-        inner class VH(val row: LinearLayout, val name: TextView, val actions: LinearLayout) : RecyclerView.ViewHolder(row) {
-            var wasSelected = false
+        inner class VH(
+            val row: FrameLayout,
+            val name: TextView,
+            val actions: LinearLayout
+        ) : RecyclerView.ViewHolder(row) {
+            var boundPackage: String? = null
+            var boundSelected: Boolean = false
         }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
-            val row = LinearLayout(parent.context).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
+            val row = FrameLayout(parent.context).apply {
                 layoutParams = RecyclerView.LayoutParams(-1, -2)
+                // Match Olauncher's adapter_app_drawer.xml: animateLayoutChanges on
+                // the row cross-fades the app title and its contextual action strip.
+                layoutTransition = LayoutTransition()
             }
             val name = txt(16f, pal.cFg).apply {
                 setPadding(dp(10), dp(11), dp(10), dp(11))
                 maxLines = 1
                 ellipsize = TextUtils.TruncateAt.END
+                layoutParams = FrameLayout.LayoutParams(-1, dp(48), Gravity.CENTER_VERTICAL)
             }
             val actions = LinearLayout(parent.context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER
                 visibility = View.GONE
                 setPadding(dp(4), 0, dp(4), 0)
+                layoutParams = FrameLayout.LayoutParams(-1, dp(48), Gravity.CENTER_VERTICAL)
+                // Olauncher's appHideLayout also has animateLayoutChanges enabled.
+                layoutTransition = LayoutTransition()
             }
-            row.addView(name, LinearLayout.LayoutParams(0, dp(48), 1f))
-            row.addView(actions, LinearLayout.LayoutParams(0, dp(48), 1f))
+            row.addView(name)
+            row.addView(actions)
             return VH(row, name, actions)
         }
 
@@ -2692,78 +2703,26 @@ class MainActivity : AppCompatActivity() {
             h.name.setBackgroundColor(if (i == 0) pal.cSel else Color.TRANSPARENT)
             h.name.setOnClickListener { launchApp(app) }
             h.name.setOnLongClickListener { beginDrawerAppActions(app); true }
-            h.name.animate().cancel()
-            h.actions.animate().cancel()
-            h.actions.removeAllViews()
-            if (selected) {
-                addDrawerAction(h.actions, "Uninstall", "▣") { runDrawerAction(app, "Uninstall") }
-                addDrawerAction(h.actions, "Rename", "✎") { runDrawerAction(app, "Rename") }
-                addDrawerAction(h.actions, "Hide", "◉") { runDrawerAction(app, "Hide") }
-                addDrawerAction(h.actions, "Info", "ⓘ") { runDrawerAction(app, "Info") }
-                addDrawerAction(h.actions, "Close", "×") { runDrawerAction(app, "Close") }
+
+            // Only rebuild the action strip when this holder changes app/selection.
+            // Rebinding an unchanged row must not restart its layout transition.
+            if (h.boundPackage != app.pkg || h.boundSelected != selected) {
+                h.actions.removeAllViews()
+                if (selected) {
+                    addDrawerAction(h.actions, "Uninstall", "▣") { runDrawerAction(app, "Uninstall") }
+                    addDrawerAction(h.actions, "Rename", "✎") { runDrawerAction(app, "Rename") }
+                    addDrawerAction(h.actions, "Hide", "◉") { runDrawerAction(app, "Hide") }
+                    addDrawerAction(h.actions, "Info", "ⓘ") { runDrawerAction(app, "Info") }
+                    addDrawerAction(h.actions, "Close", "×") { runDrawerAction(app, "Close") }
+                }
+                h.boundPackage = app.pkg
+                h.boundSelected = selected
             }
 
-            val changed = h.wasSelected != selected
-            if (changed) {
-                // Keep both halves present during the transition so the row doesn't jump.
-                h.name.visibility = View.VISIBLE
-                h.actions.visibility = View.VISIBLE
-                if (selected) {
-                    h.name.alpha = 1f
-                    h.name.translationX = 0f
-                    h.actions.alpha = 0f
-                    h.actions.translationY = dp(5).toFloat()
-                    h.name.animate()
-                        .alpha(0f)
-                        .translationX(-dp(10).toFloat())
-                        .setDuration(145)
-                        .withEndAction {
-                            if (h.wasSelected) h.name.visibility = View.GONE
-                        }
-                        .start()
-                    h.actions.animate()
-                        .alpha(1f)
-                        .translationY(0f)
-                        .setDuration(185)
-                        .start()
-                    for (index in 0 until h.actions.childCount) {
-                        val action = h.actions.getChildAt(index)
-                        action.alpha = 0f
-                        action.translationY = dp(4).toFloat()
-                        action.animate().alpha(1f).translationY(0f)
-                            .setStartDelay(index * 18L)
-                            .setDuration(150)
-                            .start()
-                    }
-                } else {
-                    h.name.alpha = 0f
-                    h.name.translationX = -dp(10).toFloat()
-                    h.actions.alpha = 1f
-                    h.actions.translationY = 0f
-                    h.name.animate().alpha(1f).translationX(0f)
-                        .setDuration(180).start()
-                    h.actions.animate().alpha(0f).translationY(dp(5).toFloat())
-                        .setDuration(135)
-                        .withEndAction {
-                            if (!h.wasSelected) h.actions.visibility = View.GONE
-                        }
-                        .start()
-                }
-            } else {
-                h.name.visibility = if (selected) View.GONE else View.VISIBLE
-                h.name.alpha = 1f
-                h.name.translationX = 0f
-                h.actions.visibility = if (selected) View.VISIBLE else View.GONE
-                h.actions.alpha = 1f
-                h.actions.translationY = 0f
-                for (index in 0 until h.actions.childCount) {
-                    h.actions.getChildAt(index).apply {
-                        alpha = 1f
-                        translationY = 0f
-                    }
-                }
-            }
-            h.wasSelected = selected
+            // INVISIBLE preserves the title's row bounds while the options fade in,
+            // exactly like Olauncher's appTitle/appHideLayout visibility swap.
+            h.name.visibility = if (selected) View.INVISIBLE else View.VISIBLE
+            h.actions.visibility = if (selected) View.VISIBLE else View.GONE
         }
 
         override fun getItemCount() = items.size
