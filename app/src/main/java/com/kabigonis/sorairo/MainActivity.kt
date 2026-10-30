@@ -2293,7 +2293,10 @@ class MainActivity : AppCompatActivity() {
         apps = visibleApps()
         adapter.items = apps
         adapter.notifyDataSetChanged()
-        for (i in 0..4) fillPins(i)
+        for (i in 0..4) {
+            fillPins(i)
+            refreshFetch(i)
+        }
     }
 
     // ================= terminal =================
@@ -2526,22 +2529,18 @@ class MainActivity : AppCompatActivity() {
     private fun runDrawerAction(app: App, action: String) {
         when (action) {
             "Uninstall" -> {
-                try { startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:${app.pkg}"))) }
-                catch (_: Exception) { Toast.makeText(this, "Unable to open uninstall screen", Toast.LENGTH_SHORT).show() }
+                try {
+                    val uninstall = Intent(
+                        Intent.ACTION_UNINSTALL_PACKAGE,
+                        Uri.parse("package:${app.pkg}")
+                    ).putExtra(Intent.EXTRA_RETURN_RESULT, true)
+                    startActivity(uninstall)
+                } catch (_: Exception) {
+                    Toast.makeText(this, "Unable to open uninstall screen", Toast.LENGTH_SHORT).show()
+                }
                 endDrawerAppActions()
             }
-            "Rename" -> {
-                val edit = EditText(this).apply {
-                    setSingleLine(true); setText(displayAppLabel(app)); setSelection(text.length)
-                }
-                AlertDialog.Builder(this).setTitle("Rename app").setView(edit)
-                    .setNegativeButton("Cancel", null)
-                    .setPositiveButton("Save") { _, _ ->
-                        val name = edit.text.toString().trim()
-                        if (name.isNotEmpty()) prefs.edit().putString("app_name_${app.pkg}", name).apply()
-                        adapter.notifyDataSetChanged()
-                    }.show()
-            }
+            "Rename" -> showRenameDialog(app)
             "Hide" -> { toggleHidden(app); endDrawerAppActions() }
             "Info" -> {
                 try { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${app.pkg}"))) }
@@ -2550,6 +2549,67 @@ class MainActivity : AppCompatActivity() {
             }
             "Close" -> endDrawerAppActions()
         }
+    }
+
+    private fun showRenameDialog(app: App) {
+        val p = pal
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = box(p.cBg, p.cAccent)
+            setPadding(dp(18), dp(16), dp(18), dp(12))
+        }
+        content.addView(
+            txt(15f, p.cBlue, "~/rename-app").apply {
+                setPadding(0, 0, 0, dp(12))
+            }
+        )
+        val edit = EditText(this).apply {
+            setSingleLine(true)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            setText(displayAppLabel(app))
+            setSelection(text.length)
+            setTextColor(p.cFg)
+            setHintTextColor(p.cDim)
+            typeface = font
+            textSize = 15f
+            background = box(p.cBg, p.cDim)
+            setPadding(dp(10), dp(9), dp(10), dp(9))
+            hint = "App name"
+        }
+        content.addView(edit, LinearLayout.LayoutParams(-1, -2))
+        val buttons = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            setPadding(0, dp(12), 0, 0)
+        }
+        fun dialogButton(label: String, color: Int, onClick: () -> Unit) {
+            buttons.addView(
+                txt(12f, color, label).apply {
+                    gravity = Gravity.CENTER
+                    setPadding(dp(12), dp(10), dp(8), dp(10))
+                    setOnClickListener { onClick() }
+                }
+            )
+        }
+        val dialog = AlertDialog.Builder(this).setView(content).create()
+        dialogButton("CANCEL", p.cDim) { dialog.dismiss() }
+        dialogButton("SAVE", p.cAccent) {
+            val name = edit.text.toString().trim()
+            if (name.isNotEmpty()) {
+                prefs.edit().putString("app_name_${app.pkg}", name).apply()
+                adapter.notifyDataSetChanged()
+                endDrawerAppActions()
+            }
+            dialog.dismiss()
+        }
+        content.addView(buttons, LinearLayout.LayoutParams(-1, -2))
+        dialog.show()
+        dialog.window?.apply {
+            setBackgroundDrawableResource(android.R.color.transparent)
+            setLayout(min(dp(520), resources.displayMetrics.widthPixels - dp(48)), -2)
+            setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
+        }
+        edit.requestFocus()
     }
 
     private fun launchApp(app: App) {
@@ -2617,8 +2677,8 @@ class MainActivity : AppCompatActivity() {
                 visibility = View.GONE
                 setPadding(dp(4), 0, dp(4), 0)
             }
-            row.addView(name, LinearLayout.LayoutParams(-1, dp(48)))
-            row.addView(actions, LinearLayout.LayoutParams(-1, dp(48)))
+            row.addView(name, LinearLayout.LayoutParams(0, dp(48), 1f))
+            row.addView(actions, LinearLayout.LayoutParams(0, dp(48), 1f))
             return VH(row, name, actions)
         }
 
