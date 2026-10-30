@@ -53,7 +53,6 @@ import android.os.UserHandle
 import android.os.StatFs
 import android.os.SystemClock
 import android.text.InputType
-import android.text.Normalizer
 import android.text.Spannable
 import android.text.SpannableStringBuilder
 import android.text.Spanned
@@ -85,6 +84,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
 import java.io.File
+import java.text.Normalizer
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -2667,7 +2667,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun closeDrawer() {
-        autoRun?.let { handler.removeCallbacks(it) }
+        autoLaunchedQuery = null
         endDrawerAppActions()
         if (drawer.visibility != View.VISIBLE) return
         (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager)
