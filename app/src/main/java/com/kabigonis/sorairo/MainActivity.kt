@@ -198,35 +198,78 @@ class MainActivity : AppCompatActivity() {
 
     private fun solidColor(): Int = (pal.cBg and 0x00FFFFFF) or (0xF2 shl 24)
 
-    private fun bottomWindowScopeAll(): Boolean =
-        prefs.getBoolean("bottom_window_scope_all", false)
+    private fun windowScopeGlobal(): Boolean = prefs.getString("window_scope", "workspace") == "global"
+    private fun windowStateKey(ws: Int, suffix: String): String =
+        if (windowScopeGlobal()) "window_global_$suffix" else "window_${ws}_$suffix"
 
     private fun bottomWindowFor(ws: Int): String {
-        val key = if (bottomWindowScopeAll()) "bottom_window_shared" else "bottom_window_$ws"
-        return prefs.getString(key, "monitor")?.takeIf { it == "player" } ?: "monitor"
+        val legacy = if (prefs.getBoolean("bottom_window_scope_all", false)) "bottom_window_shared" else "bottom_window_$ws"
+        return prefs.getString(windowStateKey(ws, "bottom"), prefs.getString(legacy, "monitor"))
+            ?.takeIf { it == "player" } ?: "monitor"
     }
-
     private fun setBottomWindowForCurrent(value: String) {
-        val choice = if (value == "player") "player" else "monitor"
-        val edit = prefs.edit()
-        if (bottomWindowScopeAll()) {
-            edit.putString("bottom_window_shared", choice)
-        } else {
-            edit.putString("bottom_window_$curWs", choice)
-        }
-        edit.apply()
+        prefs.edit().putString(windowStateKey(curWs, "bottom"), if (value == "player") "player" else "monitor").apply()
     }
-
     private fun setBottomWindowForWorkspace(ws: Int, value: String) {
-        val choice = if (value == "player") "player" else "monitor"
-        val edit = prefs.edit()
-        if (bottomWindowScopeAll()) {
-            edit.putString("bottom_window_shared", choice)
-            for (i in 0..4) edit.putString("bottom_window_$i", choice)
-        } else {
-            edit.putString("bottom_window_$ws", choice)
+        prefs.edit().putString(windowStateKey(ws, "bottom"), if (value == "player") "player" else "monitor").apply()
+    }
+    private fun windowLayoutMode(): String =
+        prefs.getString("window_layout_mode", "dwindle")?.takeIf { it == "floating" } ?: "dwindle"
+
+    private fun applyWorkspaceLayout(frame: FrameLayout, ws: Int, terminal: View, pinned: View, bottom: View) {
+        val w = frame.width
+        val h = frame.height
+        if (w <= 0 || h <= 0) return
+        fun place(view: View, x: Int, y: Int, width: Int, height: Int) {
+            val lp = (view.layoutParams as? FrameLayout.LayoutParams) ?: FrameLayout.LayoutParams(width, height)
+            lp.width = width.coerceAtLeast(dp(120)); lp.height = height.coerceAtLeast(dp(100))
+            lp.leftMargin = x.coerceIn(0, (w - lp.width).coerceAtLeast(0))
+            lp.topMargin = y.coerceIn(0, (h - lp.height).coerceAtLeast(0))
+            view.layoutParams = lp
         }
-        edit.apply()
+        fun read(i: Int, key: String, fallback: Int) = prefs.getInt(windowStateKey(ws, "w${i}_$key"), fallback)
+        fun save(i: Int, key: String, value: Int) {
+            prefs.edit().putInt(windowStateKey(ws, "w${i}_$key"), value).apply()
+        }
+        if (windowLayoutMode() == "dwindle") {
+            val gap = dp(6); val left = ((w - gap) * .52f).toInt()
+            val right = w - left - gap; val top = (h - gap) / 2
+            place(terminal, 0, 0, left, h)
+            place(pinned, left + gap, 0, right, top)
+            place(bottom, left + gap, top + gap, right, h - top - gap)
+            return
+        }
+        val defaults = arrayOf(
+            intArrayOf(dp(12), dp(12), (w * .48f).toInt(), (h * .82f).toInt()),
+            intArrayOf((w * .48f).toInt(), dp(24), (w * .46f).toInt(), (h * .42f).toInt()),
+            intArrayOf((w * .48f).toInt(), (h * .48f).toInt(), (w * .46f).toInt(), (h * .42f).toInt())
+        )
+        arrayOf(terminal, pinned, bottom).forEachIndexed { i, view ->
+            val d = defaults[i]
+            place(view, read(i, "x", d[0]), read(i, "y", d[1]), read(i, "width", d[2]), read(i, "height", d[3]))
+            var downX = 0f; var downY = 0f; var startX = 0; var startY = 0
+            view.setOnTouchListener { target, event ->
+                if (windowLayoutMode() != "floating") return@setOnTouchListener false
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        val lp = target.layoutParams as FrameLayout.LayoutParams
+                        downX = event.rawX; downY = event.rawY; startX = lp.leftMargin; startY = lp.topMargin
+                        target.bringToFront(); setWindowFocus(ws, i, terminal, pinned); true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        val lp = target.layoutParams as FrameLayout.LayoutParams
+                        lp.leftMargin = (startX + event.rawX - downX).toInt().coerceIn(0, (w - target.width).coerceAtLeast(0))
+                        lp.topMargin = (startY + event.rawY - downY).toInt().coerceIn(0, (h - target.height).coerceAtLeast(0))
+                        target.layoutParams = lp; true
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        val lp = target.layoutParams as FrameLayout.LayoutParams
+                        save(i, "x", lp.leftMargin); save(i, "y", lp.topMargin); true
+                    }
+                    else -> true
+                }
+            }
+        }
     }
 
     // ---- state ----
@@ -1429,8 +1472,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun buildPage(ws: Int): View {
         val p = pal
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
+        val row = FrameLayout(this).apply {
             setPadding(0, dp(8), 0, 0)
             setOnLongClickListener { showSettings(); true }
         }
@@ -1517,7 +1559,7 @@ class MainActivity : AppCompatActivity() {
         col.setOnLongClickListener { showSettings(); true }
 
         terminalWindowForFocus[ws] = term
-        row.addView(term, LinearLayout.LayoutParams(0, -1, 1f).apply { marginEnd = dp(6) })
+        row.addView(term, FrameLayout.LayoutParams(-1, -1))
 
         // ---- pinned window ----
         val pinWin = LinearLayout(this).apply {
@@ -1553,24 +1595,15 @@ class MainActivity : AppCompatActivity() {
             topMargin = dp(4)
         })
         fillPins(ws)
-        val rightCol = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-        rightCol.addView(pinWin, LinearLayout.LayoutParams(-1, 0, 1f))
         val bottomWin = buildBottomWindow(ws)
         bottomWindowForFocus[ws] = bottomWin
-        bottomWin.setOnClickListener {
-            setWindowFocus(ws, 2, term, pinWin)
+        bottomWin.setOnClickListener { setWindowFocus(ws, 2, term, pinWin) }
+        row.addView(pinWin, FrameLayout.LayoutParams(-1, -1))
+        row.addView(bottomWin, FrameLayout.LayoutParams(-1, -1))
+        row.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
+            applyWorkspaceLayout(v as FrameLayout, ws, term, pinWin, bottomWin)
         }
-        rightCol.addView(
-            bottomWin,
-            LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(6) }
-        )
-        row.addView(
-            rightCol,
-            LinearLayout.LayoutParams(0, -1, 1f).apply { marginStart = dp(6) }
-        )
-
+        row.post { applyWorkspaceLayout(row, ws, term, pinWin, bottomWin) }
         return row
     }
 
@@ -2184,11 +2217,7 @@ class MainActivity : AppCompatActivity() {
             setBox.addView(r)
         }
 
-        row("wallpaper", "choose ›") { closeSettings(); pickWall.launch(arrayOf("image/*")) }
-        row("clear wallpaper", "›") {
-            prefs.edit().remove("wall").apply()
-            wall.setImageDrawable(null)
-        }
+        row("home screen", "customize ›") { fillHomeScreenSettings(); setScroll.scrollTo(0, 0) }
         row("theme", pal.name) { cycle("theme", pals.size) }
         row("font", fontNames[prefs.getInt("font", 0).coerceIn(0, fontNames.size - 1)]) {
             cycle("font", fontNames.size)
@@ -2222,24 +2251,52 @@ class MainActivity : AppCompatActivity() {
         row("media access", if (mediaAccess()) "granted" else "enable ›") {
             openSystem(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
         }
-        row("bottom window scope", if (bottomWindowScopeAll()) "all workspaces" else "this workspace") {
-            val current = bottomWindowFor(curWs)
-            val makeAll = !bottomWindowScopeAll()
-            val edit = prefs.edit().putBoolean("bottom_window_scope_all", makeAll)
-            if (makeAll) {
-                edit.putString("bottom_window_shared", current)
-                for (ws in 0..4) edit.putString("bottom_window_$ws", current)
-            }
-            edit.apply()
-            for (ws in 0..4) updateBottomWindowDisplay(ws, false)
-            updateBottomWindowRuntime()
-            fillSettings()
+        row("window scope", if (windowScopeGlobal()) "global" else "workspace") {
+            prefs.edit().putString("window_scope", if (windowScopeGlobal()) "workspace" else "global").apply()
+            rebuild(true); fillSettings()
+        }
+        row("window layout", windowLayoutMode()) {
+            prefs.edit().putString("window_layout_mode", if (windowLayoutMode() == "dwindle") "floating" else "dwindle").apply()
+            rebuild(true); fillSettings()
         }
         row("vpn app", allApps.find { it.pkg == prefs.getString("vpn_pkg", null) }?.label ?: "choose ›") {
             fillVpnPicker(); setScroll.scrollTo(0, 0)
         }
         row("hidden apps", "${allApps.size - apps.size} ›") { fillHidden(); setScroll.scrollTo(0, 0) }
         row("close", "esc") { closeSettings() }
+    }
+
+    private fun fillHomeScreenSettings() {
+        val p = pal
+        setBox.removeAllViews()
+        setBox.addView(txt(15f, p.cBlue, "~/home-screen"))
+        setBox.addView(txt(11f, p.cDim, "workspace appearance and window behaviour"))
+        fun item(label: String, value: String, action: () -> Unit) {
+            val r = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, dp(11), 0, dp(11))
+                setOnClickListener { action() }
+            }
+            r.addView(txt(14f, p.cFg, label), LinearLayout.LayoutParams(0, -2, 1f))
+            r.addView(txt(14f, p.cAccent, value))
+            setBox.addView(r)
+        }
+        item("wallpaper", "choose ›") { closeSettings(); pickWall.launch(arrayOf("image/*")) }
+        item("clear wallpaper", "›") {
+            prefs.edit().remove("wall").apply(); wall.setImageDrawable(null); fillHomeScreenSettings()
+        }
+        item("window scope", if (windowScopeGlobal()) "global" else "workspace") {
+            prefs.edit().putString("window_scope", if (windowScopeGlobal()) "workspace" else "global").apply()
+            rebuild(true); fillHomeScreenSettings()
+        }
+        item("opening layout", windowLayoutMode()) {
+            prefs.edit().putString("window_layout_mode", if (windowLayoutMode() == "dwindle") "floating" else "dwindle").apply()
+            rebuild(true); fillHomeScreenSettings()
+        }
+        item("close", "esc") { closeSettings() }
+        setBox.addView(txt(11f, p.cDim, "Adaptive placement uses Dwindle tiling by default. Floating windows can be dragged; switch back to Dwindle to auto-arrange.").apply {
+            setPadding(0, dp(8), 0, 0)
+        })
     }
 
     private fun fillHidden() {
