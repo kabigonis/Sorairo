@@ -2516,7 +2516,7 @@ class MainActivity : AppCompatActivity() {
         drawerSelectedName.visibility = View.VISIBLE
         search.visibility = View.GONE
         fun action(label: String, glyph: String, onClick: () -> Unit) {
-            drawerActionsBar.addView(txt(11f, pal.cFg, "$glyph\\n$label").apply {
+            drawerActionsBar.addView(txt(11f, pal.cFg, "$glyph\n$label").apply {
                 gravity = Gravity.CENTER; setPadding(dp(4), dp(3), dp(4), dp(3)); setOnClickListener { onClick() }
             }, LinearLayout.LayoutParams(0, -1, 1f))
         }
