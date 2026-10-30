@@ -72,6 +72,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -247,6 +248,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var setBox: LinearLayout
     private lateinit var setScroll: ScrollView
     private val adapter = RowAdapter()
+    private var drawerPinnedApps: LinearLayout? = null
+    private var drawerPinsHeader: TextView? = null
 
     private val history = Array(5) { SpannableStringBuilder() }
     private val outViews = arrayOfNulls<TextView>(5)
@@ -904,6 +907,7 @@ class MainActivity : AppCompatActivity() {
                 override fun onPageSelected(position: Int) {
                     curWs = position
                     updateWsBar()
+                    refreshDrawerPins()
                     updateBottomWindowRuntime()
                 }
             })
@@ -965,7 +969,35 @@ class MainActivity : AppCompatActivity() {
         }
         panel.addView(search, LinearLayout.LayoutParams(-1, -2))
         panel.addView(View(this).apply { setBackgroundColor(p.cDim) }, LinearLayout.LayoutParams(-1, dp(1)))
+
+        // Pins section: long-press its header to manage this workspace's pinned apps.
+        val pinsHeaderRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), dp(10), dp(4), dp(6))
+        }
+        drawerPinsHeader = txt(11f, p.cBlue, "PINS").apply {
+            letterSpacing = 0.12f
+            setOnLongClickListener { showPinPicker(); true }
+            setOnClickListener { showPinPicker() }
+        }
+        pinsHeaderRow.addView(drawerPinsHeader, LinearLayout.LayoutParams(-2, -2))
+        pinsHeaderRow.addView(View(this).apply {
+            setBackgroundColor(p.cDim)
+        }, LinearLayout.LayoutParams(0, dp(1)).apply {
+            weight = 1f
+            marginStart = dp(10)
+        })
+        panel.addView(pinsHeaderRow, LinearLayout.LayoutParams(-1, -2))
+        drawerPinnedApps = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(2), 0, dp(2), dp(8))
+        }
+        panel.addView(drawerPinnedApps, LinearLayout.LayoutParams(-1, -2))
+        panel.addView(View(this).apply { setBackgroundColor(p.cDim) }, LinearLayout.LayoutParams(-1, dp(1)))
         panel.addView(list, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(6) })
+        refreshDrawerPins()
         val panelTop = (dm.heightPixels * 0.08f).toInt()
         drawer.addView(
             panel,
@@ -1798,13 +1830,13 @@ class MainActivity : AppCompatActivity() {
         val p = pal
         val list = pinBoxes[ws] ?: return
         list.removeAllViews()
-        val pinned = pins(ws).mapNotNull { k -> apps.find { it.pkg == k } }
+        val pinned = pins(ws).mapNotNull { k -> allApps.find { it.pkg == k } }
 
         if (pinned.isEmpty()) {
             list.addView(
                 txt(
                     12.5f, p.cDim,
-                    "nothing pinned yet.\nterminal: pin <app>\ndrawer: long-press an app"
+                    "nothing pinned yet.\nlong-press PINS in the drawer to add apps"
                 ).apply { setOnLongClickListener { showSettings(); true } }
             )
         } else {
@@ -2486,13 +2518,65 @@ class MainActivity : AppCompatActivity() {
         prefs.edit().putString("pins_$ws", l.joinToString(",")).apply()
         fillPins(ws)
         adapter.notifyDataSetChanged()
+        refreshDrawerPins()
         return added
+    }
+
+    private fun showPinPicker() {
+        val choices = allApps
+        if (choices.isEmpty()) return
+        val selected = pins(curWs).toMutableSet()
+        val labels = choices.map { it.label }.toTypedArray()
+        val checked = BooleanArray(choices.size) { choices[it].pkg in selected }
+
+        AlertDialog.Builder(this)
+            .setTitle("Pinned apps · workspace ${curWs + 1}")
+            .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
+                val app = choices[which]
+                if (isChecked != (app.pkg in pins(curWs))) {
+                    togglePin(curWs, app)
+                }
+            }
+            .setPositiveButton("Done", null)
+            .show()
+    }
+
+    private fun refreshDrawerPins() {
+        val container = drawerPinnedApps ?: return
+        val header = drawerPinsHeader ?: return
+        val p = pal
+        header.setTextColor(p.cBlue)
+        container.removeAllViews()
+        val pinned = pins(curWs).mapNotNull { pkg -> allApps.find { it.pkg == pkg } }
+        if (pinned.isEmpty()) {
+            container.addView(txt(12f, p.cDim, "No pinned apps · hold PINS to add").apply {
+                setPadding(dp(4), dp(3), dp(4), dp(5))
+                setOnClickListener { showPinPicker() }
+            })
+            return
+        }
+        pinned.forEach { app ->
+            container.addView(txt(13f, p.cFg, app.label).apply {
+                setPadding(dp(8), dp(5), dp(8), dp(5))
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
+                background = box(panelColor(), p.cDim)
+                setOnClickListener { launchApp(app) }
+                setOnLongClickListener {
+                    togglePin(curWs, app)
+                    true
+                }
+            }, LinearLayout.LayoutParams(-2, -2).apply {
+                marginEnd = dp(6)
+            })
+        }
     }
 
     // ================= drawer =================
     private fun openDrawer() {
         if (drawer.visibility == View.VISIBLE || settings.visibility == View.VISIBLE) return
         search.setText("")
+        refreshDrawerPins()
         drawer.visibility = View.VISIBLE
         drawer.alpha = 0f
         panel.translationY = dp(80).toFloat()
@@ -2533,15 +2617,7 @@ class MainActivity : AppCompatActivity() {
             h.t.setTextColor(if (app.pkg in pins(curWs)) pal.cAccent else pal.cFg)
             h.t.setBackgroundColor(if (i == 0) pal.cSel else Color.TRANSPARENT)
             h.t.setOnClickListener { launchApp(app) }
-            h.t.setOnLongClickListener {
-                val added = togglePin(curWs, app)
-                Toast.makeText(
-                    this@MainActivity,
-                    (if (added) "Pinned " else "Unpinned ") + app.label + " (workspace ${curWs + 1})",
-                    Toast.LENGTH_SHORT
-                ).show()
-                true
-            }
+            h.t.setOnLongClickListener(null)
         }
 
         override fun getItemCount() = items.size
