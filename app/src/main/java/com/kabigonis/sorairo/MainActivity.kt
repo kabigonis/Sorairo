@@ -2515,6 +2515,7 @@ class MainActivity : AppCompatActivity() {
         bar.addView(
             txt(10f, pal.cFg, "$glyph\n$label").apply {
                 gravity = Gravity.CENTER
+                contentDescription = label
                 setPadding(dp(2), dp(2), dp(2), dp(2))
                 setOnClickListener { onClick() }
             },
