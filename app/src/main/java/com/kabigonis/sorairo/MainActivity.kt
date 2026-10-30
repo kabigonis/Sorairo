@@ -248,8 +248,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var setBox: LinearLayout
     private lateinit var setScroll: ScrollView
     private val adapter = RowAdapter()
-    private lateinit var drawerActionsBar: LinearLayout
-    private lateinit var drawerSelectedName: TextView
     private var selectedDrawerApp: App? = null
 
     private val history = Array(5) { SpannableStringBuilder() }
@@ -967,11 +965,6 @@ class MainActivity : AppCompatActivity() {
             layoutManager = LinearLayoutManager(context)
             this.adapter = this@MainActivity.adapter
         }
-        drawerActionsBar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; visibility = View.GONE }
-        drawerSelectedName = txt(14f, p.cFg)
-        panel.addView(drawerActionsBar, LinearLayout.LayoutParams(-1, dp(52)))
-        panel.addView(drawerSelectedName, LinearLayout.LayoutParams(-1, -2))
-        drawerSelectedName.visibility = View.GONE
         panel.addView(search, LinearLayout.LayoutParams(-1, -2))
         panel.addView(View(this).apply { setBackgroundColor(p.cDim) }, LinearLayout.LayoutParams(-1, dp(1)))
         panel.addView(list, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(6) })
@@ -1858,7 +1851,6 @@ class MainActivity : AppCompatActivity() {
                             }
                             launchApp(app)
                         }
-                        setOnLongClickListener { togglePin(ws, app); true }
                     }
                 )
             }
@@ -2510,46 +2502,52 @@ class MainActivity : AppCompatActivity() {
 
     private fun beginDrawerAppActions(app: App) {
         selectedDrawerApp = app
-        drawerActionsBar.removeAllViews()
-        drawerActionsBar.visibility = View.VISIBLE
-        drawerSelectedName.text = displayAppLabel(app)
-        drawerSelectedName.visibility = View.VISIBLE
-        search.visibility = View.GONE
-        fun action(label: String, glyph: String, onClick: () -> Unit) {
-            drawerActionsBar.addView(txt(11f, pal.cFg, "$glyph\n$label").apply {
-                gravity = Gravity.CENTER; setPadding(dp(4), dp(3), dp(4), dp(3)); setOnClickListener { onClick() }
-            }, LinearLayout.LayoutParams(0, -1, 1f))
-        }
-        action("Uninstall", "▣") {
-            val target = selectedDrawerApp ?: return@action
-            try { startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:${target.pkg}"))) }
-            catch (_: Exception) { Toast.makeText(this, "Unable to open uninstall screen", Toast.LENGTH_SHORT).show() }
-            endDrawerAppActions()
-        }
-        action("Rename", "✎") {
-            val target = selectedDrawerApp ?: return@action
-            val edit = EditText(this).apply { setSingleLine(true); setText(displayAppLabel(target)); setSelection(text.length) }
-            AlertDialog.Builder(this).setTitle("Rename app").setView(edit).setNegativeButton("Cancel", null)
-                .setPositiveButton("Save") { _, _ ->
-                    val name = edit.text.toString().trim()
-                    if (name.isNotEmpty()) prefs.edit().putString("app_name_${target.pkg}", name).apply()
-                    adapter.notifyDataSetChanged(); drawerSelectedName.text = displayAppLabel(target)
-                }.show()
-        }
-        action("Hide", "◉") { selectedDrawerApp?.let { toggleHidden(it) }; endDrawerAppActions() }
-        action("Info", "ⓘ") {
-            val target = selectedDrawerApp ?: return@action
-            try { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${target.pkg}"))) }
-            catch (_: Exception) { Toast.makeText(this, "Unable to open app info", Toast.LENGTH_SHORT).show() }
-            endDrawerAppActions()
-        }
-        action("Close", "×") { endDrawerAppActions() }
+        adapter.notifyDataSetChanged()
     }
 
     private fun endDrawerAppActions() {
         selectedDrawerApp = null
-        if (!::drawerActionsBar.isInitialized) return
-        drawerActionsBar.visibility = View.GONE; drawerSelectedName.visibility = View.GONE; search.visibility = View.VISIBLE
+        adapter.notifyDataSetChanged()
+    }
+
+    private fun addDrawerAction(bar: LinearLayout, label: String, glyph: String, onClick: () -> Unit) {
+        bar.addView(
+            txt(10f, pal.cFg, "$glyph\\n$label").apply {
+                gravity = Gravity.CENTER
+                setPadding(dp(2), dp(2), dp(2), dp(2))
+                setOnClickListener { onClick() }
+            },
+            LinearLayout.LayoutParams(0, -1, 1f)
+        )
+    }
+
+    private fun runDrawerAction(app: App, action: String) {
+        when (action) {
+            "Uninstall" -> {
+                try { startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:${app.pkg}"))) }
+                catch (_: Exception) { Toast.makeText(this, "Unable to open uninstall screen", Toast.LENGTH_SHORT).show() }
+                endDrawerAppActions()
+            }
+            "Rename" -> {
+                val edit = EditText(this).apply {
+                    setSingleLine(true); setText(displayAppLabel(app)); setSelection(text.length)
+                }
+                AlertDialog.Builder(this).setTitle("Rename app").setView(edit)
+                    .setNegativeButton("Cancel", null)
+                    .setPositiveButton("Save") { _, _ ->
+                        val name = edit.text.toString().trim()
+                        if (name.isNotEmpty()) prefs.edit().putString("app_name_${app.pkg}", name).apply()
+                        adapter.notifyDataSetChanged()
+                    }.show()
+            }
+            "Hide" -> { toggleHidden(app); endDrawerAppActions() }
+            "Info" -> {
+                try { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${app.pkg}"))) }
+                catch (_: Exception) { Toast.makeText(this, "Unable to open app info", Toast.LENGTH_SHORT).show() }
+                endDrawerAppActions()
+            }
+            "Close" -> endDrawerAppActions()
+        }
     }
 
     private fun launchApp(app: App) {
@@ -2587,6 +2585,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun closeDrawer() {
         autoRun?.let { handler.removeCallbacks(it) }
+        endDrawerAppActions()
         if (drawer.visibility != View.VISIBLE) return
         (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager)
             .hideSoftInputFromWindow(search.windowToken, 0)
@@ -2597,25 +2596,48 @@ class MainActivity : AppCompatActivity() {
     inner class RowAdapter : RecyclerView.Adapter<RowAdapter.VH>() {
         var items: List<App> = emptyList()
 
-        inner class VH(val t: TextView) : RecyclerView.ViewHolder(t)
+        inner class VH(val row: LinearLayout, val name: TextView, val actions: LinearLayout) : RecyclerView.ViewHolder(row)
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
-            val t = txt(16f, pal.cFg).apply {
+            val row = LinearLayout(parent.context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                layoutParams = RecyclerView.LayoutParams(-1, -2)
+            }
+            val name = txt(16f, pal.cFg).apply {
                 setPadding(dp(10), dp(11), dp(10), dp(11))
                 maxLines = 1
                 ellipsize = TextUtils.TruncateAt.END
-                layoutParams = RecyclerView.LayoutParams(-1, -2)
             }
-            return VH(t)
+            val actions = LinearLayout(parent.context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+                visibility = View.GONE
+                setPadding(dp(4), 0, dp(4), 0)
+            }
+            row.addView(name, LinearLayout.LayoutParams(-1, dp(48)))
+            row.addView(actions, LinearLayout.LayoutParams(-1, dp(48)))
+            return VH(row, name, actions)
         }
 
         override fun onBindViewHolder(h: VH, i: Int) {
             val app = items[i]
-            h.t.text = displayAppLabel(app)
-            h.t.setTextColor(if (app.pkg in pins(curWs)) pal.cAccent else pal.cFg)
-            h.t.setBackgroundColor(if (i == 0) pal.cSel else Color.TRANSPARENT)
-            h.t.setOnClickListener { launchApp(app) }
-            h.t.setOnLongClickListener { beginDrawerAppActions(app); true }
+            val selected = selectedDrawerApp?.pkg == app.pkg
+            h.name.text = displayAppLabel(app)
+            h.name.setTextColor(if (app.pkg in pins(curWs)) pal.cAccent else pal.cFg)
+            h.name.setBackgroundColor(if (i == 0) pal.cSel else Color.TRANSPARENT)
+            h.name.visibility = if (selected) View.GONE else View.VISIBLE
+            h.name.setOnClickListener { launchApp(app) }
+            h.name.setOnLongClickListener { beginDrawerAppActions(app); true }
+            h.actions.removeAllViews()
+            h.actions.visibility = if (selected) View.VISIBLE else View.GONE
+            if (selected) {
+                addDrawerAction(h.actions, "Uninstall", "▣") { runDrawerAction(app, "Uninstall") }
+                addDrawerAction(h.actions, "Rename", "✎") { runDrawerAction(app, "Rename") }
+                addDrawerAction(h.actions, "Hide", "◉") { runDrawerAction(app, "Hide") }
+                addDrawerAction(h.actions, "Info", "ⓘ") { runDrawerAction(app, "Info") }
+                addDrawerAction(h.actions, "Close", "×") { runDrawerAction(app, "Close") }
+            }
         }
 
         override fun getItemCount() = items.size
