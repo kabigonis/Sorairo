@@ -2658,7 +2658,9 @@ class MainActivity : AppCompatActivity() {
     inner class RowAdapter : RecyclerView.Adapter<RowAdapter.VH>() {
         var items: List<App> = emptyList()
 
-        inner class VH(val row: LinearLayout, val name: TextView, val actions: LinearLayout) : RecyclerView.ViewHolder(row)
+        inner class VH(val row: LinearLayout, val name: TextView, val actions: LinearLayout) : RecyclerView.ViewHolder(row) {
+            var wasSelected = false
+        }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
             val row = LinearLayout(parent.context).apply {
@@ -2688,11 +2690,11 @@ class MainActivity : AppCompatActivity() {
             h.name.text = displayAppLabel(app)
             h.name.setTextColor(if (app.pkg in pins(curWs)) pal.cAccent else pal.cFg)
             h.name.setBackgroundColor(if (i == 0) pal.cSel else Color.TRANSPARENT)
-            h.name.visibility = if (selected) View.GONE else View.VISIBLE
             h.name.setOnClickListener { launchApp(app) }
             h.name.setOnLongClickListener { beginDrawerAppActions(app); true }
+            h.name.animate().cancel()
+            h.actions.animate().cancel()
             h.actions.removeAllViews()
-            h.actions.visibility = if (selected) View.VISIBLE else View.GONE
             if (selected) {
                 addDrawerAction(h.actions, "Uninstall", "▣") { runDrawerAction(app, "Uninstall") }
                 addDrawerAction(h.actions, "Rename", "✎") { runDrawerAction(app, "Rename") }
@@ -2700,6 +2702,68 @@ class MainActivity : AppCompatActivity() {
                 addDrawerAction(h.actions, "Info", "ⓘ") { runDrawerAction(app, "Info") }
                 addDrawerAction(h.actions, "Close", "×") { runDrawerAction(app, "Close") }
             }
+
+            val changed = h.wasSelected != selected
+            if (changed) {
+                // Keep both halves present during the transition so the row doesn't jump.
+                h.name.visibility = View.VISIBLE
+                h.actions.visibility = View.VISIBLE
+                if (selected) {
+                    h.name.alpha = 1f
+                    h.name.translationX = 0f
+                    h.actions.alpha = 0f
+                    h.actions.translationY = dp(5).toFloat()
+                    h.name.animate()
+                        .alpha(0f)
+                        .translationX(-dp(10).toFloat())
+                        .setDuration(145)
+                        .withEndAction {
+                            if (h.wasSelected) h.name.visibility = View.GONE
+                        }
+                        .start()
+                    h.actions.animate()
+                        .alpha(1f)
+                        .translationY(0f)
+                        .setDuration(185)
+                        .start()
+                    for (index in 0 until h.actions.childCount) {
+                        val action = h.actions.getChildAt(index)
+                        action.alpha = 0f
+                        action.translationY = dp(4).toFloat()
+                        action.animate().alpha(1f).translationY(0f)
+                            .setStartDelay(index * 18L)
+                            .setDuration(150)
+                            .start()
+                    }
+                } else {
+                    h.name.alpha = 0f
+                    h.name.translationX = -dp(10).toFloat()
+                    h.actions.alpha = 1f
+                    h.actions.translationY = 0f
+                    h.name.animate().alpha(1f).translationX(0f)
+                        .setDuration(180).start()
+                    h.actions.animate().alpha(0f).translationY(dp(5).toFloat())
+                        .setDuration(135)
+                        .withEndAction {
+                            if (!h.wasSelected) h.actions.visibility = View.GONE
+                        }
+                        .start()
+                }
+            } else {
+                h.name.visibility = if (selected) View.GONE else View.VISIBLE
+                h.name.alpha = 1f
+                h.name.translationX = 0f
+                h.actions.visibility = if (selected) View.VISIBLE else View.GONE
+                h.actions.alpha = 1f
+                h.actions.translationY = 0f
+                for (index in 0 until h.actions.childCount) {
+                    h.actions.getChildAt(index).apply {
+                        alpha = 1f
+                        translationY = 0f
+                    }
+                }
+            }
+            h.wasSelected = selected
         }
 
         override fun getItemCount() = items.size
