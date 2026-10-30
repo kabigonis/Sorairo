@@ -2557,29 +2557,27 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showRenameDialog(app: App) {
-        val dialogBg = Color.rgb(32, 33, 36)
-        val fieldBg = Color.rgb(48, 49, 52)
-        val dialogFg = Color.rgb(232, 234, 237)
-        val dialogDim = Color.rgb(189, 193, 198)
+        val p = pal
 
-        fun rounded(fill: Int, radius: Int) = GradientDrawable().apply {
+        fun rounded(fill: Int, stroke: Int, radius: Int) = GradientDrawable().apply {
             setColor(fill)
             cornerRadius = dp(radius).toFloat()
+            setStroke(dp(1), stroke)
         }
 
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = rounded(dialogBg, 28)
-            setPadding(dp(24), dp(22), dp(24), dp(16))
+            background = rounded(p.cBg, p.cAccent, 24)
+            setPadding(dp(22), dp(20), dp(22), dp(14))
         }
         content.addView(
-            txt(20f, dialogFg, "Rename app").apply {
+            txt(18f, p.cFg, "~/rename-app").apply {
                 setPadding(0, 0, 0, dp(8))
             }
         )
         content.addView(
-            txt(14f, dialogDim, "Choose a name to display in the app drawer").apply {
-                setPadding(0, 0, 0, dp(20))
+            txt(13f, p.cDim, "Choose a name to display in the app drawer").apply {
+                setPadding(0, 0, 0, dp(18))
             }
         )
         val edit = EditText(this).apply {
@@ -2587,12 +2585,12 @@ class MainActivity : AppCompatActivity() {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
             setText(displayAppLabel(app))
             setSelection(text.length)
-            setTextColor(dialogFg)
-            setHintTextColor(dialogDim)
+            setTextColor(p.cFg)
+            setHintTextColor(p.cDim)
             typeface = font
-            textSize = 16f
-            background = rounded(fieldBg, 8)
-            setPadding(dp(14), dp(12), dp(14), dp(12))
+            textSize = 15f
+            background = rounded(p.cBg, p.cDim, 10)
+            setPadding(dp(12), dp(11), dp(12), dp(11))
             hint = "App name"
         }
         content.addView(edit, LinearLayout.LayoutParams(-1, -2))
@@ -2600,13 +2598,13 @@ class MainActivity : AppCompatActivity() {
         val buttons = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.END or Gravity.CENTER_VERTICAL
-            setPadding(0, dp(18), 0, 0)
+            setPadding(0, dp(14), 0, 0)
         }
         fun dialogButton(label: String, color: Int, onClick: () -> Unit) {
             buttons.addView(
-                txt(14f, color, label).apply {
+                txt(12f, color, label).apply {
                     gravity = Gravity.CENTER
-                    setPadding(dp(16), dp(12), dp(12), dp(12))
+                    setPadding(dp(14), dp(11), dp(10), dp(11))
                     isClickable = true
                     isFocusable = true
                     setOnClickListener { onClick() }
@@ -2614,8 +2612,8 @@ class MainActivity : AppCompatActivity() {
             )
         }
         val dialog = AlertDialog.Builder(this).setView(content).create()
-        dialogButton("Cancel", dialogDim) { dialog.dismiss() }
-        dialogButton("Save", dialogFg) {
+        dialogButton("CANCEL", p.cDim) { dialog.dismiss() }
+        dialogButton("SAVE", p.cAccent) {
             val name = edit.text.toString().trim()
             if (name.isNotEmpty()) {
                 prefs.edit().putString("app_name_${app.pkg}", name).apply()
@@ -2628,10 +2626,10 @@ class MainActivity : AppCompatActivity() {
         dialog.show()
         dialog.window?.apply {
             setBackgroundDrawableResource(android.R.color.transparent)
-            setLayout(min(dp(560), resources.displayMetrics.widthPixels - dp(32)), -2)
+            setLayout(min(dp(540), resources.displayMetrics.widthPixels - dp(40)), -2)
             setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
             addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-            attributes = attributes.apply { dimAmount = 0.64f }
+            attributes = attributes.apply { dimAmount = 0.58f }
         }
         edit.requestFocus()
     }
