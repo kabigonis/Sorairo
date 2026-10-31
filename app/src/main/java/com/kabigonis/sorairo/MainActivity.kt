@@ -275,12 +275,9 @@ private class TileLayout(context: Context, private val gapPx: Int) : ViewGroup(c
         val w = MeasureSpec.getSize(widthMeasureSpec)
         val h = MeasureSpec.getSize(heightMeasureSpec)
         setMeasuredDimension(resolveSize(w, widthMeasureSpec), resolveSize(h, heightMeasureSpec))
-        for (i in 0 until childCount) {
-            getChildAt(i).measure(
-                MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY),
-                MeasureSpec.makeMeasureSpec(h, MeasureSpec.EXACTLY)
-            )
-        }
+        // Children are measured and laid out at their tile size in applyRects().
+        // Measuring them full-size here used to clobber their real size whenever
+        // a descendant called requestLayout(), leaving windows blank until toggled.
     }
 
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
@@ -291,7 +288,9 @@ private class TileLayout(context: Context, private val gapPx: Int) : ViewGroup(c
             lastHeight = h
             animator.cancel()
             applyRects(calculateRects(w, h))
-        } else if (changed && !animator.isRunning) {
+        } else if (!animator.isRunning) {
+            // A descendant (pins list, player, monitor...) asked for layout. Always
+            // re-place every tile, otherwise those windows stay unlaid-out/blank.
             applyRects(calculateRects(w, h))
         }
     }
@@ -1082,6 +1081,10 @@ class MainActivity : AppCompatActivity() {
 
     private var activityResumed = false
 
+    // True while the app drawer (not the terminal prompt) owns the soft keyboard.
+    // Keeps the workspace windows from moving when the drawer's keyboard opens/closes.
+    private var drawerOwnsIme = false
+
     private var activeSessionsListener: MediaSessionManager.OnActiveSessionsChangedListener? = null
 
     private fun registerActiveSessionsListener() {
@@ -1468,42 +1471,65 @@ class MainActivity : AppCompatActivity() {
         )
         root.addView(settings, FrameLayout.LayoutParams(-1, -1))
 
+        // Keyboard handling: the workspace only follows the keyboard when the
+        // terminal prompt owns it (not the app drawer / settings / quick panel).
+        fun terminalOwnsIme(): Boolean =
+            terminalPrompts.getOrNull(curWs)?.hasFocus() == true &&
+                !drawerOwnsIme &&
+                drawer.visibility != View.VISIBLE &&
+                settings.visibility != View.VISIBLE &&
+                qs.visibility != View.VISIBLE
+
+        fun applyContentPadding(insets: WindowInsetsCompat) {
+            val stable = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars())
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+            content.setPadding(
+                dp(12), dp(6), dp(12),
+                maxOf(stable.bottom, if (terminalOwnsIme()) ime.bottom else 0) + dp(12)
+            )
+        }
+
+        var imeAnimating = false
+        var lastInsets: WindowInsetsCompat? = null
+
         ViewCompat.setWindowInsetsAnimationCallback(
             root,
             object : WindowInsetsAnimationCompat.Callback(
                 WindowInsetsAnimationCompat.Callback.DISPATCH_MODE_CONTINUE_ON_SUBTREE
             ) {
+                override fun onPrepare(animation: WindowInsetsAnimationCompat) {
+                    // Runs before the final insets are dispatched. Hold the layout
+                    // still so the windows glide with the keyboard instead of jumping.
+                    if (animation.typeMask and WindowInsetsCompat.Type.ime() != 0) imeAnimating = true
+                }
+
                 override fun onProgress(
                     insets: WindowInsetsCompat,
                     runningAnimations: MutableList<WindowInsetsAnimationCompat>
                 ): WindowInsetsCompat {
-                    val stable = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars())
-                    val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
-                    val terminalOwnsIme = terminalPrompts.getOrNull(curWs)?.hasFocus() == true &&
-                        drawer.visibility != View.VISIBLE &&
-                        settings.visibility != View.VISIBLE &&
-                        qs.visibility != View.VISIBLE
-                    content.setPadding(
-                        dp(12), dp(6), dp(12),
-                        maxOf(stable.bottom, if (terminalOwnsIme) ime.bottom else 0) + dp(12)
-                    )
+                    applyContentPadding(insets)
                     return insets
+                }
+
+                override fun onEnd(animation: WindowInsetsAnimationCompat) {
+                    if (animation.typeMask and WindowInsetsCompat.Type.ime() != 0) {
+                        imeAnimating = false
+                        lastInsets?.let { applyContentPadding(it) }
+                        // Keyboard fully gone: the drawer no longer owns it.
+                        if (lastInsets?.getInsets(WindowInsetsCompat.Type.ime())?.bottom == 0) {
+                            drawerOwnsIme = false
+                        }
+                    }
                 }
             }
         )
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
-            // Stable insets: layout never shifts when the system status bar is pulled down
-            val stable = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars())
+            lastInsets = insets
             val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
-            val terminalOwnsIme = terminalPrompts.getOrNull(curWs)?.hasFocus() == true &&
-                drawer.visibility != View.VISIBLE &&
-                settings.visibility != View.VISIBLE &&
-                qs.visibility != View.VISIBLE
+            if (ime.bottom == 0 && !imeAnimating) drawerOwnsIme = false
             // Workspace padding is applied here only; overlay keyboards never resize the workspace.
-            content.setPadding(
-                dp(12), dp(6), dp(12),
-                maxOf(stable.bottom, if (terminalOwnsIme) ime.bottom else 0) + dp(12)
-            )
+            // While the keyboard is animating, onProgress drives the padding.
+            if (!imeAnimating) applyContentPadding(insets)
             val avail = (dm.heightPixels - ime.bottom - panelTop - dp(16)).coerceAtLeast(dp(200))
             panel.layoutParams = (panel.layoutParams as FrameLayout.LayoutParams).apply {
                 height = min((dm.heightPixels * 0.6f).toInt(), avail)
@@ -2005,6 +2031,7 @@ class MainActivity : AppCompatActivity() {
         terminalPrompts[ws] = field
         fun focusInput() {
             if (field != null) {
+                drawerOwnsIme = false
                 field.requestFocus()
                 (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager)
                     .showSoftInput(field, InputMethodManager.SHOW_IMPLICIT)
@@ -3365,6 +3392,7 @@ class MainActivity : AppCompatActivity() {
     private fun openDrawer() {
         if (drawer.visibility == View.VISIBLE || settings.visibility == View.VISIBLE) return
         search.setText("")
+        drawerOwnsIme = true
         drawer.visibility = View.VISIBLE
         drawer.alpha = 0f
         panel.translationY = dp(80).toFloat()
