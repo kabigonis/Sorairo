@@ -222,15 +222,20 @@ private class TileLayout(context: Context, private val gapPx: Int) : ViewGroup(c
         val children = childrenForIds()
         val starts = targets.mapValues { (id, _) ->
             val child = children[id]
-            if (child != null && child.width > 0 && child.height > 0)
+            if (child != null && child.width > 0 && child.height > 0) {
                 Rect(child.left, child.top, child.right, child.bottom)
-            else Rect(targets.getValue(id))
+            } else {
+                val target = targets.getValue(id)
+                val cx = (target.left + target.right) / 2
+                val cy = (target.top + target.bottom) / 2
+                Rect(cx, cy, cx, cy)
+            }
         }
         animator.removeAllUpdateListeners()
         animator.removeAllListeners()
         animator.addListener(object : AnimatorListenerAdapter() {
             override fun onAnimationEnd(animation: Animator) {
-                hiddenAfter.forEach { childrenForIds()[it]?.visibility = View.GONE }
+                hiddenAfter.filter { it !in visible }.forEach { childrenForIds()[it]?.visibility = View.GONE }
             }
         })
         animator.setFloatValues(0f, 1f)
