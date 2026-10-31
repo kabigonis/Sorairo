@@ -238,7 +238,7 @@ private class TileLayout(context: Context, private val gapPx: Int) : ViewGroup(c
             else -> {
                 // Dwindle uses an even primary split, with remaining windows
                 // stacked in the secondary area.
-                val leftWidth = ((rw - gap) * 0.5f).toInt()
+                val leftWidth = ((rw - gap) * ratio).toInt().coerceIn(0, (rw - gap).coerceAtLeast(0))
                 put(ids[0], l, t, leftWidth, rh)
                 val rightX = l + leftWidth + gap
                 val rightW = (l + rw - rightX).coerceAtLeast(0)
