@@ -33,6 +33,9 @@ jobs:
         with:
           gradle-version: '8.7'
 
+      - name: Restore signing key
+        run: base64 -d app/debug.keystore.b64 > app/debug.keystore
+
       - name: Build debug APK
         run: gradle assembleDebug
 
