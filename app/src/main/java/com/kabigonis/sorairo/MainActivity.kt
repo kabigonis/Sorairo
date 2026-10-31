@@ -79,6 +79,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsAnimationCompat
 import androidx.core.widget.doAfterTextChanged
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -711,6 +712,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private var activityResumed = false
+    private var imeAnimationRunning = false
 
     private fun updateBottomWindowRuntime() {
         handler.removeCallbacks(monitorTick)
@@ -1029,16 +1031,56 @@ class MainActivity : AppCompatActivity() {
         root.addView(settings, FrameLayout.LayoutParams(-1, -1))
 
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
-            // Stable insets: layout never shifts when the system status bar is pulled down
-            val stable = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars())
-            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
-            content.setPadding(dp(12), dp(6), dp(12), maxOf(stable.bottom, ime.bottom) + dp(12))
-            val avail = (dm.heightPixels - ime.bottom - panelTop - dp(16)).coerceAtLeast(dp(200))
-            panel.layoutParams = (panel.layoutParams as FrameLayout.LayoutParams).apply {
-                height = min((dm.heightPixels * 0.6f).toInt(), avail)
+            if (!imeAnimationRunning) {
+                // Stable insets: layout never shifts when the system status bar is pulled down
+                val stable = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars())
+                val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+                content.setPadding(dp(12), dp(6), dp(12), maxOf(stable.bottom, ime.bottom) + dp(12))
+                val avail = (dm.heightPixels - ime.bottom - panelTop - dp(16)).coerceAtLeast(dp(200))
+                panel.layoutParams = (panel.layoutParams as FrameLayout.LayoutParams).apply {
+                    height = min((dm.heightPixels * 0.6f).toInt(), avail)
+                }
             }
             insets
         }
+
+        ViewCompat.setWindowInsetsAnimationCallback(
+            root,
+            object : WindowInsetsAnimationCompat.Callback(
+                WindowInsetsAnimationCompat.Callback.DISPATCH_MODE_CONTINUE_ON_SUBTREE
+            ) {
+                override fun onPrepare(animation: WindowInsetsAnimationCompat) {
+                    imeAnimationRunning = true
+                }
+
+                override fun onStart(
+                    animation: WindowInsetsAnimationCompat,
+                    bounds: WindowInsetsAnimationCompat.Bounds
+                ): WindowInsetsAnimationCompat.Bounds {
+                    imeAnimationRunning = true
+                    return bounds
+                }
+
+                override fun onProgress(
+                    insets: WindowInsetsCompat,
+                    runningAnimations: MutableList<WindowInsetsAnimationCompat>
+                ): WindowInsetsCompat {
+                    val systemBottom = insets.getInsetsIgnoringVisibility(
+                        WindowInsetsCompat.Type.systemBars()
+                    ).bottom
+                    val imeBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+                    content.setPadding(
+                        dp(12), dp(6), dp(12), maxOf(systemBottom, imeBottom) + dp(12)
+                    )
+                    return insets
+                }
+
+                override fun onEnd(animation: WindowInsetsAnimationCompat) {
+                    imeAnimationRunning = false
+                    ViewCompat.requestApplyInsets(root)
+                }
+            }
+        )
 
         setContentView(root)
         updateWsBar()
