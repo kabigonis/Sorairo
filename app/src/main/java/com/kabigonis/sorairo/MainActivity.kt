@@ -83,6 +83,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsAnimationCompat
 import androidx.core.widget.doAfterTextChanged
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -437,6 +438,28 @@ class MainActivity : AppCompatActivity() {
 
 
     private fun layoutScopeAll(): Boolean = prefs.getBoolean("layout_scope_all", false)
+
+    // Visibility can be shared by every workspace or stored for each individual
+    // window instance (terminal/pinned/bottom in a particular workspace).
+    private fun windowVisibilityScopeAll(): Boolean =
+        prefs.getBoolean("home_visibility_scope_all", true)
+
+    private fun windowShown(ws: Int, id: String): Boolean {
+        val legacy = prefs.getBoolean("home_show_$id", true)
+        if (windowVisibilityScopeAll()) return legacy
+        return prefs.getBoolean("home_show_${id}_$ws", legacy)
+    }
+
+    private fun setWindowShown(ws: Int, id: String, shown: Boolean) {
+        val edit = prefs.edit()
+        if (windowVisibilityScopeAll()) {
+            edit.putBoolean("home_show_$id", shown)
+        } else {
+            edit.putBoolean("home_show_${id}_$ws", shown)
+        }
+        edit.apply()
+    }
+
     private fun layoutModeFor(ws: Int): String {
         val key = if (layoutScopeAll()) "window_layout_mode_global" else "window_layout_mode_$ws"
         return prefs.getString(key, "dwindle")?.takeIf { it in setOf("dwindle", "master", "columns", "rows") } ?: "dwindle"
@@ -447,12 +470,12 @@ class MainActivity : AppCompatActivity() {
     }
     private fun applyTileLayout(ws: Int, animate: Boolean = true) {
         val shown = buildSet {
-            if (prefs.getBoolean("home_show_terminal", true)) add("terminal")
-            if (prefs.getBoolean("home_show_pinned", true)) add("pinned")
-            if (prefs.getBoolean("home_show_bottom", true)) add("bottom")
+            if (windowShown(ws, "terminal")) add("terminal")
+            if (windowShown(ws, "pinned")) add("pinned")
+            if (windowShown(ws, "bottom")) add("bottom")
         }
         tileLayouts[ws]?.configure(layoutModeFor(ws), layoutRatioFor(ws),
-            listOf("terminal", "pinned", "bottom"), shown, animate)
+            tileOrder(ws), shown, animate)
     }
     private fun setLayoutMode(ws: Int, value: String) {
         val edit = prefs.edit()
@@ -478,6 +501,79 @@ class MainActivity : AppCompatActivity() {
     private val bottomWindowForFocus = arrayOfNulls<View>(5)
     private val terminalWindowForFocus = arrayOfNulls<View>(5)
     private val tileLayouts = arrayOfNulls<TileLayout>(5)
+    private val moveSource = IntArray(5) { -1 }
+    private lateinit var moveHint: TextView
+    private val tileIds = listOf("terminal", "pinned", "bottom")
+    private fun tileOrder(ws: Int): List<String> {
+        val key = if (layoutScopeAll()) "tile_order_global" else "tile_order_$ws"
+        val saved = prefs.getString(key, "").orEmpty().split(",").filter { it in tileIds }
+        return (saved + tileIds).distinct()
+    }
+    private fun saveTileOrder(ws: Int, order: List<String>) {
+        val key = if (layoutScopeAll()) "tile_order_global" else "tile_order_$ws"
+        prefs.edit().putString(key, order.joinToString(",")).apply()
+    }
+    private fun tileView(ws: Int, id: String): View? = when (id) {
+        "terminal" -> terminalWindowForFocus[ws]
+        "pinned" -> pinWindowForFocus[ws]
+        "bottom" -> bottomWindowForFocus[ws]
+        else -> null
+    }
+    private fun endMove() {
+        val index = moveSource[curWs]
+        if (index < 0) return
+        moveSource[curWs] = -1
+        moveHint.visibility = View.GONE
+        tileView(curWs, tileIds[index])?.let { v ->
+            v.animate().cancel(); v.alpha = 1f
+            (v.background as? GradientDrawable)?.setStroke(dp(2), pal.cDim)
+        }
+    }
+    private fun startMove(ws: Int, id: String) {
+        if (ws != curWs) return
+        endMove(); moveSource[ws] = tileIds.indexOf(id)
+        moveHint.visibility = View.VISIBLE
+        tileView(ws, id)?.let { v ->
+            (v.background as? GradientDrawable)?.setStroke(dp(3), pal.cAccent)
+            v.animate().alpha(0.55f).setDuration(250).withEndAction {
+                if (moveSource[ws] >= 0) v.animate().alpha(1f).setDuration(250).start()
+            }.start()
+        }
+    }
+    private fun focusWindow(ws: Int, id: String) {
+        val terminal = terminalWindowForFocus[ws] ?: return
+        val pinned = pinWindowForFocus[ws] ?: return
+        setWindowFocus(ws, tileIds.indexOf(id).coerceAtLeast(0), terminal, pinned)
+    }
+    private fun moveTap(ws: Int, target: String): Boolean {
+        val from = moveSource[ws]
+        if (from < 0) return false
+        val source = tileIds[from]
+        if (source != target) {
+            val order = tileOrder(ws).toMutableList()
+            val a = order.indexOf(source); val b = order.indexOf(target)
+            if (a >= 0 && b >= 0) {
+                val tmp = order[a]; order[a] = order[b]; order[b] = tmp
+                saveTileOrder(ws, order); applyTileLayout(ws, true); focusWindow(ws, source)
+            }
+        }
+        endMove(); return true
+    }
+    private fun swapTileNames(ws: Int, first: String, second: String): Boolean {
+        fun resolve(q: String) = tileIds.firstOrNull { it.startsWith(q, true) || q.startsWith(it, true) }
+        val aName = resolve(first) ?: return false; val bName = resolve(second) ?: return false
+        val order = tileOrder(ws).toMutableList(); val a = order.indexOf(aName); val b = order.indexOf(bName)
+        if (a < 0 || b < 0) return false
+        val tmp = order[a]; order[a] = order[b]; order[b] = tmp
+        saveTileOrder(ws, order); applyTileLayout(ws, true); focusWindow(ws, aName); return true
+    }
+    private fun stepFocus(ws: Int, delta: Int) {
+        val visible = tileOrder(ws).filter { windowShown(ws, it) }
+        if (visible.isEmpty()) return
+        val current = tileIds.getOrElse(focusedWindow[ws]) { visible[0] }
+        val i = visible.indexOf(current).let { if (it < 0) 0 else it }
+        focusWindow(ws, visible[(i + delta + visible.size) % visible.size])
+    }
     private val focusBorderAnimators = java.util.WeakHashMap<View, ValueAnimator>()
     private val focusBorderColors = java.util.WeakHashMap<View, Int>()
     private lateinit var wall: ImageView
@@ -500,6 +596,7 @@ class MainActivity : AppCompatActivity() {
     private val outScrolls = arrayOfNulls<ScrollView>(5)
     private val pinBoxes = arrayOfNulls<LinearLayout>(5)
     private val bottomWindowViews = arrayOfNulls<LinearLayout>(5)
+    private val bottomMonitorColumns = arrayOfNulls<LinearLayout>(5)
     private val bottomWindowContents = arrayOfNulls<ScrollView>(5)
     private val playerTitles = arrayOfNulls<TextView>(5)
     private val playerArtists = arrayOfNulls<TextView>(5)
@@ -884,15 +981,43 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private var returnToStyleAfterLogoPick = false
+
     private val pickLogo = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        // Persist the navigation target because Android may recreate this
+        // Activity while the system document picker is open.
+        val returnToStyle = returnToStyleAfterLogoPick ||
+            prefs.getBoolean("pending_logo_return_style", false)
+        returnToStyleAfterLogoPick = false
+        prefs.edit().remove("pending_logo_return_style").apply()
+
         if (uri != null) {
             try {
                 contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             } catch (_: Exception) {
             }
             prefs.edit().putString("logo_uri", uri.toString()).putInt("logo", 3).apply()
-            rebuild(true)
+            // Rebuild the home UI without reopening the root config page. The
+            // style submenu is restored below after the new UI is in place.
+            rebuild(!returnToStyle)
         }
+
+        if (returnToStyle) {
+            fillStyleSettings()
+            setScroll.scrollTo(0, 0)
+            showOverlay()
+        }
+    }
+
+    private fun pickLogoFromStyle() {
+        returnToStyleAfterLogoPick = true
+        prefs.edit().putBoolean("pending_logo_return_style", true).apply()
+        // Do not leave a fade-out callback pending: it can hide the newly
+        // reopened Style overlay after the document picker returns.
+        settings.animate().cancel()
+        settings.alpha = 1f
+        settings.visibility = View.GONE
+        pickLogo.launch(arrayOf("image/*"))
     }
 
     private var touchDownScreenX = 0f
@@ -915,6 +1040,7 @@ class MainActivity : AppCompatActivity() {
     private val detector by lazy {
         GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
             override fun onFling(e1: MotionEvent?, e2: MotionEvent, vx: Float, vy: Float): Boolean {
+                if (moveSource[curWs] >= 0) return false
                 if (mode != "terminal" && e1 != null &&
                     e1.y - e2.y > dp(80) && vy < -800 && abs(vx) < abs(vy)
                 ) {
@@ -955,6 +1081,43 @@ class MainActivity : AppCompatActivity() {
     }
 
     private var activityResumed = false
+
+    private var activeSessionsListener: MediaSessionManager.OnActiveSessionsChangedListener? = null
+
+    private fun registerActiveSessionsListener() {
+        if (!mediaAccess() || activeSessionsListener != null) return
+        try {
+            val manager = getSystemService(MEDIA_SESSION_SERVICE) as MediaSessionManager
+            val listener = MediaSessionManager.OnActiveSessionsChangedListener { sessions ->
+                val active = sessions?.firstOrNull {
+                    it.playbackState?.state == PlaybackState.STATE_PLAYING
+                } ?: sessions?.firstOrNull()
+                ctrl = active
+                updateNowPlaying()
+                updatePlayerWindow(curWs)
+                if (activityResumed && bottomWindowFor(curWs) == "player") {
+                    if (active != null) startPlayerCallbacks()
+                    else handler.postDelayed(playerRefresh, 700L)
+                }
+            }
+            manager.addOnActiveSessionsChangedListener(
+                listener, ComponentName(this, NowPlayingService::class.java), handler
+            )
+            activeSessionsListener = listener
+        } catch (_: Exception) {
+            activeSessionsListener = null
+        }
+    }
+
+    private fun unregisterActiveSessionsListener() {
+        val listener = activeSessionsListener ?: return
+        try {
+            (getSystemService(MEDIA_SESSION_SERVICE) as MediaSessionManager)
+                .removeOnActiveSessionsChangedListener(listener)
+        } catch (_: Exception) {
+        }
+        activeSessionsListener = null
+    }
 
     private fun updateBottomWindowRuntime() {
         handler.removeCallbacks(monitorTick)
@@ -1043,7 +1206,35 @@ class MainActivity : AppCompatActivity() {
         handler.removeCallbacks(tick)
         tick.run()
         updateNowPlaying()
-        updateBottomWindowRuntime()
+        pager.post {
+            updateBottomWindowDisplay(curWs, false)
+            registerActiveSessionsListener()
+            updateBottomWindowRuntime()
+            updateMonitorSummary(curWs)
+            updatePlayerWindow(curWs)
+            monitorGraphs[curWs]?.invalidate()
+
+            // Media sessions can become available a little after the launcher
+            // resumes (especially after a cold start). Retry discovery instead
+            // of requiring the user to switch the monitor/player tab.
+            fun retryMediaDiscovery(attempt: Int) {
+                if (!activityResumed || attempt >= 8) return
+                updateNowPlaying()
+                if (bottomWindowFor(curWs) == "player") {
+                    val controller = activeController()
+                    if (controller != null) {
+                        ctrl = controller
+                        startPlayerCallbacks()
+                        updatePlayerWindow(curWs)
+                    } else {
+                        handler.postDelayed({ retryMediaDiscovery(attempt + 1) }, 900L)
+                    }
+                } else if (activeController() == null) {
+                    handler.postDelayed({ retryMediaDiscovery(attempt + 1) }, 900L)
+                }
+            }
+            handler.postDelayed({ retryMediaDiscovery(0) }, 400L)
+        }
         refreshDefaultLauncherPrompts()
     }
 
@@ -1057,6 +1248,7 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         activityResumed = false
+        unregisterActiveSessionsListener()
         handler.removeCallbacks(tick)
         handler.removeCallbacks(monitorTick)
         stopPlayerCallbacks()
@@ -1071,7 +1263,8 @@ class MainActivity : AppCompatActivity() {
 
     @Deprecated("Launcher stays put on back")
     override fun onBackPressed() {
-        if (qs.visibility == View.VISIBLE) closeQs()
+        if (moveSource[curWs] >= 0) endMove()
+        else if (qs.visibility == View.VISIBLE) closeQs()
         else if (settings.visibility == View.VISIBLE) closeSettings() else closeDrawer()
     }
 
@@ -1093,6 +1286,7 @@ class MainActivity : AppCompatActivity() {
 
         // ---- top bar ----
         val bar = FrameLayout(this)
+        moveHint = txt(11f, p.cAccent, "move: tap another window").apply { visibility = View.GONE; gravity = Gravity.CENTER; setOnClickListener { endMove() } }
         val left = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -1137,6 +1331,7 @@ class MainActivity : AppCompatActivity() {
         bar.addView(clock, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
         bar.addView(right, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.CENTER_VERTICAL))
         content.addView(bar, LinearLayout.LayoutParams(-1, dp(34)))
+        content.addView(moveHint, LinearLayout.LayoutParams(-1, dp(22)))
 
         // ---- workspaces ----
         pager = ViewPager2(this).apply {
@@ -1273,6 +1468,29 @@ class MainActivity : AppCompatActivity() {
         )
         root.addView(settings, FrameLayout.LayoutParams(-1, -1))
 
+        ViewCompat.setWindowInsetsAnimationCallback(
+            root,
+            object : WindowInsetsAnimationCompat.Callback(
+                WindowInsetsAnimationCompat.Callback.DISPATCH_MODE_CONTINUE_ON_SUBTREE
+            ) {
+                override fun onProgress(
+                    insets: WindowInsetsCompat,
+                    runningAnimations: MutableList<WindowInsetsAnimationCompat>
+                ): WindowInsetsCompat {
+                    val stable = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars())
+                    val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+                    val terminalOwnsIme = terminalPrompts.getOrNull(curWs)?.hasFocus() == true &&
+                        drawer.visibility != View.VISIBLE &&
+                        settings.visibility != View.VISIBLE &&
+                        qs.visibility != View.VISIBLE
+                    content.setPadding(
+                        dp(12), dp(6), dp(12),
+                        maxOf(stable.bottom, if (terminalOwnsIme) ime.bottom else 0) + dp(12)
+                    )
+                    return insets
+                }
+            }
+        )
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
             // Stable insets: layout never shifts when the system status bar is pulled down
             val stable = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars())
@@ -1371,6 +1589,7 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
         }
         val title = txt(12.5f, p.cBlue, "~/monitor")
+        title.setOnLongClickListener { if (moveSource[ws] >= 0) moveTap(ws, "bottom") else startMove(ws, "bottom"); true }
         bottomWindowTitles[ws] = title
         titleRow.addView(title, LinearLayout.LayoutParams(0, -2, 1f))
 
@@ -1633,6 +1852,7 @@ class MainActivity : AppCompatActivity() {
         }
         monitorSummaries[ws] = summary
         monitorColumn.addView(summary, LinearLayout.LayoutParams(-1, -2))
+        bottomMonitorColumns[ws] = monitorColumn
 
         val graph = NetGraphView(this, sharedNetHistory).also {
             it.setColors(p.cDim, p.cBlue, p.cGreen)
@@ -1673,30 +1893,37 @@ class MainActivity : AppCompatActivity() {
     private fun updateBottomWindowDisplay(ws: Int, animate: Boolean) {
         val win = bottomWindowViews[ws] ?: return
         val choice = bottomWindowFor(ws)
-        val content = bottomWindowContents[ws]
+        val playerContent = bottomWindowContents[ws]
+        val monitorContent = bottomMonitorColumns[ws]
+
         fun applyChoice() {
             updateBottomWindowHeader(ws)
 
-            val monitorColumn = monitorSummaries[ws]?.parent as? LinearLayout
-            if (choice == "monitor") {
-                if (monitorColumn != null && monitorColumn.parent == null) {
-                    win.removeView(content)
-                    win.addView(monitorColumn, LinearLayout.LayoutParams(-1, 0, 1f))
-                }
+            // Keep the title row, then replace the content slot with exactly
+            // one known view. Do not infer which view is active from parent links.
+            while (win.childCount > 1) {
+                win.removeViewAt(1)
+            }
+            val selected = if (choice == "player") playerContent else monitorContent
+            if (selected != null) {
+                (selected.parent as? ViewGroup)?.removeView(selected)
+                win.addView(selected, LinearLayout.LayoutParams(-1, 0, 1f))
+            }
+
+            if (choice == "player") {
+                updatePlayerWindow(ws)
+                if (ws == curWs && activityResumed) startPlayerCallbacks()
+            } else {
                 updateMonitorSummary(ws)
                 monitorGraphs[ws]?.setColors(pal.cDim, pal.cBlue, pal.cGreen)
-            } else {
-                if (content?.parent == null) {
-                    monitorColumn?.let { win.removeView(it) }
-                    if (content != null) {
-                        win.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
-                    }
-                }
             }
             win.alpha = 1f
+            win.requestLayout()
+            selected?.requestLayout()
         }
 
         if (animate) {
+            win.animate().cancel()
             win.animate().alpha(0f).setDuration(90).withEndAction {
                 applyChoice()
                 win.animate().alpha(1f).setDuration(120).start()
@@ -1720,6 +1947,14 @@ class MainActivity : AppCompatActivity() {
             background = box(panelColor(), p.cAccent)
         }
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val terminalTitle = txt(12.5f, p.cBlue, "~/terminal").apply {
+            setOnLongClickListener {
+                if (moveSource[ws] >= 0) moveTap(ws, "terminal")
+                else startMove(ws, "terminal")
+                true
+            }
+        }
+        col.addView(terminalTitle, LinearLayout.LayoutParams(-1, -2))
         col.addView(buildFetch(ws), LinearLayout.LayoutParams(-1, -2))
         val out = txt(12.5f, termFg()).apply {
             setLineSpacing(0f, 1.15f)
@@ -1776,6 +2011,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         fun focusTerminal(showKeyboard: Boolean) {
+            if (moveTap(ws, "terminal")) return
             val pinned = pinWindowForFocus[ws]
             if (pinned != null) setWindowFocus(ws, 0, term, pinned)
             else focusedWindow[ws] = 0
@@ -1791,14 +2027,18 @@ class MainActivity : AppCompatActivity() {
         out.setOnClickListener { focusTerminal(false) }
         col.setOnClickListener { focusTerminal(false) }
         scroll.setOnClickListener { focusTerminal(false) }
-        term.setOnLongClickListener { showSettings(); true }
-        out.setOnLongClickListener { showSettings(); true }
-        col.setOnLongClickListener { showSettings(); true }
+        // Long-pressing the terminal surface opens configuration.
+        // Only the explicit ~/terminal title is the tile-move handle.
+        val openTerminalConfig = View.OnLongClickListener { showSettings(); true }
+        term.setOnLongClickListener(openTerminalConfig)
+        out.setOnLongClickListener(openTerminalConfig)
+        col.setOnLongClickListener(openTerminalConfig)
+        scroll.setOnLongClickListener(openTerminalConfig)
 
         terminalWindowForFocus[ws] = term
-        val showTerminalWindow = prefs.getBoolean("home_show_terminal", true)
-        val showPinnedWindow = prefs.getBoolean("home_show_pinned", true)
-        val showBottomWindow = prefs.getBoolean("home_show_bottom", true)
+        val showTerminalWindow = windowShown(ws, "terminal")
+        val showPinnedWindow = windowShown(ws, "pinned")
+        val showBottomWindow = windowShown(ws, "bottom")
         term.tag = "terminal"
         row.addView(term, ViewGroup.LayoutParams(-1, -1))
 
@@ -1811,11 +2051,11 @@ class MainActivity : AppCompatActivity() {
         }
         pinWindowForFocus[ws] = pinWin
         pinWin.setOnClickListener {
-            setWindowFocus(ws, 1, term, pinWin)
+            if (!moveTap(ws, "pinned")) setWindowFocus(ws, 1, term, pinWin)
         }
         setWindowFocus(ws, focusedWindow[ws], term, pinWin)
         val pinTitle = txt(13f, p.cBlue, "~/pinned")
-        pinTitle.setOnLongClickListener { showPinnedPicker(ws); true }
+        pinTitle.setOnLongClickListener { if (moveSource[ws] >= 0) moveTap(ws, "pinned") else startMove(ws, "pinned"); true }
         pinWin.addView(pinTitle)
         val pinList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         pinBoxes[ws] = pinList
@@ -1838,14 +2078,17 @@ class MainActivity : AppCompatActivity() {
         fillPins(ws)
         val bottomWin = buildBottomWindow(ws)
         bottomWindowForFocus[ws] = bottomWin
-        bottomWin.setOnClickListener { setWindowFocus(ws, 2, term, pinWin) }
+        bottomWin.setOnClickListener { if (!moveTap(ws, "bottom")) setWindowFocus(ws, 2, term, pinWin) }
         pinWin.tag = "pinned"
         bottomWin.tag = "bottom"
         row.addView(pinWin, ViewGroup.LayoutParams(-1, -1))
         row.addView(bottomWin, ViewGroup.LayoutParams(-1, -1))
         tileLayouts[ws] = row
+        updateBottomWindowDisplay(ws, false)
+        updateMonitorSummary(ws)
+        updatePlayerWindow(ws)
         row.configure(layoutModeFor(ws), layoutRatioFor(ws),
-            listOf("terminal", "pinned", "bottom"),
+            tileOrder(ws),
             buildSet {
                 if (showTerminalWindow) add("terminal")
                 if (showPinnedWindow) add("pinned")
@@ -2118,8 +2361,8 @@ class MainActivity : AppCompatActivity() {
             list.addView(
                 txt(
                     12.5f, p.cDim,
-                    "nothing pinned yet.\nlong-press ~/pinned to choose apps"
-                ).apply { setOnLongClickListener { showSettings(); true } }
+                    "nothing pinned yet.\nconfigure pinned apps in ~/config"
+                )
             )
         } else {
             pinned.forEach { app ->
@@ -2160,6 +2403,8 @@ class MainActivity : AppCompatActivity() {
 
     // ================= settings =================
     private fun showOverlay() {
+        // Cancel any stale fade-out callback before reusing the settings overlay.
+        settings.animate().cancel()
         settings.visibility = View.VISIBLE
         settings.alpha = 0f
         settings.animate().alpha(1f).setDuration(140).start()
@@ -2437,22 +2682,40 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun closeSettings() {
-        if (settings.visibility != View.VISIBLE) return
-        settings.animate().alpha(0f).setDuration(120)
-            .withEndAction { settings.visibility = View.GONE }.start()
+        val closingSettings = settings
+        if (closingSettings.visibility != View.VISIBLE) return
+        closingSettings.animate().cancel()
+        closingSettings.animate().alpha(0f).setDuration(120)
+            .withEndAction {
+                // Capture the view being closed; never hide a replacement overlay
+                // created by rebuild() while this animation is finishing.
+                closingSettings.visibility = View.GONE
+            }.start()
     }
 
+    private var styleConfigOpen = false
+
     private fun cycle(key: String, n: Int, def: Int = 0) {
+        val returnToStyle = styleConfigOpen
         prefs.edit().putInt(key, (prefs.getInt(key, def) + 1) % n).apply()
-        rebuild(true)
+        rebuild(false)
+        if (returnToStyle) {
+            fillStyleSettings()
+            setScroll.scrollTo(0, 0)
+            showOverlay()
+        } else {
+            showSettings()
+        }
     }
 
     private fun fillSettings() {
+        styleConfigOpen = false
         val p = pal
         setBox.removeAllViews()
         setBox.addView(txt(15f, p.cBlue, "~/config"))
-        setBox.addView(txt(11f, p.cDim, "tap a row to change it").apply { setPadding(0, dp(2), 0, dp(6)) })
-
+        setBox.addView(txt(11f, p.cDim, "choose what you want to configure").apply {
+            setPadding(0, dp(2), 0, dp(6))
+        })
         fun row(k: String, v: String, onTap: () -> Unit) {
             val r = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -2463,15 +2726,58 @@ class MainActivity : AppCompatActivity() {
             r.addView(txt(14f, p.cAccent, v))
             setBox.addView(r)
         }
-
-        row("home screen", "customize ›") {
-            fillHomeScreenSettings()
+        row("style", "appearance & layout ›") {
+            fillStyleSettings()
             setScroll.scrollTo(0, 0)
+        }
+        row("pinned apps", "workspace ${curWs + 1} ›") {
+            fillPinnedPicker(curWs); setScroll.scrollTo(0, 0)
+        }
+        row("default launcher", "change ›") {
+            closeSettings()
+            try { startActivity(Intent(Settings.ACTION_HOME_SETTINGS)) }
+            catch (_: Exception) { startActivity(Intent(Settings.ACTION_SETTINGS)) }
+        }
+        row("media access", if (mediaAccess()) "granted" else "enable ›") {
+            openSystem(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+        }
+        row("vpn app", allApps.find { it.pkg == prefs.getString("vpn_pkg", null) }?.label ?: "choose ›") {
+            fillVpnPicker(); setScroll.scrollTo(0, 0)
+        }
+        row("hidden apps", "${allApps.size - apps.size} ›") {
+            fillHidden(); setScroll.scrollTo(0, 0)
+        }
+        row("close", "esc") { closeSettings() }
+    }
+
+    private fun fillStyleSettings() {
+        styleConfigOpen = true
+        val p = pal
+        setBox.removeAllViews()
+        setBox.addView(txt(15f, p.cBlue, "~/config/style"))
+        setBox.addView(txt(11f, p.cDim, "appearance, wallpaper and workspace layout").apply {
+            setPadding(0, dp(2), 0, dp(6))
+        })
+        setBox.addView(txt(14f, p.cAccent, "← back").apply {
+            setPadding(0, dp(8), 0, dp(8))
+            setOnClickListener { fillSettings(); setScroll.scrollTo(0, 0) }
+        })
+        fun row(k: String, v: String, onTap: () -> Unit) {
+            val r = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, dp(11), 0, dp(11))
+                setOnClickListener { onTap() }
+            }
+            r.addView(txt(14f, p.cFg, k), LinearLayout.LayoutParams(0, -2, 1f))
+            r.addView(txt(14f, p.cAccent, v))
+            setBox.addView(r)
+        }
+        row("home screen", "customize ›") {
+            fillHomeScreenSettings(); setScroll.scrollTo(0, 0)
         }
         row("wallpaper", "choose ›") { closeSettings(); pickWall.launch(arrayOf("image/*")) }
         row("clear wallpaper", "›") {
-            prefs.edit().remove("wall").apply()
-            wall.setImageDrawable(null)
+            prefs.edit().remove("wall").apply(); wall.setImageDrawable(null)
         }
         row("theme", pal.name) { cycle("theme", pals.size) }
         row("font", fontNames[prefs.getInt("font", 0).coerceIn(0, fontNames.size - 1)]) {
@@ -2484,38 +2790,29 @@ class MainActivity : AppCompatActivity() {
             cycle("opacity", opacities.size, 2)
         }
         row("launch style", mode) { cycle("mode", launchModes.size) }
-        row("default launcher", "change ›") {
-            closeSettings()
-            try {
-                startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
-            } catch (_: Exception) {
-                startActivity(Intent(Settings.ACTION_SETTINGS))
-            }
-        }
         row("fetch logo", logoNames[prefs.getInt("logo", 0).coerceIn(0, logoNames.size - 1)]) {
             val n = (prefs.getInt("logo", 0) + 1) % logoNames.size
             prefs.edit().putInt("logo", n).apply()
             if (logoNames[n] == "image" && prefs.getString("logo_uri", null) == null) {
-                closeSettings()
-                pickLogo.launch(arrayOf("image/*"))
+                pickLogoFromStyle()
             } else {
-                rebuild(true)
+                rebuild(false)
+                fillStyleSettings()
+                setScroll.scrollTo(0, 0)
+                showOverlay()
             }
         }
-        row("logo image / gif", "choose ›") { closeSettings(); pickLogo.launch(arrayOf("image/*")) }
-        row("media access", if (mediaAccess()) "granted" else "enable ›") {
-            openSystem(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-        }
+        row("logo image / gif", "choose ›") { pickLogoFromStyle() }
         row("window layout", layoutModeFor(curWs)) {
             val modes = listOf("dwindle", "master", "columns", "rows")
             setLayoutMode(curWs, modes[(modes.indexOf(layoutModeFor(curWs)) + 1) % modes.size])
-            fillSettings()
+            fillStyleSettings()
         }
         row("window ratio", "${(layoutRatioFor(curWs) * 100).toInt()}%") {
             val ratios = listOf(40, 50, 60, 70)
             val current = (layoutRatioFor(curWs) * 100).toInt()
             setLayoutRatio(curWs, ratios[(ratios.indexOf(current).coerceAtLeast(0) + 1) % ratios.size])
-            fillSettings()
+            fillStyleSettings()
         }
         row("layout scope", if (layoutScopeAll()) "all workspaces" else "this workspace") {
             val makeAll = !layoutScopeAll()
@@ -2523,30 +2820,18 @@ class MainActivity : AppCompatActivity() {
             val currentRatio = (layoutRatioFor(curWs) * 100).toInt()
             val edit = prefs.edit().putBoolean("layout_scope_all", makeAll)
             if (makeAll) {
-                // Global mode inherits the current workspace's effective settings.
                 edit.putString("window_layout_mode_global", currentMode)
                 edit.putInt("window_layout_ratio_global", currentRatio)
             } else {
-                // Keep any previously saved workspace-specific settings. Only seed
-                // workspaces that have never had their own layout configured.
                 for (ws in 0..4) {
-                    if (!prefs.contains("window_layout_mode_$ws")) {
-                        edit.putString("window_layout_mode_$ws", currentMode)
-                    }
-                    if (!prefs.contains("window_layout_ratio_$ws")) {
-                        edit.putInt("window_layout_ratio_$ws", currentRatio)
-                    }
+                    if (!prefs.contains("window_layout_mode_$ws")) edit.putString("window_layout_mode_$ws", currentMode)
+                    if (!prefs.contains("window_layout_ratio_$ws")) edit.putInt("window_layout_ratio_$ws", currentRatio)
                 }
             }
             edit.apply()
             for (ws in 0..4) applyTileLayout(ws)
-            fillSettings()
+            fillStyleSettings()
         }
-        row("vpn app", allApps.find { it.pkg == prefs.getString("vpn_pkg", null) }?.label ?: "choose ›") {
-            fillVpnPicker(); setScroll.scrollTo(0, 0)
-        }
-        row("hidden apps", "${allApps.size - apps.size} ›") { fillHidden(); setScroll.scrollTo(0, 0) }
-        row("close", "esc") { closeSettings() }
     }
 
     private fun fillHomeScreenSettings() {
@@ -2560,19 +2845,56 @@ class MainActivity : AppCompatActivity() {
         )
         setBox.addView(txt(14f, p.cAccent, "← back").apply {
             setPadding(0, dp(8), 0, dp(8))
-            setOnClickListener { fillSettings(); setScroll.scrollTo(0, 0) }
+            setOnClickListener { fillStyleSettings(); setScroll.scrollTo(0, 0) }
         })
 
-        fun windowRow(label: String, key: String) {
-            val enabled = prefs.getBoolean(key, true)
+        fun refreshVisibility() {
+            if (windowVisibilityScopeAll()) {
+                for (ws in 0..4) applyTileLayout(ws)
+            } else {
+                applyTileLayout(curWs)
+            }
+        }
+
+        fun scopeRow() {
+            val allWorkspaces = windowVisibilityScopeAll()
             val r = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(0, dp(12), 0, dp(12))
                 setOnClickListener {
-                    prefs.edit().putBoolean(key, !prefs.getBoolean(key, true)).apply()
-                    for (ws in 0..4) applyTileLayout(ws)
-                    showOverlay()
+                    val makeAll = !windowVisibilityScopeAll()
+                    val edit = prefs.edit().putBoolean("home_visibility_scope_all", makeAll)
+                    if (!makeAll) {
+                        // Seed this workspace's window states from the existing shared
+                        // values so switching scope never unexpectedly hides a pane.
+                        for (id in tileIds) {
+                            val key = "home_show_${id}_$curWs"
+                            if (!prefs.contains(key)) {
+                                edit.putBoolean(key, prefs.getBoolean("home_show_$id", true))
+                            }
+                        }
+                    }
+                    edit.apply()
+                    refreshVisibility()
+                    fillHomeScreenSettings()
+                    setScroll.scrollTo(0, 0)
+                }
+            }
+            r.addView(txt(14f, p.cFg, "visibility scope"), LinearLayout.LayoutParams(0, -2, 1f))
+            r.addView(txt(14f, p.cAccent, if (allWorkspaces) "all workspaces" else "this window"))
+            setBox.addView(r)
+        }
+
+        fun windowRow(label: String, id: String) {
+            val enabled = windowShown(curWs, id)
+            val r = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, dp(12), 0, dp(12))
+                setOnClickListener {
+                    setWindowShown(curWs, id, !windowShown(curWs, id))
+                    refreshVisibility()
                     fillHomeScreenSettings()
                     setScroll.scrollTo(0, 0)
                 }
@@ -2582,11 +2904,14 @@ class MainActivity : AppCompatActivity() {
             setBox.addView(r)
         }
 
-        windowRow("terminal window", "home_show_terminal")
-        windowRow("pinned apps window", "home_show_pinned")
-        windowRow("bottom window (monitor / player)", "home_show_bottom")
+        scopeRow()
+        windowRow("terminal window", "terminal")
+        windowRow("pinned apps window", "pinned")
+        windowRow("bottom window (monitor / player)", "bottom")
         setBox.addView(
-            txt(11f, p.cDim, "Changes apply to all five workspaces.").apply {
+            txt(11f, p.cDim,
+                if (windowVisibilityScopeAll()) "Changes apply to all five workspaces."
+                else "Changes apply only to this window in workspace ${curWs + 1}.").apply {
                 setPadding(0, dp(10), 0, dp(2))
             }
         )
@@ -2687,6 +3012,9 @@ class MainActivity : AppCompatActivity() {
                     "  panel <mode>   set bottom window: monitor/player",
                     "  layout <name>  set layout: dwindle/master/columns/rows",
                     "  ratio <30-70>  set primary split percentage",
+                    "  swap <a> <b>  swap terminal/pinned/bottom",
+                    "  swap          swap focused window with next",
+                    "  focus next|prev  move focus highlight",
                     "  logo [name]    android/arch/omarchy/image/none",
                     "  ws <1-5>       switch workspace",
                     "  theme [name]   change theme",
@@ -2711,6 +3039,21 @@ class MainActivity : AppCompatActivity() {
                         setLayoutMode(ws, arg)
                         say("layout set to $arg", p.cGreen)
                     } else say("usage: layout dwindle|master|columns|rows", p.cDim)
+                }
+                "swap" -> {
+                    val names = arg.split(Regex("\\s+")).filter { it.isNotBlank() }
+                    val ok = if (names.size >= 2) swapTileNames(ws, names[0], names[1]) else {
+                        val visible = tileOrder(ws).filter { windowShown(ws, it) }
+                        val current = tileIds.getOrElse(focusedWindow[ws]) { "terminal" }
+                        val i = visible.indexOf(current)
+                        i >= 0 && visible.size > 1 && swapTileNames(ws, current, visible[(i + 1) % visible.size])
+                    }
+                    say(if (ok) "windows swapped" else "usage: swap [terminal|pinned|bottom] [terminal|pinned|bottom]", if (ok) p.cGreen else p.cDim)
+                }
+                "focus" -> when (arg.lowercase()) {
+                    "next" -> stepFocus(ws, 1)
+                    "prev", "previous" -> stepFocus(ws, -1)
+                    else -> say("usage: focus next|prev", p.cDim)
                 }
                 "ratio" -> {
                     val value = arg.toIntOrNull()
