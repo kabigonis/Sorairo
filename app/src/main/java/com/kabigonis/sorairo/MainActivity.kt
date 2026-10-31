@@ -988,6 +988,7 @@ class MainActivity : AppCompatActivity() {
     private val detector by lazy {
         GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
             override fun onFling(e1: MotionEvent?, e2: MotionEvent, vx: Float, vy: Float): Boolean {
+                if (moveSource[curWs] >= 0) return false
                 if (mode != "terminal" && e1 != null &&
                     e1.y - e2.y > dp(80) && vy < -800 && abs(vx) < abs(vy)
                 ) {
@@ -1167,7 +1168,7 @@ class MainActivity : AppCompatActivity() {
 
         // ---- top bar ----
         val bar = FrameLayout(this)
-        moveHint = txt(11f, p.cAccent, "move: tap another window").apply { visibility = View.GONE; gravity = Gravity.CENTER }
+        moveHint = txt(11f, p.cAccent, "move: tap another window").apply { visibility = View.GONE; gravity = Gravity.CENTER; setOnClickListener { endMove() } }
         bar.addView(moveHint, FrameLayout.LayoutParams(-2, -1, Gravity.CENTER))
         val left = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -2766,6 +2767,9 @@ class MainActivity : AppCompatActivity() {
                     "  panel <mode>   set bottom window: monitor/player",
                     "  layout <name>  set layout: dwindle/master/columns/rows",
                     "  ratio <30-70>  set primary split percentage",
+                    "  swap <a> <b>  swap terminal/pinned/bottom",
+                    "  swap          swap focused window with next",
+                    "  focus next|prev  move focus highlight",
                     "  logo [name]    android/arch/omarchy/image/none",
                     "  ws <1-5>       switch workspace",
                     "  theme [name]   change theme",
@@ -2790,6 +2794,21 @@ class MainActivity : AppCompatActivity() {
                         setLayoutMode(ws, arg)
                         say("layout set to $arg", p.cGreen)
                     } else say("usage: layout dwindle|master|columns|rows", p.cDim)
+                }
+                "swap" -> {
+                    val names = arg.split(Regex("\\\\s+")).filter { it.isNotBlank() }
+                    val ok = if (names.size >= 2) swapTileNames(ws, names[0], names[1]) else {
+                        val visible = tileOrder(ws).filter { prefs.getBoolean("home_show_$it", true) }
+                        val current = tileIds.getOrElse(focusedWindow[ws]) { "terminal" }
+                        val i = visible.indexOf(current)
+                        i >= 0 && visible.size > 1 && swapTileNames(ws, current, visible[(i + 1) % visible.size])
+                    }
+                    say(if (ok) "windows swapped" else "usage: swap [terminal|pinned|bottom] [terminal|pinned|bottom]", if (ok) p.cGreen else p.cDim)
+                }
+                "focus" -> when (arg.lowercase()) {
+                    "next" -> stepFocus(ws, 1)
+                    "prev", "previous" -> stepFocus(ws, -1)
+                    else -> say("usage: focus next|prev", p.cDim)
                 }
                 "ratio" -> {
                     val value = arg.toIntOrNull()
