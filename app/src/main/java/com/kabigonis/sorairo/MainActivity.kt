@@ -1013,6 +1013,55 @@ class MainActivity : AppCompatActivity() {
     private var monitorLastTx = 0L
     private var monitorLastSummaryT = 0L
 
+    private val exportHiddenFile = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val list = hiddenSet().sorted()
+                contentResolver.openOutputStream(uri, "wt")?.use { out ->
+                    out.write(list.joinToString("\n").toByteArray())
+                }
+                Toast.makeText(this, "saved ${list.size} hidden apps", Toast.LENGTH_SHORT).show()
+            } catch (_: Exception) {
+                Toast.makeText(this, "couldn't save the file", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private val importHiddenFile = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val imported = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readLines() }
+                    .orEmpty()
+                    .map { it.trim() }
+                    .filter { line ->
+                        line.isNotEmpty() && line.all { c -> c.isLetterOrDigit() || c == '.' || c == '_' }
+                    }
+                    .toSet()
+                if (imported.isEmpty()) {
+                    Toast.makeText(this, "no apps found in that file", Toast.LENGTH_SHORT).show()
+                } else {
+                    val merged = hiddenSet() + imported
+                    prefs.edit().putString("hidden", merged.joinToString(",")).apply()
+                    apps = visibleApps()
+                    adapter.items = apps
+                    adapter.notifyDataSetChanged()
+                    for (i in 0..4) {
+                        fillPins(i)
+                        refreshFetch(i)
+                    }
+                    if (settings.visibility == View.VISIBLE) fillHidden()
+                    Toast.makeText(this, "restored ${imported.size} hidden apps", Toast.LENGTH_SHORT).show()
+                }
+            } catch (_: Exception) {
+                Toast.makeText(this, "couldn't read the file", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     private val pickWall = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             try {
@@ -2571,6 +2620,18 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, dp(8), 0, dp(8))
             setOnClickListener { fillSettings(); setScroll.scrollTo(0, 0) }
         })
+        fun fileRow(k: String, v: String, onTap: () -> Unit) {
+            val r = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, dp(9), 0, dp(9))
+                setOnClickListener { onTap() }
+            }
+            r.addView(txt(14f, p.cFg, k), LinearLayout.LayoutParams(0, -2, 1f))
+            r.addView(txt(14f, p.cAccent, v))
+            setBox.addView(r)
+        }
+        fileRow("save list to a file", "export ›") { exportHiddenFile.launch("sorairo-hidden-apps.txt") }
+        fileRow("restore list from a file", "import ›") { importHiddenFile.launch(arrayOf("*/*")) }
         allApps.forEach { app ->
             val chosen = app.pkg == prefs.getString("vpn_pkg", null)
             setBox.addView(
