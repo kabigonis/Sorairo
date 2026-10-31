@@ -114,7 +114,7 @@ private class TileLayout(context: Context, private val gapPx: Int) : ViewGroup(c
 
     fun configure(newMode: String, newRatio: Float, newOrder: List<String>,
                   newVisible: Set<String>, animate: Boolean = true) {
-        val nextMode = newMode.takeIf { it in setOf("dwindle", "columns", "rows") } ?: "dwindle"
+        val nextMode = newMode.takeIf { it in setOf("dwindle", "master", "columns", "rows") } ?: "dwindle"
         val nextRatio = newRatio.coerceIn(0.3f, 0.7f)
         val nextOrder = (newOrder.filter { it in setOf("terminal", "pinned", "bottom") } +
             listOf("terminal", "pinned", "bottom")).distinct()
@@ -182,19 +182,32 @@ private class TileLayout(context: Context, private val gapPx: Int) : ViewGroup(c
                     put(id, left, t, if (i == ids.lastIndex) l + rw - left else each, rh)
                 }
             }
-            else -> {
+            mode == "master" -> {
+                // Master keeps the first window prominent; the remaining windows
+                // share a vertical stack on the right.
                 val leftWidth = ((rw - gap) * ratio).toInt().coerceIn(0, (rw - gap).coerceAtLeast(0))
                 put(ids[0], l, t, leftWidth, rh)
                 val rightX = l + leftWidth + gap
                 val rightW = (l + rw - rightX).coerceAtLeast(0)
                 val rest = ids.drop(1)
-                if (rest.size == 1) put(rest[0], rightX, t, rightW, rh)
-                else {
-                    val each = (rh - gap * (rest.size - 1)).coerceAtLeast(0) / rest.size
-                    rest.forEachIndexed { i, id ->
-                        val top = t + i * (each + gap)
-                        put(id, rightX, top, rightW, if (i == rest.lastIndex) t + rh - top else each)
-                    }
+                val each = (rh - gap * (rest.size - 1)).coerceAtLeast(0) / rest.size
+                rest.forEachIndexed { i, id ->
+                    val top = t + i * (each + gap)
+                    put(id, rightX, top, rightW, if (i == rest.lastIndex) t + rh - top else each)
+                }
+            }
+            else -> {
+                // Dwindle uses an even primary split, with remaining windows
+                // stacked in the secondary area.
+                val leftWidth = ((rw - gap) * 0.5f).toInt()
+                put(ids[0], l, t, leftWidth, rh)
+                val rightX = l + leftWidth + gap
+                val rightW = (l + rw - rightX).coerceAtLeast(0)
+                val rest = ids.drop(1)
+                val each = (rh - gap * (rest.size - 1)).coerceAtLeast(0) / rest.size
+                rest.forEachIndexed { i, id ->
+                    val top = t + i * (each + gap)
+                    put(id, rightX, top, rightW, if (i == rest.lastIndex) t + rh - top else each)
                 }
             }
         }
@@ -426,7 +439,7 @@ class MainActivity : AppCompatActivity() {
     private fun layoutScopeAll(): Boolean = prefs.getBoolean("layout_scope_all", false)
     private fun layoutModeFor(ws: Int): String {
         val key = if (layoutScopeAll()) "window_layout_mode_global" else "window_layout_mode_$ws"
-        return prefs.getString(key, "dwindle")?.takeIf { it in setOf("dwindle", "columns", "rows") } ?: "dwindle"
+        return prefs.getString(key, "dwindle")?.takeIf { it in setOf("dwindle", "master", "columns", "rows") } ?: "dwindle"
     }
     private fun layoutRatioFor(ws: Int): Float {
         val key = if (layoutScopeAll()) "window_layout_ratio_global" else "window_layout_ratio_$ws"
@@ -2494,7 +2507,7 @@ class MainActivity : AppCompatActivity() {
             openSystem(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
         }
         row("window layout", layoutModeFor(curWs)) {
-            val modes = listOf("dwindle", "columns", "rows")
+            val modes = listOf("dwindle", "master", "columns", "rows")
             setLayoutMode(curWs, modes[(modes.indexOf(layoutModeFor(curWs)) + 1) % modes.size])
             fillSettings()
         }
@@ -2694,10 +2707,10 @@ class MainActivity : AppCompatActivity() {
                 "fetch", "fastfetch", "neofetch" -> refreshFetch(ws)
                 "layout" -> {
                     if (arg.isEmpty()) say("layout: ${layoutModeFor(ws)}", p.cGreen)
-                    else if (arg in setOf("dwindle", "columns", "rows")) {
+                    else if (arg in setOf("dwindle", "master", "columns", "rows")) {
                         setLayoutMode(ws, arg)
                         say("layout set to $arg", p.cGreen)
-                    } else say("usage: layout dwindle|columns|rows", p.cDim)
+                    } else say("usage: layout dwindle|master|columns|rows", p.cDim)
                 }
                 "ratio" -> {
                     val value = arg.toIntOrNull()
