@@ -259,11 +259,12 @@ class MainActivity : AppCompatActivity() {
     private val outScrolls = arrayOfNulls<ScrollView>(5)
     private val pinBoxes = arrayOfNulls<LinearLayout>(5)
     private val bottomWindowViews = arrayOfNulls<LinearLayout>(5)
-    private val bottomWindowContents = arrayOfNulls<LinearLayout>(5)
+    private val bottomWindowContents = arrayOfNulls<ScrollView>(5)
     private val playerTitles = arrayOfNulls<TextView>(5)
     private val playerArtists = arrayOfNulls<TextView>(5)
     private val playerStatuses = arrayOfNulls<TextView>(5)
     private val playerHeaders = arrayOfNulls<TextView>(5)
+    private val playerTimes = arrayOfNulls<TextView>(5)
     private val playerQueueViews = arrayOfNulls<LinearLayout>(5)
     private val playerQueueScrolls = arrayOfNulls<ScrollView>(5)
     private val playerQueueSignatures = arrayOfNulls<String>(5)
@@ -480,7 +481,8 @@ class MainActivity : AppCompatActivity() {
         val total = if (duration > 0L) timeLabel(duration) else "00:00"
         val trackLabel = details.filter { it.isNotBlank() }.joinToString(" - ")
         val headerTrack = if (trackLabel.isBlank()) "" else " — $trackLabel"
-        playerHeaders[ws]?.text = "$playback$headerTrack\n$elapsed / $total"
+        playerHeaders[ws]?.text = "$playback$headerTrack"
+        playerTimes[ws]?.text = "$elapsed / $total"
         val queueView = playerQueueViews[ws]
         if (queueView != null) {
             val queue = controller?.queue.orEmpty().take(100)
@@ -1143,19 +1145,27 @@ class MainActivity : AppCompatActivity() {
         addChoice("player", "player")
         win.addView(titleRow, LinearLayout.LayoutParams(-1, -2))
 
-        val content = LinearLayout(this).apply {
+        val playerColumn = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_VERTICAL
+            gravity = Gravity.TOP
             setPadding(0, dp(8), 0, 0)
         }
         val playerHeader = txt(10.5f, p.cBlue).apply {
             typeface = Typeface.MONOSPACE
             maxLines = 2
+            ellipsize = TextUtils.TruncateAt.END
             includeFontPadding = false
-            text = "Not playing\n00:00 / 00:00"
+            text = "Not playing"
         }
         playerHeaders[ws] = playerHeader
-        content.addView(playerHeader, LinearLayout.LayoutParams(-1, -2))
+        playerColumn.addView(playerHeader, LinearLayout.LayoutParams(-1, -2))
+        val playerTime = txt(10.5f, p.cDim).apply {
+            typeface = Typeface.MONOSPACE
+            maxLines = 1
+            text = "00:00 / 00:00"
+        }
+        playerTimes[ws] = playerTime
+        playerColumn.addView(playerTime, LinearLayout.LayoutParams(-1, -2))
 
         val playerTabs = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1202,7 +1212,7 @@ class MainActivity : AppCompatActivity() {
             visibility = View.GONE
         }
         playerProgressBars[ws] = playerProgress
-        content.addView(
+        playerColumn.addView(
             playerProgress,
             LinearLayout.LayoutParams(-1, dp(3)).apply {
                 topMargin = dp(4)
@@ -1326,7 +1336,7 @@ class MainActivity : AppCompatActivity() {
         powerampRepeatButtons[ws] = repeatButton
         controls.addView(repeatButton, LinearLayout.LayoutParams(0, dp(48), 1f))
 
-        content.addView(
+        playerColumn.addView(
             controls,
             LinearLayout.LayoutParams(-1, -2).apply {
                 topMargin = dp(2)
@@ -1337,7 +1347,7 @@ class MainActivity : AppCompatActivity() {
             typeface = Typeface.MONOSPACE
             setPadding(dp(6), dp(4), dp(6), dp(2))
         }
-        content.addView(queueLabel, LinearLayout.LayoutParams(-1, -2))
+        playerColumn.addView(queueLabel, LinearLayout.LayoutParams(-1, -2))
 
         val queueScroll = ScrollView(this).apply {
             isFillViewport = false
@@ -1349,13 +1359,18 @@ class MainActivity : AppCompatActivity() {
         queueScroll.addView(queueList)
         playerQueueScrolls[ws] = queueScroll
         playerQueueViews[ws] = queueList
-        content.addView(
+        playerColumn.addView(
             queueScroll,
             LinearLayout.LayoutParams(-1, dp(112)).apply {
                 topMargin = dp(2)
             }
         )
-        bottomWindowContents[ws] = content
+        val playerScroll = ScrollView(this).apply {
+            isFillViewport = true
+            isVerticalScrollBarEnabled = false
+            addView(playerColumn, ViewGroup.LayoutParams(-1, -2))
+        }
+        bottomWindowContents[ws] = playerScroll
 
         val monitorColumn = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -1377,26 +1392,39 @@ class MainActivity : AppCompatActivity() {
         if (bottomWindowFor(ws) == "monitor") {
             win.addView(monitorColumn, LinearLayout.LayoutParams(-1, 0, 1f))
         } else {
-            win.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
+            win.addView(playerScroll, LinearLayout.LayoutParams(-1, 0, 1f))
         }
         bottomWindowViews[ws] = win
+        updateBottomWindowHeader(ws)
+        win.addOnLayoutChangeListener { view, _, _, _, _, _, _, _, _ ->
+            updateBottomWindowHeader(ws)
+            val availableHeight = view.height - titleRow.height -
+                view.paddingTop - view.paddingBottom
+            val showQueue = availableHeight >= dp(200)
+            queueLabel.visibility = if (showQueue) View.VISIBLE else View.GONE
+            queueScroll.visibility = if (showQueue) View.VISIBLE else View.GONE
+        }
         return win
+    }
+
+    private fun updateBottomWindowHeader(ws: Int) {
+        val choice = bottomWindowFor(ws)
+        bottomWindowTitles[ws]?.text = if (choice == "player") "~/player" else "~/monitor"
+        val win = bottomWindowViews[ws] ?: return
+        (win.getChildAt(0) as? LinearLayout)?.let { row ->
+            for (i in 1 until row.childCount) {
+                val tab = row.getChildAt(i) as? TextView ?: continue
+                tab.setTextColor(if (tab.text.toString() == choice) pal.cAccent else pal.cDim)
+            }
+        }
     }
 
     private fun updateBottomWindowDisplay(ws: Int, animate: Boolean) {
         val win = bottomWindowViews[ws] ?: return
         val choice = bottomWindowFor(ws)
         val content = bottomWindowContents[ws]
-        val title = bottomWindowTitles[ws]
-
         fun applyChoice() {
-            title?.text = if (choice == "monitor") "~/monitor" else "~/player"
-            (win.getChildAt(0) as? LinearLayout)?.let { row ->
-                for (i in 1 until row.childCount) {
-                    val tab = row.getChildAt(i) as? TextView ?: continue
-                    tab.setTextColor(if (tab.text.toString() == choice) pal.cAccent else pal.cDim)
-                }
-            }
+            updateBottomWindowHeader(ws)
 
             val monitorColumn = monitorSummaries[ws]?.parent as? LinearLayout
             if (choice == "monitor") {
