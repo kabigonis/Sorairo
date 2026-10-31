@@ -113,6 +113,44 @@ private class TileLayout(context: Context, private val gapPx: Int) : ViewGroup(c
 
     init { clipChildren = false }
 
+    var moveModeActive: () -> Boolean = { false }
+    var onMoveTap: (String) -> Unit = {}
+    private var moveTracking = false
+    private var moveDownX = 0f
+    private var moveDownY = 0f
+    private val moveSlop = android.view.ViewConfiguration.get(context).scaledTouchSlop * 2
+
+    private fun tileAt(x: Int, y: Int): String? {
+        for (i in childCount - 1 downTo 0) {
+            val c = getChildAt(i)
+            if (c.visibility != View.VISIBLE) continue
+            if (x >= c.left && x < c.right && y >= c.top && y < c.bottom) return c.tag as? String
+        }
+        return null
+    }
+
+    override fun onInterceptTouchEvent(ev: MotionEvent): Boolean = moveModeActive()
+
+    override fun onTouchEvent(ev: MotionEvent): Boolean {
+        if (!moveModeActive() && !moveTracking) return super.onTouchEvent(ev)
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                moveTracking = true; moveDownX = ev.x; moveDownY = ev.y
+                return true
+            }
+            MotionEvent.ACTION_UP -> {
+                val tracked = moveTracking
+                moveTracking = false
+                if (tracked && abs(ev.x - moveDownX) <= moveSlop && abs(ev.y - moveDownY) <= moveSlop) {
+                    tileAt(ev.x.toInt(), ev.y.toInt())?.let { onMoveTap(it) }
+                }
+                return true
+            }
+            MotionEvent.ACTION_CANCEL -> { moveTracking = false; return true }
+        }
+        return moveTracking
+    }
+
     fun configure(newMode: String, newRatio: Float, newOrder: List<String>,
                   newVisible: Set<String>, animate: Boolean = true) {
         val nextMode = newMode.takeIf { it in setOf("dwindle", "master", "columns", "rows") } ?: "dwindle"
@@ -831,13 +869,17 @@ class MainActivity : AppCompatActivity() {
             val rows = playerQueueRows[ws]
 
             if (queue.isEmpty()) {
-                if (playerQueueSignatures[ws] != "empty") {
+                val emptyKey = if (controller == null) "none" else "empty"
+                if (playerQueueSignatures[ws] != emptyKey) {
                     queueView.removeAllViews()
                     rows.clear()
-                    val empty = txt(10f, pal.cDim, "this app doesn't share its queue")
+                    val empty = txt(
+                        10f, pal.cDim,
+                        if (controller == null) "no active media" else "this app doesn't share its queue"
+                    )
                     queueView.addView(empty, LinearLayout.LayoutParams(-1, -2))
                     playerQueueEmptyLabels[ws] = empty
-                    playerQueueSignatures[ws] = "empty"
+                    playerQueueSignatures[ws] = emptyKey
                 }
             } else {
                 if (playerQueueSignatures[ws] != signature) {
@@ -917,6 +959,9 @@ class MainActivity : AppCompatActivity() {
         if (listeningController !== controller) {
             stopPlayerCallbacks()
             val callback = object : MediaController.Callback() {
+                override fun onQueueChanged(queue: MutableList<android.media.session.MediaSession.QueueItem>?) {
+                    updatePlayerWindow(curWs)
+                }
                 override fun onMetadataChanged(metadata: MediaMetadata?) {
                     updateNowPlaying()
                     updatePlayerWindow(curWs)
@@ -1855,6 +1900,10 @@ class MainActivity : AppCompatActivity() {
         queueScroll.addView(queueList)
         playerQueueScrolls[ws] = queueScroll
         playerQueueViews[ws] = queueList
+        val queuePlaceholder = txt(10f, p.cDim, "no active media")
+        queueList.addView(queuePlaceholder, LinearLayout.LayoutParams(-1, -2))
+        playerQueueEmptyLabels[ws] = queuePlaceholder
+        playerQueueSignatures[ws] = "none"
         playerColumn.addView(
             queueScroll,
             LinearLayout.LayoutParams(-1, dp(112)).apply {
@@ -1965,6 +2014,8 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, dp(8), 0, 0)
             setOnLongClickListener { showSettings(); true }
         }
+        row.moveModeActive = { moveSource[ws] >= 0 }
+        row.onMoveTap = { id -> moveTap(ws, id) }
 
         // ---- terminal window ----
         val term = LinearLayout(this).apply {
