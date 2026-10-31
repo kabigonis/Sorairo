@@ -83,6 +83,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsAnimationCompat
 import androidx.core.widget.doAfterTextChanged
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -1030,6 +1031,43 @@ class MainActivity : AppCompatActivity() {
 
     private var activityResumed = false
 
+    private var activeSessionsListener: MediaSessionManager.OnActiveSessionsChangedListener? = null
+
+    private fun registerActiveSessionsListener() {
+        if (!mediaAccess() || activeSessionsListener != null) return
+        try {
+            val manager = getSystemService(MEDIA_SESSION_SERVICE) as MediaSessionManager
+            val listener = MediaSessionManager.OnActiveSessionsChangedListener { sessions ->
+                val active = sessions?.firstOrNull {
+                    it.playbackState?.state == PlaybackState.STATE_PLAYING
+                } ?: sessions?.firstOrNull()
+                ctrl = active
+                updateNowPlaying()
+                updatePlayerWindow(curWs)
+                if (activityResumed && bottomWindowFor(curWs) == "player") {
+                    if (active != null) startPlayerCallbacks()
+                    else handler.postDelayed(playerRefresh, 700L)
+                }
+            }
+            manager.addOnActiveSessionsChangedListener(
+                listener, ComponentName(this, NowPlayingService::class.java), handler
+            )
+            activeSessionsListener = listener
+        } catch (_: Exception) {
+            activeSessionsListener = null
+        }
+    }
+
+    private fun unregisterActiveSessionsListener() {
+        val listener = activeSessionsListener ?: return
+        try {
+            (getSystemService(MEDIA_SESSION_SERVICE) as MediaSessionManager)
+                .removeOnActiveSessionsChangedListener(listener)
+        } catch (_: Exception) {
+        }
+        activeSessionsListener = null
+    }
+
     private fun updateBottomWindowRuntime() {
         handler.removeCallbacks(monitorTick)
         if (!activityResumed) {
@@ -1119,6 +1157,7 @@ class MainActivity : AppCompatActivity() {
         updateNowPlaying()
         pager.post {
             updateBottomWindowDisplay(curWs, false)
+            registerActiveSessionsListener()
             updateBottomWindowRuntime()
             updateMonitorSummary(curWs)
             updatePlayerWindow(curWs)
@@ -1158,6 +1197,7 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         activityResumed = false
+        unregisterActiveSessionsListener()
         handler.removeCallbacks(tick)
         handler.removeCallbacks(monitorTick)
         stopPlayerCallbacks()
@@ -1377,6 +1417,29 @@ class MainActivity : AppCompatActivity() {
         )
         root.addView(settings, FrameLayout.LayoutParams(-1, -1))
 
+        ViewCompat.setWindowInsetsAnimationCallback(
+            root,
+            object : WindowInsetsAnimationCompat.Callback(
+                WindowInsetsAnimationCompat.Callback.DISPATCH_MODE_CONTINUE_ON_SUBTREE
+            ) {
+                override fun onProgress(
+                    insets: WindowInsetsCompat,
+                    runningAnimations: MutableList<WindowInsetsAnimationCompat>
+                ): WindowInsetsCompat {
+                    val stable = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars())
+                    val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+                    val terminalOwnsIme = terminalPrompts.getOrNull(curWs)?.hasFocus() == true &&
+                        drawer.visibility != View.VISIBLE &&
+                        settings.visibility != View.VISIBLE &&
+                        qs.visibility != View.VISIBLE
+                    content.setPadding(
+                        dp(12), dp(6), dp(12),
+                        maxOf(stable.bottom, if (terminalOwnsIme) ime.bottom else 0) + dp(12)
+                    )
+                    return insets
+                }
+            }
+        )
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
             // Stable insets: layout never shifts when the system status bar is pulled down
             val stable = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars())
@@ -1783,20 +1846,19 @@ class MainActivity : AppCompatActivity() {
             updateBottomWindowHeader(ws)
 
             val monitorColumn = monitorSummaries[ws]?.parent as? LinearLayout
-            if (choice == "monitor") {
-                if (monitorColumn != null && monitorColumn.parent == null) {
-                    win.removeView(content)
-                    win.addView(monitorColumn, LinearLayout.LayoutParams(-1, 0, 1f))
-                }
+            // Reconcile the content child explicitly; don't rely on stale parent
+            // state from the initial workspace build.
+            if (choice == "monitor" && monitorColumn != null) {
+                (content?.parent as? ViewGroup)?.removeView(content)
+                (monitorColumn.parent as? ViewGroup)?.removeView(monitorColumn)
+                win.addView(monitorColumn, LinearLayout.LayoutParams(-1, 0, 1f))
                 updateMonitorSummary(ws)
                 monitorGraphs[ws]?.setColors(pal.cDim, pal.cBlue, pal.cGreen)
-            } else {
-                if (content?.parent == null) {
-                    monitorColumn?.let { win.removeView(it) }
-                    if (content != null) {
-                        win.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
-                    }
-                }
+            } else if (choice == "player" && content != null) {
+                (monitorColumn?.parent as? ViewGroup)?.removeView(monitorColumn)
+                (content.parent as? ViewGroup)?.removeView(content)
+                win.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
+                updatePlayerWindow(ws)
             }
             win.alpha = 1f
         }
