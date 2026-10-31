@@ -91,6 +91,10 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+
+import kotlin.math.abs
+import kotlin.math.min
+
 /**
  * Positions the existing workspace window views without recreating them.
  * Only explicit configuration changes animate; parent size changes snap.
@@ -244,8 +248,6 @@ private class TileLayout(context: Context, private val gapPx: Int) : ViewGroup(c
     }
 }
 
-import kotlin.math.abs
-import kotlin.math.min
 
 class MainActivity : AppCompatActivity() {
     private companion object {
