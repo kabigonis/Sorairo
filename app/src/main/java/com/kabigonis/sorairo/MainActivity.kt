@@ -1123,6 +1123,27 @@ class MainActivity : AppCompatActivity() {
             updateMonitorSummary(curWs)
             updatePlayerWindow(curWs)
             monitorGraphs[curWs]?.invalidate()
+
+            // Media sessions can become available a little after the launcher
+            // resumes (especially after a cold start). Retry discovery instead
+            // of requiring the user to switch the monitor/player tab.
+            fun retryMediaDiscovery(attempt: Int) {
+                if (!activityResumed || attempt >= 8) return
+                updateNowPlaying()
+                if (bottomWindowFor(curWs) == "player") {
+                    val controller = activeController()
+                    if (controller != null) {
+                        ctrl = controller
+                        startPlayerCallbacks()
+                        updatePlayerWindow(curWs)
+                    } else {
+                        handler.postDelayed({ retryMediaDiscovery(attempt + 1) }, 900L)
+                    }
+                } else if (activeController() == null) {
+                    handler.postDelayed({ retryMediaDiscovery(attempt + 1) }, 900L)
+                }
+            }
+            handler.postDelayed({ retryMediaDiscovery(0) }, 400L)
         }
         refreshDefaultLauncherPrompts()
     }
