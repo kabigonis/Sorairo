@@ -855,6 +855,7 @@ class MainActivity : AppCompatActivity() {
                             maxLines = 1
                             ellipsize = TextUtils.TruncateAt.END
                             setPadding(dp(6), dp(5), dp(6), dp(5))
+                            setOnLongClickListener { showSettings(); true }
                             setOnClickListener {
                                 val c = ctrl ?: return@setOnClickListener
                                 val stateNow = c.playbackState ?: return@setOnClickListener
@@ -1602,6 +1603,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun openSettingsOnLongPress(v: View) {
+        val gd = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onLongPress(e: MotionEvent) {
+                showSettings()
+            }
+        })
+        v.setOnTouchListener { _, ev ->
+            gd.onTouchEvent(ev)
+            false
+        }
+    }
+
     private fun buildBottomWindow(ws: Int): LinearLayout {
         val p = pal
         val win = LinearLayout(this).apply {
@@ -1855,6 +1868,7 @@ class MainActivity : AppCompatActivity() {
         queueScroll.addView(queueList)
         playerQueueScrolls[ws] = queueScroll
         playerQueueViews[ws] = queueList
+        openSettingsOnLongPress(queueScroll)
         playerColumn.addView(
             queueScroll,
             LinearLayout.LayoutParams(-1, dp(112)).apply {
@@ -1866,6 +1880,7 @@ class MainActivity : AppCompatActivity() {
             isVerticalScrollBarEnabled = false
             addView(playerColumn, ViewGroup.LayoutParams(-1, -2))
         }
+        openSettingsOnLongPress(playerScroll)
         bottomWindowContents[ws] = playerScroll
 
         val monitorColumn = LinearLayout(this).apply {
