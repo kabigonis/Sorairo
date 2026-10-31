@@ -452,7 +452,7 @@ class MainActivity : AppCompatActivity() {
             if (prefs.getBoolean("home_show_bottom", true)) add("bottom")
         }
         tileLayouts[ws]?.configure(layoutModeFor(ws), layoutRatioFor(ws),
-            listOf("terminal", "pinned", "bottom"), shown, animate)
+            tileOrder(ws), shown, animate)
     }
     private fun setLayoutMode(ws: Int, value: String) {
         val edit = prefs.edit()
@@ -478,6 +478,79 @@ class MainActivity : AppCompatActivity() {
     private val bottomWindowForFocus = arrayOfNulls<View>(5)
     private val terminalWindowForFocus = arrayOfNulls<View>(5)
     private val tileLayouts = arrayOfNulls<TileLayout>(5)
+    private val moveSource = IntArray(5) { -1 }
+    private lateinit var moveHint: TextView
+    private val tileIds = listOf("terminal", "pinned", "bottom")
+    private fun tileOrder(ws: Int): List<String> {
+        val key = if (layoutScopeAll()) "tile_order_global" else "tile_order_$ws"
+        val saved = prefs.getString(key, "").orEmpty().split(",").filter { it in tileIds }
+        return (saved + tileIds).distinct()
+    }
+    private fun saveTileOrder(ws: Int, order: List<String>) {
+        val key = if (layoutScopeAll()) "tile_order_global" else "tile_order_$ws"
+        prefs.edit().putString(key, order.joinToString(",")).apply()
+    }
+    private fun tileView(ws: Int, id: String): View? = when (id) {
+        "terminal" -> terminalWindowForFocus[ws]
+        "pinned" -> pinWindowForFocus[ws]
+        "bottom" -> bottomWindowForFocus[ws]
+        else -> null
+    }
+    private fun endMove() {
+        val index = moveSource[curWs]
+        if (index < 0) return
+        moveSource[curWs] = -1
+        moveHint.visibility = View.GONE
+        tileView(curWs, tileIds[index])?.let { v ->
+            v.animate().cancel(); v.alpha = 1f
+            (v.background as? GradientDrawable)?.setStroke(dp(2), pal.cDim)
+        }
+    }
+    private fun startMove(ws: Int, id: String) {
+        if (ws != curWs) return
+        endMove(); moveSource[ws] = tileIds.indexOf(id)
+        moveHint.visibility = View.VISIBLE
+        tileView(ws, id)?.let { v ->
+            (v.background as? GradientDrawable)?.setStroke(dp(3), pal.cAccent)
+            v.animate().alpha(0.55f).setDuration(250).withEndAction {
+                if (moveSource[ws] >= 0) v.animate().alpha(1f).setDuration(250).start()
+            }.start()
+        }
+    }
+    private fun focusWindow(ws: Int, id: String) {
+        val terminal = terminalWindowForFocus[ws] ?: return
+        val pinned = pinWindowForFocus[ws] ?: return
+        setWindowFocus(ws, tileIds.indexOf(id).coerceAtLeast(0), terminal, pinned)
+    }
+    private fun moveTap(ws: Int, target: String): Boolean {
+        val from = moveSource[ws]
+        if (from < 0) return false
+        val source = tileIds[from]
+        if (source != target) {
+            val order = tileOrder(ws).toMutableList()
+            val a = order.indexOf(source); val b = order.indexOf(target)
+            if (a >= 0 && b >= 0) {
+                val tmp = order[a]; order[a] = order[b]; order[b] = tmp
+                saveTileOrder(ws, order); applyTileLayout(ws, true); focusWindow(ws, source)
+            }
+        }
+        endMove(); return true
+    }
+    private fun swapTileNames(ws: Int, first: String, second: String): Boolean {
+        fun resolve(q: String) = tileIds.firstOrNull { it.startsWith(q, true) || q.startsWith(it, true) }
+        val aName = resolve(first) ?: return false; val bName = resolve(second) ?: return false
+        val order = tileOrder(ws).toMutableList(); val a = order.indexOf(aName); val b = order.indexOf(bName)
+        if (a < 0 || b < 0) return false
+        val tmp = order[a]; order[a] = order[b]; order[b] = tmp
+        saveTileOrder(ws, order); applyTileLayout(ws, true); focusWindow(ws, aName); return true
+    }
+    private fun stepFocus(ws: Int, delta: Int) {
+        val visible = tileOrder(ws).filter { prefs.getBoolean("home_show_$it", true) }
+        if (visible.isEmpty()) return
+        val current = tileIds.getOrElse(focusedWindow[ws]) { visible[0] }
+        val i = visible.indexOf(current).let { if (it < 0) 0 else it }
+        focusWindow(ws, visible[(i + delta + visible.size) % visible.size])
+    }
     private val focusBorderAnimators = java.util.WeakHashMap<View, ValueAnimator>()
     private val focusBorderColors = java.util.WeakHashMap<View, Int>()
     private lateinit var wall: ImageView
