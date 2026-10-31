@@ -2685,7 +2685,7 @@ class MainActivity : AppCompatActivity() {
                     "  clear          clear screen",
                     "  fetch          refresh system info",
                     "  panel <mode>   set bottom window: monitor/player",
-                    "  layout <name>  set layout: dwindle/columns/rows",
+                    "  layout <name>  set layout: dwindle/master/columns/rows",
                     "  ratio <30-70>  set primary split percentage",
                     "  logo [name]    android/arch/omarchy/image/none",
                     "  ws <1-5>       switch workspace",
