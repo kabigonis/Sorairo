@@ -3043,7 +3043,7 @@ class MainActivity : AppCompatActivity() {
                 "swap" -> {
                     val names = arg.split(Regex("\\s+")).filter { it.isNotBlank() }
                     val ok = if (names.size >= 2) swapTileNames(ws, names[0], names[1]) else {
-                        val visible = tileOrder(ws).filter { prefs.getBoolean("home_show_$it", true) }
+                        val visible = tileOrder(ws).filter { windowShown(ws, it) }
                         val current = tileIds.getOrElse(focusedWindow[ws]) { "terminal" }
                         val i = visible.indexOf(current)
                         i >= 0 && visible.size > 1 && swapTileNames(ws, current, visible[(i + 1) % visible.size])
