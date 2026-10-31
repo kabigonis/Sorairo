@@ -2381,6 +2381,8 @@ class MainActivity : AppCompatActivity() {
 
     // ================= settings =================
     private fun showOverlay() {
+        // Cancel any stale fade-out callback before reusing the settings overlay.
+        settings.animate().cancel()
         settings.visibility = View.VISIBLE
         settings.alpha = 0f
         settings.animate().alpha(1f).setDuration(140).start()
@@ -2658,9 +2660,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun closeSettings() {
-        if (settings.visibility != View.VISIBLE) return
-        settings.animate().alpha(0f).setDuration(120)
-            .withEndAction { settings.visibility = View.GONE }.start()
+        val closingSettings = settings
+        if (closingSettings.visibility != View.VISIBLE) return
+        closingSettings.animate().cancel()
+        closingSettings.animate().alpha(0f).setDuration(120)
+            .withEndAction {
+                // Capture the view being closed; never hide a replacement overlay
+                // created by rebuild() while this animation is finishing.
+                closingSettings.visibility = View.GONE
+            }.start()
     }
 
     private var styleConfigOpen = false
