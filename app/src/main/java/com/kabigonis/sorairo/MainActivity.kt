@@ -268,6 +268,7 @@ class MainActivity : AppCompatActivity() {
     private val playerQueueScrolls = arrayOfNulls<ScrollView>(5)
     private val playerQueueSignatures = arrayOfNulls<String>(5)
     private val playerQueueRows = Array(5) { mutableListOf<TextView>() }
+    private val terminalPrompts = arrayOfNulls<EditText>(5)
     private val playerQueueEmptyLabels = arrayOfNulls<TextView>(5)
     private val playerPlayButtons = arrayOfNulls<TextView>(5)
     private val powerampShuffleButtons = arrayOfNulls<TextView>(5)
@@ -1032,7 +1033,15 @@ class MainActivity : AppCompatActivity() {
             // Stable insets: layout never shifts when the system status bar is pulled down
             val stable = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars())
             val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
-            content.setPadding(dp(12), dp(6), dp(12), maxOf(stable.bottom, ime.bottom) + dp(12))
+            val terminalOwnsIme = terminalPrompts.getOrNull(curWs)?.hasFocus() == true &&
+                drawer.visibility != View.VISIBLE &&
+                settings.visibility != View.VISIBLE &&
+                qs.visibility != View.VISIBLE
+            // Workspace padding is applied here only; overlay keyboards never resize the workspace.
+            content.setPadding(
+                dp(12), dp(6), dp(12),
+                maxOf(stable.bottom, if (terminalOwnsIme) ime.bottom else 0) + dp(12)
+            )
             val avail = (dm.heightPixels - ime.bottom - panelTop - dp(16)).coerceAtLeast(dp(200))
             panel.layoutParams = (panel.layoutParams as FrameLayout.LayoutParams).apply {
                 height = min((dm.heightPixels * 0.6f).toInt(), avail)
@@ -1489,6 +1498,7 @@ class MainActivity : AppCompatActivity() {
             term.addView(promptRow, LinearLayout.LayoutParams(-1, -2))
         }
         val field = input
+        terminalPrompts[ws] = field
         fun focusInput() {
             if (field != null) {
                 field.requestFocus()
@@ -2739,7 +2749,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             h.name.text = displayAppLabel(app)
-            h.name.setTextColor(if (app.pkg in pins(curWs)) pal.cAccent else pal.cFg)
+            h.name.setTextColor(if (i == 0) pal.cAccent else pal.cFg)
             h.name.setBackgroundColor(if (i == 0) pal.cSel else Color.TRANSPARENT)
             h.name.setOnClickListener { launchApp(app) }
             h.name.setOnLongClickListener {
