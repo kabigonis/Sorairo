@@ -438,6 +438,28 @@ class MainActivity : AppCompatActivity() {
 
 
     private fun layoutScopeAll(): Boolean = prefs.getBoolean("layout_scope_all", false)
+
+    // Visibility can be shared by every workspace or stored for each individual
+    // window instance (terminal/pinned/bottom in a particular workspace).
+    private fun windowVisibilityScopeAll(): Boolean =
+        prefs.getBoolean("home_visibility_scope_all", true)
+
+    private fun windowShown(ws: Int, id: String): Boolean {
+        val legacy = prefs.getBoolean("home_show_$id", true)
+        if (windowVisibilityScopeAll()) return legacy
+        return prefs.getBoolean("home_show_${id}_$ws", legacy)
+    }
+
+    private fun setWindowShown(ws: Int, id: String, shown: Boolean) {
+        val edit = prefs.edit()
+        if (windowVisibilityScopeAll()) {
+            edit.putBoolean("home_show_$id", shown)
+        } else {
+            edit.putBoolean("home_show_${id}_$ws", shown)
+        }
+        edit.apply()
+    }
+
     private fun layoutModeFor(ws: Int): String {
         val key = if (layoutScopeAll()) "window_layout_mode_global" else "window_layout_mode_$ws"
         return prefs.getString(key, "dwindle")?.takeIf { it in setOf("dwindle", "master", "columns", "rows") } ?: "dwindle"
@@ -448,9 +470,9 @@ class MainActivity : AppCompatActivity() {
     }
     private fun applyTileLayout(ws: Int, animate: Boolean = true) {
         val shown = buildSet {
-            if (prefs.getBoolean("home_show_terminal", true)) add("terminal")
-            if (prefs.getBoolean("home_show_pinned", true)) add("pinned")
-            if (prefs.getBoolean("home_show_bottom", true)) add("bottom")
+            if (windowShown(ws, "terminal")) add("terminal")
+            if (windowShown(ws, "pinned")) add("pinned")
+            if (windowShown(ws, "bottom")) add("bottom")
         }
         tileLayouts[ws]?.configure(layoutModeFor(ws), layoutRatioFor(ws),
             tileOrder(ws), shown, animate)
@@ -546,7 +568,7 @@ class MainActivity : AppCompatActivity() {
         saveTileOrder(ws, order); applyTileLayout(ws, true); focusWindow(ws, aName); return true
     }
     private fun stepFocus(ws: Int, delta: Int) {
-        val visible = tileOrder(ws).filter { prefs.getBoolean("home_show_$it", true) }
+        val visible = tileOrder(ws).filter { windowShown(ws, it) }
         if (visible.isEmpty()) return
         val current = tileIds.getOrElse(focusedWindow[ws]) { visible[0] }
         val i = visible.indexOf(current).let { if (it < 0) 0 else it }
@@ -2014,9 +2036,9 @@ class MainActivity : AppCompatActivity() {
         scroll.setOnLongClickListener(openTerminalConfig)
 
         terminalWindowForFocus[ws] = term
-        val showTerminalWindow = prefs.getBoolean("home_show_terminal", true)
-        val showPinnedWindow = prefs.getBoolean("home_show_pinned", true)
-        val showBottomWindow = prefs.getBoolean("home_show_bottom", true)
+        val showTerminalWindow = windowShown(ws, "terminal")
+        val showPinnedWindow = windowShown(ws, "pinned")
+        val showBottomWindow = windowShown(ws, "bottom")
         term.tag = "terminal"
         row.addView(term, ViewGroup.LayoutParams(-1, -1))
 
@@ -2826,16 +2848,53 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { fillStyleSettings(); setScroll.scrollTo(0, 0) }
         })
 
-        fun windowRow(label: String, key: String) {
-            val enabled = prefs.getBoolean(key, true)
+        fun refreshVisibility() {
+            if (windowVisibilityScopeAll()) {
+                for (ws in 0..4) applyTileLayout(ws)
+            } else {
+                applyTileLayout(curWs)
+            }
+        }
+
+        fun scopeRow() {
+            val allWorkspaces = windowVisibilityScopeAll()
             val r = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(0, dp(12), 0, dp(12))
                 setOnClickListener {
-                    prefs.edit().putBoolean(key, !prefs.getBoolean(key, true)).apply()
-                    for (ws in 0..4) applyTileLayout(ws)
-                    showOverlay()
+                    val makeAll = !windowVisibilityScopeAll()
+                    val edit = prefs.edit().putBoolean("home_visibility_scope_all", makeAll)
+                    if (!makeAll) {
+                        // Seed this workspace's window states from the existing shared
+                        // values so switching scope never unexpectedly hides a pane.
+                        for (id in tileIds) {
+                            val key = "home_show_${id}_$curWs"
+                            if (!prefs.contains(key)) {
+                                edit.putBoolean(key, prefs.getBoolean("home_show_$id", true))
+                            }
+                        }
+                    }
+                    edit.apply()
+                    refreshVisibility()
+                    fillHomeScreenSettings()
+                    setScroll.scrollTo(0, 0)
+                }
+            }
+            r.addView(txt(14f, p.cFg, "visibility scope"), LinearLayout.LayoutParams(0, -2, 1f))
+            r.addView(txt(14f, p.cAccent, if (allWorkspaces) "all workspaces" else "this window"))
+            setBox.addView(r)
+        }
+
+        fun windowRow(label: String, id: String) {
+            val enabled = windowShown(curWs, id)
+            val r = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, dp(12), 0, dp(12))
+                setOnClickListener {
+                    setWindowShown(curWs, id, !windowShown(curWs, id))
+                    refreshVisibility()
                     fillHomeScreenSettings()
                     setScroll.scrollTo(0, 0)
                 }
@@ -2845,11 +2904,14 @@ class MainActivity : AppCompatActivity() {
             setBox.addView(r)
         }
 
-        windowRow("terminal window", "home_show_terminal")
-        windowRow("pinned apps window", "home_show_pinned")
-        windowRow("bottom window (monitor / player)", "home_show_bottom")
+        scopeRow()
+        windowRow("terminal window", "terminal")
+        windowRow("pinned apps window", "pinned")
+        windowRow("bottom window (monitor / player)", "bottom")
         setBox.addView(
-            txt(11f, p.cDim, "Changes apply to all five workspaces.").apply {
+            txt(11f, p.cDim,
+                if (windowVisibilityScopeAll()) "Changes apply to all five workspaces."
+                else "Changes apply only to this window in workspace ${curWs + 1}.").apply {
                 setPadding(0, dp(10), 0, dp(2))
             }
         )
