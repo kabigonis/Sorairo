@@ -962,8 +962,12 @@ class MainActivity : AppCompatActivity() {
     private var returnToStyleAfterLogoPick = false
 
     private val pickLogo = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        val returnToStyle = returnToStyleAfterLogoPick
+        // Persist the navigation target because Android may recreate this
+        // Activity while the system document picker is open.
+        val returnToStyle = returnToStyleAfterLogoPick ||
+            prefs.getBoolean("pending_logo_return_style", false)
         returnToStyleAfterLogoPick = false
+        prefs.edit().remove("pending_logo_return_style").apply()
 
         if (uri != null) {
             try {
@@ -985,6 +989,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun pickLogoFromStyle() {
         returnToStyleAfterLogoPick = true
+        prefs.edit().putBoolean("pending_logo_return_style", true).apply()
         // Do not leave a fade-out callback pending: it can hide the newly
         // reopened Style overlay after the document picker returns.
         settings.animate().cancel()
