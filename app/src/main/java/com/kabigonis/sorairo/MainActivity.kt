@@ -114,7 +114,7 @@ private class TileLayout(context: Context, private val gapPx: Int) : ViewGroup(c
 
     fun configure(newMode: String, newRatio: Float, newOrder: List<String>,
                   newVisible: Set<String>, animate: Boolean = true) {
-        val nextMode = newMode.takeIf { it in setOf("dwindle", "master", "columns", "rows") } ?: "dwindle"
+        val nextMode = newMode.takeIf { it in setOf("dwindle", "columns", "rows") } ?: "dwindle"
         val nextRatio = newRatio.coerceIn(0.3f, 0.7f)
         val nextOrder = (newOrder.filter { it in setOf("terminal", "pinned", "bottom") } +
             listOf("terminal", "pinned", "bottom")).distinct()
@@ -426,7 +426,7 @@ class MainActivity : AppCompatActivity() {
     private fun layoutScopeAll(): Boolean = prefs.getBoolean("layout_scope_all", false)
     private fun layoutModeFor(ws: Int): String {
         val key = if (layoutScopeAll()) "window_layout_mode_global" else "window_layout_mode_$ws"
-        return prefs.getString(key, "dwindle")?.takeIf { it in setOf("dwindle", "master", "columns", "rows") } ?: "dwindle"
+        return prefs.getString(key, "dwindle")?.takeIf { it in setOf("dwindle", "columns", "rows") } ?: "dwindle"
     }
     private fun layoutRatioFor(ws: Int): Float {
         val key = if (layoutScopeAll()) "window_layout_ratio_global" else "window_layout_ratio_$ws"
@@ -1140,6 +1140,7 @@ class MainActivity : AppCompatActivity() {
 
                 override fun onPageSelected(position: Int) {
                     curWs = position
+                    applyTileLayout(position, false)
                     updateWsBar()
                     updateBottomWindowRuntime()
                 }
@@ -2492,21 +2493,8 @@ class MainActivity : AppCompatActivity() {
         row("media access", if (mediaAccess()) "granted" else "enable ›") {
             openSystem(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
         }
-        row("bottom window scope", if (bottomWindowScopeAll()) "all workspaces" else "this workspace") {
-            val current = bottomWindowFor(curWs)
-            val makeAll = !bottomWindowScopeAll()
-            val edit = prefs.edit().putBoolean("bottom_window_scope_all", makeAll)
-            if (makeAll) {
-                edit.putString("bottom_window_shared", current)
-                for (ws in 0..4) edit.putString("bottom_window_$ws", current)
-            }
-            edit.apply()
-            for (ws in 0..4) updateBottomWindowDisplay(ws, false)
-            updateBottomWindowRuntime()
-            fillSettings()
-        }
         row("window layout", layoutModeFor(curWs)) {
-            val modes = listOf("dwindle", "master", "columns", "rows")
+            val modes = listOf("dwindle", "columns", "rows")
             setLayoutMode(curWs, modes[(modes.indexOf(layoutModeFor(curWs)) + 1) % modes.size])
             fillSettings()
         }
@@ -2522,12 +2510,19 @@ class MainActivity : AppCompatActivity() {
             val currentRatio = (layoutRatioFor(curWs) * 100).toInt()
             val edit = prefs.edit().putBoolean("layout_scope_all", makeAll)
             if (makeAll) {
+                // Global mode inherits the current workspace's effective settings.
                 edit.putString("window_layout_mode_global", currentMode)
                 edit.putInt("window_layout_ratio_global", currentRatio)
             } else {
+                // Keep any previously saved workspace-specific settings. Only seed
+                // workspaces that have never had their own layout configured.
                 for (ws in 0..4) {
-                    edit.putString("window_layout_mode_$ws", currentMode)
-                    edit.putInt("window_layout_ratio_$ws", currentRatio)
+                    if (!prefs.contains("window_layout_mode_$ws")) {
+                        edit.putString("window_layout_mode_$ws", currentMode)
+                    }
+                    if (!prefs.contains("window_layout_ratio_$ws")) {
+                        edit.putInt("window_layout_ratio_$ws", currentRatio)
+                    }
                 }
             }
             edit.apply()
@@ -2677,8 +2672,8 @@ class MainActivity : AppCompatActivity() {
                     "  clear          clear screen",
                     "  fetch          refresh system info",
                     "  panel <mode>   set bottom window: monitor/player",
-                    "  layout <name>  set layout: dwindle/master/columns/rows",
-                    "  ratio <30-70>  set master width percentage",
+                    "  layout <name>  set layout: dwindle/columns/rows",
+                    "  ratio <30-70>  set primary split percentage",
                     "  logo [name]    android/arch/omarchy/image/none",
                     "  ws <1-5>       switch workspace",
                     "  theme [name]   change theme",
@@ -2699,16 +2694,16 @@ class MainActivity : AppCompatActivity() {
                 "fetch", "fastfetch", "neofetch" -> refreshFetch(ws)
                 "layout" -> {
                     if (arg.isEmpty()) say("layout: ${layoutModeFor(ws)}", p.cGreen)
-                    else if (arg in setOf("dwindle", "master", "columns", "rows")) {
+                    else if (arg in setOf("dwindle", "columns", "rows")) {
                         setLayoutMode(ws, arg)
                         say("layout set to $arg", p.cGreen)
-                    } else say("usage: layout dwindle|master|columns|rows", p.cDim)
+                    } else say("usage: layout dwindle|columns|rows", p.cDim)
                 }
                 "ratio" -> {
                     val value = arg.toIntOrNull()
                     if (value != null && value in 30..70) {
                         setLayoutRatio(ws, value)
-                        say("master ratio set to $value%", p.cGreen)
+                        say("layout ratio set to $value%", p.cGreen)
                     } else say("usage: ratio 30-70", p.cDim)
                 }
                 "panel" -> {
