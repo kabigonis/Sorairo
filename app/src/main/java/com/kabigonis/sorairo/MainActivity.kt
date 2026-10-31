@@ -2563,12 +2563,23 @@ class MainActivity : AppCompatActivity() {
             .withEndAction { settings.visibility = View.GONE }.start()
     }
 
+    private var styleConfigOpen = false
+
     private fun cycle(key: String, n: Int, def: Int = 0) {
+        val returnToStyle = styleConfigOpen
         prefs.edit().putInt(key, (prefs.getInt(key, def) + 1) % n).apply()
-        rebuild(true)
+        rebuild(false)
+        if (returnToStyle) {
+            fillStyleSettings()
+            setScroll.scrollTo(0, 0)
+            showOverlay()
+        } else {
+            showSettings()
+        }
     }
 
     private fun fillSettings() {
+        styleConfigOpen = false
         val p = pal
         setBox.removeAllViews()
         setBox.addView(txt(15f, p.cBlue, "~/config"))
@@ -2610,6 +2621,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun fillStyleSettings() {
+        styleConfigOpen = true
         val p = pal
         setBox.removeAllViews()
         setBox.addView(txt(15f, p.cBlue, "~/config/style"))
