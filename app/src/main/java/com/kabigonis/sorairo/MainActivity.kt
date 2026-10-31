@@ -2796,7 +2796,7 @@ class MainActivity : AppCompatActivity() {
                     } else say("usage: layout dwindle|master|columns|rows", p.cDim)
                 }
                 "swap" -> {
-                    val names = arg.split(Regex("\\\\s+")).filter { it.isNotBlank() }
+                    val names = arg.split(Regex("\\s+")).filter { it.isNotBlank() }
                     val ok = if (names.size >= 2) swapTileNames(ws, names[0], names[1]) else {
                         val visible = tileOrder(ws).filter { prefs.getBoolean("home_show_$it", true) }
                         val current = tileIds.getOrElse(focusedWindow[ws]) { "terminal" }
