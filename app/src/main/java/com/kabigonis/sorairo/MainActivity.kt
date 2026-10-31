@@ -574,6 +574,7 @@ class MainActivity : AppCompatActivity() {
     private val outScrolls = arrayOfNulls<ScrollView>(5)
     private val pinBoxes = arrayOfNulls<LinearLayout>(5)
     private val bottomWindowViews = arrayOfNulls<LinearLayout>(5)
+    private val bottomMonitorColumns = arrayOfNulls<LinearLayout>(5)
     private val bottomWindowContents = arrayOfNulls<ScrollView>(5)
     private val playerTitles = arrayOfNulls<TextView>(5)
     private val playerArtists = arrayOfNulls<TextView>(5)
@@ -1801,6 +1802,7 @@ class MainActivity : AppCompatActivity() {
         }
         monitorSummaries[ws] = summary
         monitorColumn.addView(summary, LinearLayout.LayoutParams(-1, -2))
+        bottomMonitorColumns[ws] = monitorColumn
 
         val graph = NetGraphView(this, sharedNetHistory).also {
             it.setColors(p.cDim, p.cBlue, p.cGreen)
@@ -1841,29 +1843,37 @@ class MainActivity : AppCompatActivity() {
     private fun updateBottomWindowDisplay(ws: Int, animate: Boolean) {
         val win = bottomWindowViews[ws] ?: return
         val choice = bottomWindowFor(ws)
-        val content = bottomWindowContents[ws]
+        val playerContent = bottomWindowContents[ws]
+        val monitorContent = bottomMonitorColumns[ws]
+
         fun applyChoice() {
             updateBottomWindowHeader(ws)
 
-            val monitorColumn = monitorSummaries[ws]?.parent as? LinearLayout
-            // Reconcile the content child explicitly; don't rely on stale parent
-            // state from the initial workspace build.
-            if (choice == "monitor" && monitorColumn != null) {
-                (content?.parent as? ViewGroup)?.removeView(content)
-                (monitorColumn.parent as? ViewGroup)?.removeView(monitorColumn)
-                win.addView(monitorColumn, LinearLayout.LayoutParams(-1, 0, 1f))
+            // Keep the title row, then replace the content slot with exactly
+            // one known view. Do not infer which view is active from parent links.
+            while (win.childCount > 1) {
+                win.removeViewAt(1)
+            }
+            val selected = if (choice == "player") playerContent else monitorContent
+            if (selected != null) {
+                (selected.parent as? ViewGroup)?.removeView(selected)
+                win.addView(selected, LinearLayout.LayoutParams(-1, 0, 1f))
+            }
+
+            if (choice == "player") {
+                updatePlayerWindow(ws)
+                if (ws == curWs && activityResumed) startPlayerCallbacks()
+            } else {
                 updateMonitorSummary(ws)
                 monitorGraphs[ws]?.setColors(pal.cDim, pal.cBlue, pal.cGreen)
-            } else if (choice == "player" && content != null) {
-                (monitorColumn?.parent as? ViewGroup)?.removeView(monitorColumn)
-                (content.parent as? ViewGroup)?.removeView(content)
-                win.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
-                updatePlayerWindow(ws)
             }
             win.alpha = 1f
+            win.requestLayout()
+            selected?.requestLayout()
         }
 
         if (animate) {
+            win.animate().cancel()
             win.animate().alpha(0f).setDuration(90).withEndAction {
                 applyChoice()
                 win.animate().alpha(1f).setDuration(120).start()
