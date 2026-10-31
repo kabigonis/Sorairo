@@ -959,6 +959,8 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private var returnToStyleAfterLogoPick = false
+
     private val pickLogo = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             try {
@@ -968,6 +970,18 @@ class MainActivity : AppCompatActivity() {
             prefs.edit().putString("logo_uri", uri.toString()).putInt("logo", 3).apply()
             rebuild(true)
         }
+        if (returnToStyleAfterLogoPick) {
+            returnToStyleAfterLogoPick = false
+            fillStyleSettings()
+            setScroll.scrollTo(0, 0)
+            showOverlay()
+        }
+    }
+
+    private fun pickLogoFromStyle() {
+        returnToStyleAfterLogoPick = true
+        closeSettings()
+        pickLogo.launch(arrayOf("image/*"))
     }
 
     private var touchDownScreenX = 0f
@@ -2736,10 +2750,10 @@ class MainActivity : AppCompatActivity() {
             val n = (prefs.getInt("logo", 0) + 1) % logoNames.size
             prefs.edit().putInt("logo", n).apply()
             if (logoNames[n] == "image" && prefs.getString("logo_uri", null) == null) {
-                closeSettings(); pickLogo.launch(arrayOf("image/*"))
+                pickLogoFromStyle()
             } else rebuild(true)
         }
-        row("logo image / gif", "choose ›") { closeSettings(); pickLogo.launch(arrayOf("image/*")) }
+        row("logo image / gif", "choose ›") { pickLogoFromStyle() }
         row("window layout", layoutModeFor(curWs)) {
             val modes = listOf("dwindle", "master", "columns", "rows")
             setLayoutMode(curWs, modes[(modes.indexOf(layoutModeFor(curWs)) + 1) % modes.size])
