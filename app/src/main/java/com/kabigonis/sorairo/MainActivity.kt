@@ -1059,8 +1059,8 @@ class MainActivity : AppCompatActivity() {
 
                 override fun onStart(
                     animation: WindowInsetsAnimationCompat,
-                    bounds: WindowInsetsAnimationCompat.Bounds
-                ): WindowInsetsAnimationCompat.Bounds {
+                    bounds: WindowInsetsAnimationCompat.BoundsCompat
+                ): WindowInsetsAnimationCompat.BoundsCompat {
                     if (animation.typeMask and imeType != 0) imeAnimationRunning = true
                     return bounds
                 }
