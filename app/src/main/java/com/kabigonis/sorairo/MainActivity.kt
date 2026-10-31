@@ -204,7 +204,15 @@ private class TileLayout(context: Context, private val gapPx: Int) : ViewGroup(c
     private fun applyRects(rects: Map<String, Rect>) {
         val children = childrenForIds()
         rects.forEach { (id, rect) ->
-            children[id]?.layout(rect.left, rect.top, rect.right, rect.bottom)
+            children[id]?.let { child ->
+                val childWidth = (rect.right - rect.left).coerceAtLeast(0)
+                val childHeight = (rect.bottom - rect.top).coerceAtLeast(0)
+                child.measure(
+                    MeasureSpec.makeMeasureSpec(childWidth, MeasureSpec.EXACTLY),
+                    MeasureSpec.makeMeasureSpec(childHeight, MeasureSpec.EXACTLY)
+                )
+                child.layout(rect.left, rect.top, rect.right, rect.bottom)
+            }
         }
         invalidate()
     }
@@ -2478,6 +2486,19 @@ class MainActivity : AppCompatActivity() {
         row("logo image / gif", "choose ›") { closeSettings(); pickLogo.launch(arrayOf("image/*")) }
         row("media access", if (mediaAccess()) "granted" else "enable ›") {
             openSystem(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+        }
+        row("bottom window scope", if (bottomWindowScopeAll()) "all workspaces" else "this workspace") {
+            val current = bottomWindowFor(curWs)
+            val makeAll = !bottomWindowScopeAll()
+            val edit = prefs.edit().putBoolean("bottom_window_scope_all", makeAll)
+            if (makeAll) {
+                edit.putString("bottom_window_shared", current)
+                for (ws in 0..4) edit.putString("bottom_window_$ws", current)
+            }
+            edit.apply()
+            for (ws in 0..4) updateBottomWindowDisplay(ws, false)
+            updateBottomWindowRuntime()
+            fillSettings()
         }
         row("window layout", layoutModeFor(curWs)) {
             val modes = listOf("dwindle", "master", "columns", "rows")
