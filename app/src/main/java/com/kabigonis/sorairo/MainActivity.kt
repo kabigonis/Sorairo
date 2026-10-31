@@ -343,6 +343,8 @@ class MainActivity : AppCompatActivity() {
         const val POWERAMP_MODE_CHANGED = "com.maxmpz.audioplayer.PLAYING_MODE_CHANGED"
         const val POWERAMP_EXTRA_SHUFFLE = "shuffle"
         const val POWERAMP_EXTRA_REPEAT = "repeat"
+        const val NEW_APP_WINDOW_MS = 60L * 60L * 1000L
+        const val NEW_APP_MARKER = " ◆"
     }
 
     data class App(val label: String, val pkg: String)
@@ -1248,6 +1250,7 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         activityResumed = true
+        refreshInstalledApps()
         handler.removeCallbacks(tick)
         tick.run()
         updateNowPlaying()
@@ -3252,12 +3255,37 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ================= apps / search =================
+    private val appInstallTimes = HashMap<String, Long>()
+
+    private fun isNewApp(pkg: String): Boolean {
+        val installed = appInstallTimes[pkg] ?: return false
+        return System.currentTimeMillis() - installed < NEW_APP_WINDOW_MS
+    }
+
+    private fun refreshInstalledApps() {
+        val fresh = loadApps()
+        if (fresh == allApps) return
+        allApps = fresh
+        apps = visibleApps()
+        val query = search.text?.toString().orEmpty()
+        adapter.items = if (query.isBlank()) apps else matches(query)
+        adapter.notifyDataSetChanged()
+        for (i in 0..4) fillPins(i)
+    }
+
     private fun loadApps(): List<App> {
         val pm = packageManager
         val q = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         return pm.queryIntentActivities(q, 0)
             .filter { it.activityInfo.packageName != packageName }
-            .map { App(it.loadLabel(pm).toString(), it.activityInfo.packageName) }
+            .map {
+                val pkg = it.activityInfo.packageName
+                try {
+                    appInstallTimes[pkg] = pm.getPackageInfo(pkg, 0).firstInstallTime
+                } catch (_: Exception) {
+                }
+                App(it.loadLabel(pm).toString(), pkg)
+            }
             .sortedBy { it.label.lowercase() }
     }
 
@@ -3533,7 +3561,7 @@ class MainActivity : AppCompatActivity() {
                 h.boundPackage = app.pkg
             }
 
-            h.name.text = displayAppLabel(app)
+            h.name.text = displayAppLabel(app) + if (isNewApp(app.pkg)) NEW_APP_MARKER else ""
             h.name.setTextColor(if (i == 0) pal.cAccent else pal.cFg)
             h.name.setBackgroundColor(if (i == 0) pal.cSel else Color.TRANSPARENT)
             h.name.setOnClickListener { launchApp(app) }
