@@ -1,6 +1,8 @@
 package com.kabigonis.sorairo
 
 import android.animation.ArgbEvaluator
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
 import android.animation.LayoutTransition
 import android.animation.ValueAnimator
 import android.app.ActivityManager
@@ -118,16 +120,30 @@ private class TileLayout(context: Context, private val gapPx: Int) : ViewGroup(c
             listOf("terminal", "pinned", "bottom")).distinct()
         val changed = mode != nextMode || ratio != nextRatio || order != nextOrder || visible != newVisible
         if (!changed) return
+        val previouslyVisible = visible
         mode = nextMode
         ratio = nextRatio
         order = nextOrder
         visible = newVisible
-        val targets = calculateRects(width, height)
-        childrenForIds().forEach { (id, child) ->
-            child.visibility = if (id in visible) View.VISIBLE else View.GONE
+        val targets = calculateRects(width, height).toMutableMap()
+        val hiddenAfter = previouslyVisible - newVisible
+        val children = childrenForIds()
+        children.forEach { (id, child) ->
+            child.visibility = if (id in previouslyVisible || id in newVisible) View.VISIBLE else View.GONE
         }
-        if (animate && width > 0 && height > 0) animateTo(targets) else {
+        if (animate && width > 0 && height > 0) {
+            hiddenAfter.forEach { id ->
+                val child = children[id]
+                if (child != null) {
+                    val cx = (child.left + child.right) / 2
+                    val cy = (child.top + child.bottom) / 2
+                    targets[id] = Rect(cx, cy, cx, cy)
+                }
+            }
+            animateTo(targets, hiddenAfter)
+        } else {
             animator.cancel()
+            hiddenAfter.forEach { children[it]?.visibility = View.GONE }
             applyRects(targets)
         }
     }
@@ -193,7 +209,7 @@ private class TileLayout(context: Context, private val gapPx: Int) : ViewGroup(c
         invalidate()
     }
 
-    private fun animateTo(targets: Map<String, Rect>) {
+    private fun animateTo(targets: Map<String, Rect>, hiddenAfter: Set<String>) {
         animator.cancel()
         val children = childrenForIds()
         val starts = targets.mapValues { (id, _) ->
@@ -203,6 +219,12 @@ private class TileLayout(context: Context, private val gapPx: Int) : ViewGroup(c
             else Rect(targets.getValue(id))
         }
         animator.removeAllUpdateListeners()
+        animator.removeAllListeners()
+        animator.addListener(object : AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: Animator) {
+                hiddenAfter.forEach { childrenForIds()[it]?.visibility = View.GONE }
+            }
+        })
         animator.setFloatValues(0f, 1f)
         animator.duration = 220
         animator.interpolator = DecelerateInterpolator()
