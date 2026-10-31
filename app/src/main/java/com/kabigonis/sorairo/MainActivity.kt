@@ -103,8 +103,6 @@ private class TileLayout(context: Context, private val gapPx: Int) : ViewGroup(c
     private var visible = setOf("terminal", "pinned", "bottom")
     private var lastWidth = 0
     private var lastHeight = 0
-    private var startRects = emptyMap<String, Rect>()
-    private var endRects = emptyMap<String, Rect>()
 
     init { clipChildren = false }
 
@@ -200,8 +198,7 @@ private class TileLayout(context: Context, private val gapPx: Int) : ViewGroup(c
                 Rect(child.left, child.top, child.right, child.bottom)
             else Rect(targets.getValue(id))
         }
-        startRects = starts
-        endRects = targets
+        animator.removeAllUpdateListeners()
         animator.setFloatValues(0f, 1f)
         animator.duration = 220
         animator.interpolator = DecelerateInterpolator()
