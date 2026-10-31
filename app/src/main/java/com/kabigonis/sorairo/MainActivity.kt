@@ -1804,6 +1804,14 @@ class MainActivity : AppCompatActivity() {
             background = box(panelColor(), p.cAccent)
         }
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val terminalTitle = txt(12.5f, p.cBlue, "~/terminal").apply {
+            setOnLongClickListener {
+                if (moveSource[ws] >= 0) moveTap(ws, "terminal")
+                else startMove(ws, "terminal")
+                true
+            }
+        }
+        col.addView(terminalTitle, LinearLayout.LayoutParams(-1, -2))
         col.addView(buildFetch(ws), LinearLayout.LayoutParams(-1, -2))
         val out = txt(12.5f, termFg()).apply {
             setLineSpacing(0f, 1.15f)
@@ -1876,10 +1884,13 @@ class MainActivity : AppCompatActivity() {
         out.setOnClickListener { focusTerminal(false) }
         col.setOnClickListener { focusTerminal(false) }
         scroll.setOnClickListener { focusTerminal(false) }
-        val moveTerminal = View.OnLongClickListener { if (moveSource[ws] >= 0) moveTap(ws, "terminal") else startMove(ws, "terminal"); true }
-        term.setOnLongClickListener(moveTerminal)
-        out.setOnLongClickListener(moveTerminal)
-        col.setOnLongClickListener(moveTerminal)
+        // Long-pressing the terminal surface opens configuration.
+        // Only the explicit ~/terminal title is the tile-move handle.
+        val openTerminalConfig = View.OnLongClickListener { showSettings(); true }
+        term.setOnLongClickListener(openTerminalConfig)
+        out.setOnLongClickListener(openTerminalConfig)
+        col.setOnLongClickListener(openTerminalConfig)
+        scroll.setOnLongClickListener(openTerminalConfig)
 
         terminalWindowForFocus[ws] = term
         val showTerminalWindow = prefs.getBoolean("home_show_terminal", true)
