@@ -1,6 +1,8 @@
 package com.kabigonis.sorairo
 
 import android.animation.ArgbEvaluator
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
 import android.animation.LayoutTransition
 import android.animation.ValueAnimator
 import android.app.ActivityManager
@@ -13,6 +15,7 @@ import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
+import android.graphics.Rect
 import android.graphics.Shader
 import android.media.MediaMetadata
 import android.media.session.MediaController
@@ -63,6 +66,7 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.animation.DecelerateInterpolator
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
@@ -88,8 +92,210 @@ import java.text.Normalizer
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+
 import kotlin.math.abs
 import kotlin.math.min
+
+/**
+ * Positions the existing workspace window views without recreating them.
+ * Only explicit configuration changes animate; parent size changes snap.
+ */
+private class TileLayout(context: Context, private val gapPx: Int) : ViewGroup(context) {
+    private val animator = ValueAnimator()
+    private var mode = "dwindle"
+    private var ratio = 0.5f
+    private var order = listOf("terminal", "pinned", "bottom")
+    private var visible = setOf("terminal", "pinned", "bottom")
+    private var lastWidth = 0
+    private var lastHeight = 0
+
+    init { clipChildren = false }
+
+    fun configure(newMode: String, newRatio: Float, newOrder: List<String>,
+                  newVisible: Set<String>, animate: Boolean = true) {
+        val nextMode = newMode.takeIf { it in setOf("dwindle", "master", "columns", "rows") } ?: "dwindle"
+        val nextRatio = newRatio.coerceIn(0.3f, 0.7f)
+        val nextOrder = (newOrder.filter { it in setOf("terminal", "pinned", "bottom") } +
+            listOf("terminal", "pinned", "bottom")).distinct()
+        val changed = mode != nextMode || ratio != nextRatio || order != nextOrder || visible != newVisible
+        if (!changed) return
+        val previouslyVisible = visible
+        mode = nextMode
+        ratio = nextRatio
+        order = nextOrder
+        visible = newVisible
+        val targets = calculateRects(width, height).toMutableMap()
+        val hiddenAfter = previouslyVisible - newVisible
+        val children = childrenForIds()
+        children.forEach { (id, child) ->
+            child.visibility = if (id in previouslyVisible || id in newVisible) View.VISIBLE else View.GONE
+        }
+        if (animate && width > 0 && height > 0) {
+            hiddenAfter.forEach { id ->
+                val child = children[id]
+                if (child != null) {
+                    val cx = (child.left + child.right) / 2
+                    val cy = (child.top + child.bottom) / 2
+                    targets[id] = Rect(cx, cy, cx, cy)
+                }
+            }
+            animateTo(targets, hiddenAfter)
+        } else {
+            animator.cancel()
+            hiddenAfter.forEach { children[it]?.visibility = View.GONE }
+            applyRects(targets)
+        }
+    }
+
+    private fun childrenForIds(): Map<String, View> =
+        (0 until childCount).mapNotNull { i ->
+            val child = getChildAt(i)
+            (child.tag as? String)?.let { it to child }
+        }.toMap()
+
+    private fun calculateRects(w: Int, h: Int): Map<String, Rect> {
+        val ids = order.filter { it in visible && childrenForIds().containsKey(it) }
+        if (ids.isEmpty()) return emptyMap()
+        val l = paddingLeft
+        val t = paddingTop
+        val rw = (w - paddingLeft - paddingRight).coerceAtLeast(0)
+        val rh = (h - paddingTop - paddingBottom).coerceAtLeast(0)
+        val gap = gapPx.coerceAtMost(minOf(rw, rh).coerceAtLeast(0))
+        val result = linkedMapOf<String, Rect>()
+        fun put(id: String, x: Int, y: Int, width: Int, height: Int) {
+            result[id] = Rect(x, y, x + width.coerceAtLeast(0), y + height.coerceAtLeast(0))
+        }
+        when {
+            ids.size == 1 -> put(ids[0], l, t, rw, rh)
+            mode == "rows" -> {
+                val each = (rh - gap * (ids.size - 1)).coerceAtLeast(0) / ids.size
+                ids.forEachIndexed { i, id ->
+                    val top = t + i * (each + gap)
+                    put(id, l, top, rw, if (i == ids.lastIndex) t + rh - top else each)
+                }
+            }
+            mode == "columns" -> {
+                val each = (rw - gap * (ids.size - 1)).coerceAtLeast(0) / ids.size
+                ids.forEachIndexed { i, id ->
+                    val left = l + i * (each + gap)
+                    put(id, left, t, if (i == ids.lastIndex) l + rw - left else each, rh)
+                }
+            }
+            mode == "master" -> {
+                // Master keeps the first window prominent; the remaining windows
+                // share a vertical stack on the right.
+                val leftWidth = ((rw - gap) * ratio).toInt().coerceIn(0, (rw - gap).coerceAtLeast(0))
+                put(ids[0], l, t, leftWidth, rh)
+                val rightX = l + leftWidth + gap
+                val rightW = (l + rw - rightX).coerceAtLeast(0)
+                val rest = ids.drop(1)
+                val each = (rh - gap * (rest.size - 1)).coerceAtLeast(0) / rest.size
+                rest.forEachIndexed { i, id ->
+                    val top = t + i * (each + gap)
+                    put(id, rightX, top, rightW, if (i == rest.lastIndex) t + rh - top else each)
+                }
+            }
+            else -> {
+                // Dwindle uses an even primary split, with remaining windows
+                // stacked in the secondary area.
+                val leftWidth = ((rw - gap) * 0.5f).toInt()
+                put(ids[0], l, t, leftWidth, rh)
+                val rightX = l + leftWidth + gap
+                val rightW = (l + rw - rightX).coerceAtLeast(0)
+                val rest = ids.drop(1)
+                val each = (rh - gap * (rest.size - 1)).coerceAtLeast(0) / rest.size
+                rest.forEachIndexed { i, id ->
+                    val top = t + i * (each + gap)
+                    put(id, rightX, top, rightW, if (i == rest.lastIndex) t + rh - top else each)
+                }
+            }
+        }
+        return result
+    }
+
+    private fun applyRects(rects: Map<String, Rect>) {
+        val children = childrenForIds()
+        rects.forEach { (id, rect) ->
+            children[id]?.let { child ->
+                val childWidth = (rect.right - rect.left).coerceAtLeast(0)
+                val childHeight = (rect.bottom - rect.top).coerceAtLeast(0)
+                child.measure(
+                    MeasureSpec.makeMeasureSpec(childWidth, MeasureSpec.EXACTLY),
+                    MeasureSpec.makeMeasureSpec(childHeight, MeasureSpec.EXACTLY)
+                )
+                child.layout(rect.left, rect.top, rect.right, rect.bottom)
+            }
+        }
+        invalidate()
+    }
+
+    private fun animateTo(targets: Map<String, Rect>, hiddenAfter: Set<String>) {
+        animator.cancel()
+        val children = childrenForIds()
+        val starts = targets.mapValues { (id, _) ->
+            val child = children[id]
+            if (child != null && child.width > 0 && child.height > 0) {
+                Rect(child.left, child.top, child.right, child.bottom)
+            } else {
+                val target = targets.getValue(id)
+                val cx = (target.left + target.right) / 2
+                val cy = (target.top + target.bottom) / 2
+                Rect(cx, cy, cx, cy)
+            }
+        }
+        animator.removeAllUpdateListeners()
+        animator.removeAllListeners()
+        animator.addListener(object : AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: Animator) {
+                hiddenAfter.filter { it !in visible }.forEach { childrenForIds()[it]?.visibility = View.GONE }
+            }
+        })
+        animator.setFloatValues(0f, 1f)
+        animator.duration = 220
+        animator.interpolator = DecelerateInterpolator()
+        animator.addUpdateListener { a ->
+            val f = a.animatedValue as Float
+            val current = targets.mapValues { (id, end) ->
+                val start = starts[id] ?: end
+                Rect(
+                    (start.left + (end.left - start.left) * f).toInt(),
+                    (start.top + (end.top - start.top) * f).toInt(),
+                    (start.right + (end.right - start.right) * f).toInt(),
+                    (start.bottom + (end.bottom - start.bottom) * f).toInt()
+                )
+            }
+            applyRects(current)
+        }
+        animator.start()
+    }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val w = MeasureSpec.getSize(widthMeasureSpec)
+        val h = MeasureSpec.getSize(heightMeasureSpec)
+        setMeasuredDimension(resolveSize(w, widthMeasureSpec), resolveSize(h, heightMeasureSpec))
+        for (i in 0 until childCount) {
+            getChildAt(i).measure(
+                MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(h, MeasureSpec.EXACTLY)
+            )
+        }
+    }
+
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+        val w = right - left
+        val h = bottom - top
+        if (w != lastWidth || h != lastHeight) {
+            lastWidth = w
+            lastHeight = h
+            animator.cancel()
+            applyRects(calculateRects(w, h))
+        } else if (changed && !animator.isRunning) {
+            applyRects(calculateRects(w, h))
+        }
+    }
+}
+
 
 class MainActivity : AppCompatActivity() {
     private companion object {
@@ -229,6 +435,40 @@ class MainActivity : AppCompatActivity() {
         edit.apply()
     }
 
+
+    private fun layoutScopeAll(): Boolean = prefs.getBoolean("layout_scope_all", false)
+    private fun layoutModeFor(ws: Int): String {
+        val key = if (layoutScopeAll()) "window_layout_mode_global" else "window_layout_mode_$ws"
+        return prefs.getString(key, "dwindle")?.takeIf { it in setOf("dwindle", "master", "columns", "rows") } ?: "dwindle"
+    }
+    private fun layoutRatioFor(ws: Int): Float {
+        val key = if (layoutScopeAll()) "window_layout_ratio_global" else "window_layout_ratio_$ws"
+        return (prefs.getInt(key, 50).coerceIn(30, 70) / 100f)
+    }
+    private fun applyTileLayout(ws: Int, animate: Boolean = true) {
+        val shown = buildSet {
+            if (prefs.getBoolean("home_show_terminal", true)) add("terminal")
+            if (prefs.getBoolean("home_show_pinned", true)) add("pinned")
+            if (prefs.getBoolean("home_show_bottom", true)) add("bottom")
+        }
+        tileLayouts[ws]?.configure(layoutModeFor(ws), layoutRatioFor(ws),
+            listOf("terminal", "pinned", "bottom"), shown, animate)
+    }
+    private fun setLayoutMode(ws: Int, value: String) {
+        val edit = prefs.edit()
+        if (layoutScopeAll()) edit.putString("window_layout_mode_global", value)
+        else edit.putString("window_layout_mode_$ws", value)
+        edit.apply()
+        if (layoutScopeAll()) for (i in 0..4) applyTileLayout(i) else applyTileLayout(ws)
+    }
+    private fun setLayoutRatio(ws: Int, value: Int) {
+        val edit = prefs.edit()
+        if (layoutScopeAll()) edit.putInt("window_layout_ratio_global", value)
+        else edit.putInt("window_layout_ratio_$ws", value)
+        edit.apply()
+        if (layoutScopeAll()) for (i in 0..4) applyTileLayout(i) else applyTileLayout(ws)
+    }
+
     // ---- state ----
     private var allApps: List<App> = emptyList()
     private var apps: List<App> = emptyList()
@@ -237,6 +477,7 @@ class MainActivity : AppCompatActivity() {
     private val pinWindowForFocus = arrayOfNulls<View>(5)
     private val bottomWindowForFocus = arrayOfNulls<View>(5)
     private val terminalWindowForFocus = arrayOfNulls<View>(5)
+    private val tileLayouts = arrayOfNulls<TileLayout>(5)
     private val focusBorderAnimators = java.util.WeakHashMap<View, ValueAnimator>()
     private val focusBorderColors = java.util.WeakHashMap<View, Int>()
     private lateinit var wall: ImageView
@@ -912,6 +1153,7 @@ class MainActivity : AppCompatActivity() {
 
                 override fun onPageSelected(position: Int) {
                     curWs = position
+                    applyTileLayout(position, false)
                     updateWsBar()
                     updateBottomWindowRuntime()
                 }
@@ -1466,8 +1708,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun buildPage(ws: Int): View {
         val p = pal
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
+        val row = TileLayout(this, dp(12)).apply {
             setPadding(0, dp(8), 0, 0)
             setOnLongClickListener { showSettings(); true }
         }
@@ -1558,9 +1799,8 @@ class MainActivity : AppCompatActivity() {
         val showTerminalWindow = prefs.getBoolean("home_show_terminal", true)
         val showPinnedWindow = prefs.getBoolean("home_show_pinned", true)
         val showBottomWindow = prefs.getBoolean("home_show_bottom", true)
-        if (showTerminalWindow) {
-            row.addView(term, LinearLayout.LayoutParams(0, -1, 1f).apply { marginEnd = dp(6) })
-        }
+        term.tag = "terminal"
+        row.addView(term, ViewGroup.LayoutParams(-1, -1))
 
         // ---- pinned window ----
         val pinWin = LinearLayout(this).apply {
@@ -1596,34 +1836,21 @@ class MainActivity : AppCompatActivity() {
             topMargin = dp(4)
         })
         fillPins(ws)
-        val rightCol = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-        }
         val bottomWin = buildBottomWindow(ws)
         bottomWindowForFocus[ws] = bottomWin
-        bottomWin.setOnClickListener {
-            setWindowFocus(ws, 2, term, pinWin)
-        }
-        if (showPinnedWindow) {
-            rightCol.addView(pinWin, LinearLayout.LayoutParams(-1, 0, 1f))
-        }
-        if (showBottomWindow) {
-            rightCol.addView(
-                bottomWin,
-                LinearLayout.LayoutParams(-1, 0, 1f).apply {
-                    if (showPinnedWindow) topMargin = dp(6)
-                }
-            )
-        }
-        if (showPinnedWindow || showBottomWindow) {
-            row.addView(
-                rightCol,
-                LinearLayout.LayoutParams(0, -1, 1f).apply {
-                    if (showTerminalWindow) marginStart = dp(6)
-                }
-            )
-        }
-
+        bottomWin.setOnClickListener { setWindowFocus(ws, 2, term, pinWin) }
+        pinWin.tag = "pinned"
+        bottomWin.tag = "bottom"
+        row.addView(pinWin, ViewGroup.LayoutParams(-1, -1))
+        row.addView(bottomWin, ViewGroup.LayoutParams(-1, -1))
+        tileLayouts[ws] = row
+        row.configure(layoutModeFor(ws), layoutRatioFor(ws),
+            listOf("terminal", "pinned", "bottom"),
+            buildSet {
+                if (showTerminalWindow) add("terminal")
+                if (showPinnedWindow) add("pinned")
+                if (showBottomWindow) add("bottom")
+            }, false)
         return row
     }
 
@@ -2279,17 +2506,40 @@ class MainActivity : AppCompatActivity() {
         row("media access", if (mediaAccess()) "granted" else "enable ›") {
             openSystem(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
         }
-        row("bottom window scope", if (bottomWindowScopeAll()) "all workspaces" else "this workspace") {
-            val current = bottomWindowFor(curWs)
-            val makeAll = !bottomWindowScopeAll()
-            val edit = prefs.edit().putBoolean("bottom_window_scope_all", makeAll)
+        row("window layout", layoutModeFor(curWs)) {
+            val modes = listOf("dwindle", "master", "columns", "rows")
+            setLayoutMode(curWs, modes[(modes.indexOf(layoutModeFor(curWs)) + 1) % modes.size])
+            fillSettings()
+        }
+        row("window ratio", "${(layoutRatioFor(curWs) * 100).toInt()}%") {
+            val ratios = listOf(40, 50, 60, 70)
+            val current = (layoutRatioFor(curWs) * 100).toInt()
+            setLayoutRatio(curWs, ratios[(ratios.indexOf(current).coerceAtLeast(0) + 1) % ratios.size])
+            fillSettings()
+        }
+        row("layout scope", if (layoutScopeAll()) "all workspaces" else "this workspace") {
+            val makeAll = !layoutScopeAll()
+            val currentMode = layoutModeFor(curWs)
+            val currentRatio = (layoutRatioFor(curWs) * 100).toInt()
+            val edit = prefs.edit().putBoolean("layout_scope_all", makeAll)
             if (makeAll) {
-                edit.putString("bottom_window_shared", current)
-                for (ws in 0..4) edit.putString("bottom_window_$ws", current)
+                // Global mode inherits the current workspace's effective settings.
+                edit.putString("window_layout_mode_global", currentMode)
+                edit.putInt("window_layout_ratio_global", currentRatio)
+            } else {
+                // Keep any previously saved workspace-specific settings. Only seed
+                // workspaces that have never had their own layout configured.
+                for (ws in 0..4) {
+                    if (!prefs.contains("window_layout_mode_$ws")) {
+                        edit.putString("window_layout_mode_$ws", currentMode)
+                    }
+                    if (!prefs.contains("window_layout_ratio_$ws")) {
+                        edit.putInt("window_layout_ratio_$ws", currentRatio)
+                    }
+                }
             }
             edit.apply()
-            for (ws in 0..4) updateBottomWindowDisplay(ws, false)
-            updateBottomWindowRuntime()
+            for (ws in 0..4) applyTileLayout(ws)
             fillSettings()
         }
         row("vpn app", allApps.find { it.pkg == prefs.getString("vpn_pkg", null) }?.label ?: "choose ›") {
@@ -2321,7 +2571,7 @@ class MainActivity : AppCompatActivity() {
                 setPadding(0, dp(12), 0, dp(12))
                 setOnClickListener {
                     prefs.edit().putBoolean(key, !prefs.getBoolean(key, true)).apply()
-                    rebuild(false)
+                    for (ws in 0..4) applyTileLayout(ws)
                     showOverlay()
                     fillHomeScreenSettings()
                     setScroll.scrollTo(0, 0)
@@ -2435,6 +2685,8 @@ class MainActivity : AppCompatActivity() {
                     "  clear          clear screen",
                     "  fetch          refresh system info",
                     "  panel <mode>   set bottom window: monitor/player",
+                    "  layout <name>  set layout: dwindle/master/columns/rows",
+                    "  ratio <30-70>  set primary split percentage",
                     "  logo [name]    android/arch/omarchy/image/none",
                     "  ws <1-5>       switch workspace",
                     "  theme [name]   change theme",
@@ -2453,6 +2705,20 @@ class MainActivity : AppCompatActivity() {
                 ).forEach { say(it) }
                 "clear" -> sb.clear()
                 "fetch", "fastfetch", "neofetch" -> refreshFetch(ws)
+                "layout" -> {
+                    if (arg.isEmpty()) say("layout: ${layoutModeFor(ws)}", p.cGreen)
+                    else if (arg in setOf("dwindle", "master", "columns", "rows")) {
+                        setLayoutMode(ws, arg)
+                        say("layout set to $arg", p.cGreen)
+                    } else say("usage: layout dwindle|master|columns|rows", p.cDim)
+                }
+                "ratio" -> {
+                    val value = arg.toIntOrNull()
+                    if (value != null && value in 30..70) {
+                        setLayoutRatio(ws, value)
+                        say("layout ratio set to $value%", p.cGreen)
+                    } else say("usage: ratio 30-70", p.cDim)
+                }
                 "panel" -> {
                     if (arg == "monitor" || arg == "player") {
                         setBottomWindowForWorkspace(ws, arg)
