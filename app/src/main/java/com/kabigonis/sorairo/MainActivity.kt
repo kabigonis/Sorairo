@@ -962,16 +962,21 @@ class MainActivity : AppCompatActivity() {
     private var returnToStyleAfterLogoPick = false
 
     private val pickLogo = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val returnToStyle = returnToStyleAfterLogoPick
+        returnToStyleAfterLogoPick = false
+
         if (uri != null) {
             try {
                 contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             } catch (_: Exception) {
             }
             prefs.edit().putString("logo_uri", uri.toString()).putInt("logo", 3).apply()
-            rebuild(true)
+            // Rebuild the home UI without reopening the root config page. The
+            // style submenu is restored below after the new UI is in place.
+            rebuild(!returnToStyle)
         }
-        if (returnToStyleAfterLogoPick) {
-            returnToStyleAfterLogoPick = false
+
+        if (returnToStyle) {
             fillStyleSettings()
             setScroll.scrollTo(0, 0)
             showOverlay()
@@ -980,7 +985,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun pickLogoFromStyle() {
         returnToStyleAfterLogoPick = true
-        closeSettings()
+        // Do not leave a fade-out callback pending: it can hide the newly
+        // reopened Style overlay after the document picker returns.
+        settings.animate().cancel()
+        settings.alpha = 1f
+        settings.visibility = View.GONE
         pickLogo.launch(arrayOf("image/*"))
     }
 
