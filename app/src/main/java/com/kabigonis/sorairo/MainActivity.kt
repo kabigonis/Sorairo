@@ -2765,7 +2765,12 @@ class MainActivity : AppCompatActivity() {
             prefs.edit().putInt("logo", n).apply()
             if (logoNames[n] == "image" && prefs.getString("logo_uri", null) == null) {
                 pickLogoFromStyle()
-            } else rebuild(true)
+            } else {
+                rebuild(false)
+                fillStyleSettings()
+                setScroll.scrollTo(0, 0)
+                showOverlay()
+            }
         }
         row("logo image / gif", "choose ›") { pickLogoFromStyle() }
         row("window layout", layoutModeFor(curWs)) {
