@@ -1117,7 +1117,13 @@ class MainActivity : AppCompatActivity() {
         handler.removeCallbacks(tick)
         tick.run()
         updateNowPlaying()
-        updateBottomWindowRuntime()
+        pager.post {
+            updateBottomWindowDisplay(curWs, false)
+            updateBottomWindowRuntime()
+            updateMonitorSummary(curWs)
+            updatePlayerWindow(curWs)
+            monitorGraphs[curWs]?.invalidate()
+        }
         refreshDefaultLauncherPrompts()
     }
 
@@ -1169,7 +1175,6 @@ class MainActivity : AppCompatActivity() {
         // ---- top bar ----
         val bar = FrameLayout(this)
         moveHint = txt(11f, p.cAccent, "move: tap another window").apply { visibility = View.GONE; gravity = Gravity.CENTER; setOnClickListener { endMove() } }
-        bar.addView(moveHint, FrameLayout.LayoutParams(-2, -1, Gravity.CENTER))
         val left = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -1214,6 +1219,7 @@ class MainActivity : AppCompatActivity() {
         bar.addView(clock, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
         bar.addView(right, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.CENTER_VERTICAL))
         content.addView(bar, LinearLayout.LayoutParams(-1, dp(34)))
+        content.addView(moveHint, LinearLayout.LayoutParams(-1, dp(22)))
 
         // ---- workspaces ----
         pager = ViewPager2(this).apply {
@@ -1924,8 +1930,11 @@ class MainActivity : AppCompatActivity() {
         row.addView(pinWin, ViewGroup.LayoutParams(-1, -1))
         row.addView(bottomWin, ViewGroup.LayoutParams(-1, -1))
         tileLayouts[ws] = row
+        updateBottomWindowDisplay(ws, false)
+        updateMonitorSummary(ws)
+        updatePlayerWindow(ws)
         row.configure(layoutModeFor(ws), layoutRatioFor(ws),
-            listOf("terminal", "pinned", "bottom"),
+            tileOrder(ws),
             buildSet {
                 if (showTerminalWindow) add("terminal")
                 if (showPinnedWindow) add("pinned")
@@ -2198,8 +2207,8 @@ class MainActivity : AppCompatActivity() {
             list.addView(
                 txt(
                     12.5f, p.cDim,
-                    "nothing pinned yet.\nlong-press ~/pinned to choose apps"
-                ).apply { setOnLongClickListener { showSettings(); true } }
+                    "nothing pinned yet.\nconfigure pinned apps in ~/config"
+                )
             )
         } else {
             pinned.forEach { app ->
@@ -2546,6 +2555,10 @@ class MainActivity : AppCompatActivity() {
 
         row("home screen", "customize ›") {
             fillHomeScreenSettings()
+            setScroll.scrollTo(0, 0)
+        }
+        row("pinned apps", "workspace ${curWs + 1} ›") {
+            fillPinnedPicker(curWs)
             setScroll.scrollTo(0, 0)
         }
         row("wallpaper", "choose ›") { closeSettings(); pickWall.launch(arrayOf("image/*")) }
