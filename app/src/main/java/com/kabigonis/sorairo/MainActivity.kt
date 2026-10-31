@@ -1144,7 +1144,8 @@ class MainActivity : AppCompatActivity() {
 
     @Deprecated("Launcher stays put on back")
     override fun onBackPressed() {
-        if (qs.visibility == View.VISIBLE) closeQs()
+        if (moveSource[curWs] >= 0) endMove()
+        else if (qs.visibility == View.VISIBLE) closeQs()
         else if (settings.visibility == View.VISIBLE) closeSettings() else closeDrawer()
     }
 
@@ -1166,6 +1167,8 @@ class MainActivity : AppCompatActivity() {
 
         // ---- top bar ----
         val bar = FrameLayout(this)
+        moveHint = txt(11f, p.cAccent, "move: tap another window").apply { visibility = View.GONE; gravity = Gravity.CENTER }
+        bar.addView(moveHint, FrameLayout.LayoutParams(-2, -1, Gravity.CENTER))
         val left = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -1444,6 +1447,7 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
         }
         val title = txt(12.5f, p.cBlue, "~/monitor")
+        title.setOnLongClickListener { if (moveSource[ws] >= 0) moveTap(ws, "bottom") else startMove(ws, "bottom"); true }
         bottomWindowTitles[ws] = title
         titleRow.addView(title, LinearLayout.LayoutParams(0, -2, 1f))
 
@@ -1849,6 +1853,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         fun focusTerminal(showKeyboard: Boolean) {
+            if (moveTap(ws, "terminal")) return
             val pinned = pinWindowForFocus[ws]
             if (pinned != null) setWindowFocus(ws, 0, term, pinned)
             else focusedWindow[ws] = 0
@@ -1864,9 +1869,10 @@ class MainActivity : AppCompatActivity() {
         out.setOnClickListener { focusTerminal(false) }
         col.setOnClickListener { focusTerminal(false) }
         scroll.setOnClickListener { focusTerminal(false) }
-        term.setOnLongClickListener { showSettings(); true }
-        out.setOnLongClickListener { showSettings(); true }
-        col.setOnLongClickListener { showSettings(); true }
+        val moveTerminal = View.OnLongClickListener { if (moveSource[ws] >= 0) moveTap(ws, "terminal") else startMove(ws, "terminal"); true }
+        term.setOnLongClickListener(moveTerminal)
+        out.setOnLongClickListener(moveTerminal)
+        col.setOnLongClickListener(moveTerminal)
 
         terminalWindowForFocus[ws] = term
         val showTerminalWindow = prefs.getBoolean("home_show_terminal", true)
@@ -1884,11 +1890,11 @@ class MainActivity : AppCompatActivity() {
         }
         pinWindowForFocus[ws] = pinWin
         pinWin.setOnClickListener {
-            setWindowFocus(ws, 1, term, pinWin)
+            if (!moveTap(ws, "pinned")) setWindowFocus(ws, 1, term, pinWin)
         }
         setWindowFocus(ws, focusedWindow[ws], term, pinWin)
         val pinTitle = txt(13f, p.cBlue, "~/pinned")
-        pinTitle.setOnLongClickListener { showPinnedPicker(ws); true }
+        pinTitle.setOnLongClickListener { if (moveSource[ws] >= 0) moveTap(ws, "pinned") else startMove(ws, "pinned"); true }
         pinWin.addView(pinTitle)
         val pinList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         pinBoxes[ws] = pinList
@@ -1911,7 +1917,7 @@ class MainActivity : AppCompatActivity() {
         fillPins(ws)
         val bottomWin = buildBottomWindow(ws)
         bottomWindowForFocus[ws] = bottomWin
-        bottomWin.setOnClickListener { setWindowFocus(ws, 2, term, pinWin) }
+        bottomWin.setOnClickListener { if (!moveTap(ws, "bottom")) setWindowFocus(ws, 2, term, pinWin) }
         pinWin.tag = "pinned"
         bottomWin.tag = "bottom"
         row.addView(pinWin, ViewGroup.LayoutParams(-1, -1))
