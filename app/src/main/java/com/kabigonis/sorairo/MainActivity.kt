@@ -2551,8 +2551,9 @@ class MainActivity : AppCompatActivity() {
         val p = pal
         setBox.removeAllViews()
         setBox.addView(txt(15f, p.cBlue, "~/config"))
-        setBox.addView(txt(11f, p.cDim, "tap a row to change it").apply { setPadding(0, dp(2), 0, dp(6)) })
-
+        setBox.addView(txt(11f, p.cDim, "choose what you want to configure").apply {
+            setPadding(0, dp(2), 0, dp(6))
+        })
         fun row(k: String, v: String, onTap: () -> Unit) {
             val r = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -2563,19 +2564,57 @@ class MainActivity : AppCompatActivity() {
             r.addView(txt(14f, p.cAccent, v))
             setBox.addView(r)
         }
-
-        row("home screen", "customize ›") {
-            fillHomeScreenSettings()
+        row("style", "appearance & layout ›") {
+            fillStyleSettings()
             setScroll.scrollTo(0, 0)
         }
         row("pinned apps", "workspace ${curWs + 1} ›") {
-            fillPinnedPicker(curWs)
-            setScroll.scrollTo(0, 0)
+            fillPinnedPicker(curWs); setScroll.scrollTo(0, 0)
+        }
+        row("default launcher", "change ›") {
+            closeSettings()
+            try { startActivity(Intent(Settings.ACTION_HOME_SETTINGS)) }
+            catch (_: Exception) { startActivity(Intent(Settings.ACTION_SETTINGS)) }
+        }
+        row("media access", if (mediaAccess()) "granted" else "enable ›") {
+            openSystem(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+        }
+        row("vpn app", allApps.find { it.pkg == prefs.getString("vpn_pkg", null) }?.label ?: "choose ›") {
+            fillVpnPicker(); setScroll.scrollTo(0, 0)
+        }
+        row("hidden apps", "${allApps.size - apps.size} ›") {
+            fillHidden(); setScroll.scrollTo(0, 0)
+        }
+        row("close", "esc") { closeSettings() }
+    }
+
+    private fun fillStyleSettings() {
+        val p = pal
+        setBox.removeAllViews()
+        setBox.addView(txt(15f, p.cBlue, "~/config/style"))
+        setBox.addView(txt(11f, p.cDim, "appearance, wallpaper and workspace layout").apply {
+            setPadding(0, dp(2), 0, dp(6))
+        })
+        setBox.addView(txt(14f, p.cAccent, "← back").apply {
+            setPadding(0, dp(8), 0, dp(8))
+            setOnClickListener { fillSettings(); setScroll.scrollTo(0, 0) }
+        })
+        fun row(k: String, v: String, onTap: () -> Unit) {
+            val r = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, dp(11), 0, dp(11))
+                setOnClickListener { onTap() }
+            }
+            r.addView(txt(14f, p.cFg, k), LinearLayout.LayoutParams(0, -2, 1f))
+            r.addView(txt(14f, p.cAccent, v))
+            setBox.addView(r)
+        }
+        row("home screen", "customize ›") {
+            fillHomeScreenSettings(); setScroll.scrollTo(0, 0)
         }
         row("wallpaper", "choose ›") { closeSettings(); pickWall.launch(arrayOf("image/*")) }
         row("clear wallpaper", "›") {
-            prefs.edit().remove("wall").apply()
-            wall.setImageDrawable(null)
+            prefs.edit().remove("wall").apply(); wall.setImageDrawable(null)
         }
         row("theme", pal.name) { cycle("theme", pals.size) }
         row("font", fontNames[prefs.getInt("font", 0).coerceIn(0, fontNames.size - 1)]) {
@@ -2588,38 +2627,24 @@ class MainActivity : AppCompatActivity() {
             cycle("opacity", opacities.size, 2)
         }
         row("launch style", mode) { cycle("mode", launchModes.size) }
-        row("default launcher", "change ›") {
-            closeSettings()
-            try {
-                startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
-            } catch (_: Exception) {
-                startActivity(Intent(Settings.ACTION_SETTINGS))
-            }
-        }
         row("fetch logo", logoNames[prefs.getInt("logo", 0).coerceIn(0, logoNames.size - 1)]) {
             val n = (prefs.getInt("logo", 0) + 1) % logoNames.size
             prefs.edit().putInt("logo", n).apply()
             if (logoNames[n] == "image" && prefs.getString("logo_uri", null) == null) {
-                closeSettings()
-                pickLogo.launch(arrayOf("image/*"))
-            } else {
-                rebuild(true)
-            }
+                closeSettings(); pickLogo.launch(arrayOf("image/*"))
+            } else rebuild(true)
         }
         row("logo image / gif", "choose ›") { closeSettings(); pickLogo.launch(arrayOf("image/*")) }
-        row("media access", if (mediaAccess()) "granted" else "enable ›") {
-            openSystem(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-        }
         row("window layout", layoutModeFor(curWs)) {
             val modes = listOf("dwindle", "master", "columns", "rows")
             setLayoutMode(curWs, modes[(modes.indexOf(layoutModeFor(curWs)) + 1) % modes.size])
-            fillSettings()
+            fillStyleSettings()
         }
         row("window ratio", "${(layoutRatioFor(curWs) * 100).toInt()}%") {
             val ratios = listOf(40, 50, 60, 70)
             val current = (layoutRatioFor(curWs) * 100).toInt()
             setLayoutRatio(curWs, ratios[(ratios.indexOf(current).coerceAtLeast(0) + 1) % ratios.size])
-            fillSettings()
+            fillStyleSettings()
         }
         row("layout scope", if (layoutScopeAll()) "all workspaces" else "this workspace") {
             val makeAll = !layoutScopeAll()
@@ -2627,30 +2652,18 @@ class MainActivity : AppCompatActivity() {
             val currentRatio = (layoutRatioFor(curWs) * 100).toInt()
             val edit = prefs.edit().putBoolean("layout_scope_all", makeAll)
             if (makeAll) {
-                // Global mode inherits the current workspace's effective settings.
                 edit.putString("window_layout_mode_global", currentMode)
                 edit.putInt("window_layout_ratio_global", currentRatio)
             } else {
-                // Keep any previously saved workspace-specific settings. Only seed
-                // workspaces that have never had their own layout configured.
                 for (ws in 0..4) {
-                    if (!prefs.contains("window_layout_mode_$ws")) {
-                        edit.putString("window_layout_mode_$ws", currentMode)
-                    }
-                    if (!prefs.contains("window_layout_ratio_$ws")) {
-                        edit.putInt("window_layout_ratio_$ws", currentRatio)
-                    }
+                    if (!prefs.contains("window_layout_mode_$ws")) edit.putString("window_layout_mode_$ws", currentMode)
+                    if (!prefs.contains("window_layout_ratio_$ws")) edit.putInt("window_layout_ratio_$ws", currentRatio)
                 }
             }
             edit.apply()
             for (ws in 0..4) applyTileLayout(ws)
-            fillSettings()
+            fillStyleSettings()
         }
-        row("vpn app", allApps.find { it.pkg == prefs.getString("vpn_pkg", null) }?.label ?: "choose ›") {
-            fillVpnPicker(); setScroll.scrollTo(0, 0)
-        }
-        row("hidden apps", "${allApps.size - apps.size} ›") { fillHidden(); setScroll.scrollTo(0, 0) }
-        row("close", "esc") { closeSettings() }
     }
 
     private fun fillHomeScreenSettings() {
@@ -2664,7 +2677,7 @@ class MainActivity : AppCompatActivity() {
         )
         setBox.addView(txt(14f, p.cAccent, "← back").apply {
             setPadding(0, dp(8), 0, dp(8))
-            setOnClickListener { fillSettings(); setScroll.scrollTo(0, 0) }
+            setOnClickListener { fillStyleSettings(); setScroll.scrollTo(0, 0) }
         })
 
         fun windowRow(label: String, key: String) {
