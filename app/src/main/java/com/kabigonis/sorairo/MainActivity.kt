@@ -1555,7 +1555,12 @@ class MainActivity : AppCompatActivity() {
         col.setOnLongClickListener { showSettings(); true }
 
         terminalWindowForFocus[ws] = term
-        row.addView(term, LinearLayout.LayoutParams(0, -1, 1f).apply { marginEnd = dp(6) })
+        val showTerminalWindow = prefs.getBoolean("home_show_terminal", true)
+        val showPinnedWindow = prefs.getBoolean("home_show_pinned", true)
+        val showBottomWindow = prefs.getBoolean("home_show_bottom", true)
+        if (showTerminalWindow) {
+            row.addView(term, LinearLayout.LayoutParams(0, -1, 1f).apply { marginEnd = dp(6) })
+        }
 
         // ---- pinned window ----
         val pinWin = LinearLayout(this).apply {
@@ -1594,20 +1599,30 @@ class MainActivity : AppCompatActivity() {
         val rightCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
-        rightCol.addView(pinWin, LinearLayout.LayoutParams(-1, 0, 1f))
         val bottomWin = buildBottomWindow(ws)
         bottomWindowForFocus[ws] = bottomWin
         bottomWin.setOnClickListener {
             setWindowFocus(ws, 2, term, pinWin)
         }
-        rightCol.addView(
-            bottomWin,
-            LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(6) }
-        )
-        row.addView(
-            rightCol,
-            LinearLayout.LayoutParams(0, -1, 1f).apply { marginStart = dp(6) }
-        )
+        if (showPinnedWindow) {
+            rightCol.addView(pinWin, LinearLayout.LayoutParams(-1, 0, 1f))
+        }
+        if (showBottomWindow) {
+            rightCol.addView(
+                bottomWin,
+                LinearLayout.LayoutParams(-1, 0, 1f).apply {
+                    if (showPinnedWindow) topMargin = dp(6)
+                }
+            )
+        }
+        if (showPinnedWindow || showBottomWindow) {
+            row.addView(
+                rightCol,
+                LinearLayout.LayoutParams(0, -1, 1f).apply {
+                    if (showTerminalWindow) marginStart = dp(6)
+                }
+            )
+        }
 
         return row
     }
@@ -2222,6 +2237,10 @@ class MainActivity : AppCompatActivity() {
             setBox.addView(r)
         }
 
+        row("home screen", "customize ›") {
+            fillHomeScreenSettings()
+            setScroll.scrollTo(0, 0)
+        }
         row("wallpaper", "choose ›") { closeSettings(); pickWall.launch(arrayOf("image/*")) }
         row("clear wallpaper", "›") {
             prefs.edit().remove("wall").apply()
@@ -2278,6 +2297,49 @@ class MainActivity : AppCompatActivity() {
         }
         row("hidden apps", "${allApps.size - apps.size} ›") { fillHidden(); setScroll.scrollTo(0, 0) }
         row("close", "esc") { closeSettings() }
+    }
+
+    private fun fillHomeScreenSettings() {
+        val p = pal
+        setBox.removeAllViews()
+        setBox.addView(txt(15f, p.cBlue, "~/home-screen"))
+        setBox.addView(
+            txt(11f, p.cDim, "show or hide workspace windows").apply {
+                setPadding(0, dp(2), 0, dp(6))
+            }
+        )
+        setBox.addView(txt(14f, p.cAccent, "← back").apply {
+            setPadding(0, dp(8), 0, dp(8))
+            setOnClickListener { fillSettings(); setScroll.scrollTo(0, 0) }
+        })
+
+        fun windowRow(label: String, key: String) {
+            val enabled = prefs.getBoolean(key, true)
+            val r = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, dp(12), 0, dp(12))
+                setOnClickListener {
+                    prefs.edit().putBoolean(key, !prefs.getBoolean(key, true)).apply()
+                    rebuild(false)
+                    showOverlay()
+                    fillHomeScreenSettings()
+                    setScroll.scrollTo(0, 0)
+                }
+            }
+            r.addView(txt(14f, p.cFg, label), LinearLayout.LayoutParams(0, -2, 1f))
+            r.addView(txt(14f, if (enabled) p.cGreen else p.cDim, if (enabled) "shown" else "hidden"))
+            setBox.addView(r)
+        }
+
+        windowRow("terminal window", "home_show_terminal")
+        windowRow("pinned apps window", "home_show_pinned")
+        windowRow("bottom window (monitor / player)", "home_show_bottom")
+        setBox.addView(
+            txt(11f, p.cDim, "Changes apply to all five workspaces.").apply {
+                setPadding(0, dp(10), 0, dp(2))
+            }
+        )
     }
 
     private fun fillHidden() {
