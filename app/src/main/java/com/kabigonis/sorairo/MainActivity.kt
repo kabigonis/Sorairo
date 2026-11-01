@@ -27,6 +27,7 @@ import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.ColorUtils
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import android.content.Context
@@ -103,6 +104,33 @@ import org.json.JSONObject
 
 import kotlin.math.abs
 import kotlin.math.min
+
+object Contrast {
+    private fun channel(v: Int): Double {
+        val s = v / 255.0
+        return if (s <= 0.03928) s / 12.92 else Math.pow((s + 0.055) / 1.055, 2.4)
+    }
+    fun luminance(c: Int): Double =
+        0.2126 * channel(Color.red(c)) + 0.7152 * channel(Color.green(c)) + 0.0722 * channel(Color.blue(c))
+    fun ratio(a: Int, b: Int): Double {
+        val x = luminance(a); val y = luminance(b)
+        return (maxOf(x, y) + 0.05) / (minOf(x, y) + 0.05)
+    }
+    fun ensure(fg: Int, bg: Int, min: Double): Int {
+        if (ratio(fg, bg) >= min) return fg
+        val target = if (luminance(bg) < 0.5) Color.WHITE else Color.BLACK
+        for (i in 1..20) {
+            val c = ColorUtils.blendARGB(fg, target, i / 20f)
+            if (ratio(c, bg) >= min) return c
+        }
+        return target
+    }
+    fun on(fill: Int, preferred: Int, alt: Int): Int {
+        if (ratio(preferred, fill) >= 4.5) return preferred
+        if (ratio(alt, fill) >= 4.5) return alt
+        return if (ratio(Color.BLACK, fill) >= ratio(Color.WHITE, fill)) Color.BLACK else Color.WHITE
+    }
+}
 
 /**
  * Positions the existing workspace window views without recreating them.
@@ -369,12 +397,23 @@ class MainActivity : AppCompatActivity() {
             Color.parseColor("#8de6ff"), Color.parseColor(fg)
         )
         val cBg = Color.parseColor(bg)
-        val cFg = Color.parseColor(fg)
-        val cDim = Color.parseColor(dim)
-        val cBlue = Color.parseColor(blue)
-        val cGreen = Color.parseColor(green)
-        val cAccent = Color.parseColor(accent)
+        val cFg = Contrast.ensure(Color.parseColor(fg), cBg, 4.5)
+        val cDim = Contrast.ensure(Color.parseColor(dim), cBg, 3.0)
+        val cBlue = Contrast.ensure(Color.parseColor(blue), cBg, 3.0)
+        val cGreen = Contrast.ensure(Color.parseColor(green), cBg, 3.0)
+        val cAccent = Contrast.ensure(Color.parseColor(accent), cBg, 3.0)
         val cSel = Color.parseColor(sel)
+
+        fun on(fill: Int): Int {
+            val solid = ColorUtils.compositeColors(fill, cBg)
+            return Contrast.on(solid, cFg, cBg)
+        }
+
+        fun onDim(fill: Int): Int {
+            val solid = ColorUtils.compositeColors(fill, cBg)
+            val base = Contrast.on(solid, cFg, cBg)
+            return Contrast.ensure(ColorUtils.blendARGB(base, solid, 0.3f), solid, 3.5)
+        }
     }
 
     private val basePals = listOf(
@@ -952,13 +991,11 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 queue.forEachIndexed { index, item ->
-                    rows.getOrNull(index)?.setTextColor(
-                        if (activeQueueId != null && item.queueId == activeQueueId) {
-                            pal.cAccent
-                        } else {
-                            pal.cFg
-                        }
-                    )
+                    val active = activeQueueId != null && item.queueId == activeQueueId
+                    rows.getOrNull(index)?.apply {
+                        setBackgroundColor(if (active) pal.cSel else Color.TRANSPARENT)
+                        setTextColor(if (active) pal.on(pal.cSel) else pal.cFg)
+                    }
                 }
             }
         }
@@ -2803,8 +2840,8 @@ class MainActivity : AppCompatActivity() {
         } catch (_: Exception) {
             if (hasWifi) "Connected network · name hidden by Android" else "Not connected"
         }
-        current.addView(txt(14f, p.cFg, currentName))
-        current.addView(txt(11f, p.cAccent, if (hasWifi) "connected" else "not connected").apply {
+        current.addView(txt(14f, p.on(p.cSel), currentName))
+        current.addView(txt(11f, p.onDim(p.cSel), if (hasWifi) "connected" else "not connected").apply {
             setPadding(0, dp(3), 0, 0)
         })
         root.addView(current)
@@ -2817,13 +2854,15 @@ class MainActivity : AppCompatActivity() {
         wifiScanStatus = status
         root.addView(status.apply { setPadding(0, dp(5), 0, 0) })
 
-        fun action(label: String, primary: Boolean = false, onClick: () -> Unit) =
-            txt(12f, if (primary) p.cBg else p.cFg, label).apply {
+        fun action(label: String, primary: Boolean = false, onClick: () -> Unit): TextView {
+            val fill = if (primary) p.cAccent else p.cSel
+            return txt(12f, p.on(fill), label).apply {
                 gravity = Gravity.CENTER
                 setPadding(dp(12), dp(9), dp(12), dp(9))
-                background = box(if (primary) p.cAccent else p.cSel, if (primary) p.cAccent else p.cDim)
+                background = box(fill, if (primary) p.cAccent else p.cDim)
                 setOnClickListener { onClick() }
             }
+        }
 
         fun locationEnabled(): Boolean = if (Build.VERSION.SDK_INT >= 28) {
             (getSystemService(LOCATION_SERVICE) as android.location.LocationManager).isLocationEnabled
@@ -3019,19 +3058,17 @@ class MainActivity : AppCompatActivity() {
         val vpnApp = allApps.find { it.pkg == prefs.getString("vpn_pkg", null) }
 
         fun tile(name: String, state: String, on: Boolean, hold: (() -> Unit)? = null, tap: () -> Unit): View {
+            val fill = if (on) p.cSel else (p.cSel and 0x00FFFFFF) or (0x44 shl 24)
             val t = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(12), dp(6), dp(12), dp(6))
-                background = box(
-                    if (on) p.cSel else (p.cSel and 0x00FFFFFF) or (0x44 shl 24),
-                    if (on) p.cAccent else p.cDim
-                )
+                background = box(fill, if (on) p.cAccent else p.cDim)
                 setOnClickListener { tap() }
                 if (hold != null) setOnLongClickListener { hold(); true }
             }
-            t.addView(txt(14f, p.cFg, name))
-            t.addView(txt(11f, if (on) p.cAccent else p.cDim, state))
+            t.addView(txt(14f, if (on) p.on(fill) else p.cFg, name))
+            t.addView(txt(11f, if (on) p.onDim(fill) else p.cDim, state))
             return t
         }
 
@@ -3955,6 +3992,7 @@ private fun rebuild(reopenSettings: Boolean) {
                     "  logo [name]    android/arch/omarchy/image/none",
                     "  ws <1-5>       switch workspace",
                     "  theme [name]   change theme",
+                    "  contrast       show theme contrast ratios",
                     "  font [name]    change font",
                     "  wall           pick wallpaper",
                     "  config         open settings",
@@ -4025,6 +4063,20 @@ private fun rebuild(reopenSettings: Boolean) {
                         prefs.edit().putInt("logo", i).apply()
                         rebuild(false)
                         return
+                    }
+                }
+                "contrast" -> {
+                    val checks = listOf(
+                        Triple("fg/bg", Contrast.ratio(p.cFg, p.cBg), 4.5),
+                        Triple("dim/bg", Contrast.ratio(p.cDim, p.cBg), 3.0),
+                        Triple("accent/bg", Contrast.ratio(p.cAccent, p.cBg), 3.0),
+                        Triple("on(sel)/sel", Contrast.ratio(p.on(p.cSel), p.cSel), 4.5),
+                        Triple("onDim(sel)/sel", Contrast.ratio(p.onDim(p.cSel), p.cSel), 3.5)
+                    )
+                    checks.forEach { (label, value, target) ->
+                        val color = if (value < target) Color.RED else fg
+                        sb.add(label + " " + "%.2f".format(Locale.US, value) +
+                            ":1 (target " + "%.1f".format(Locale.US, target) + ":1)\n", color)
                     }
                 }
                 "theme" -> {
@@ -4411,7 +4463,7 @@ private fun rebuild(reopenSettings: Boolean) {
             }
 
             h.name.text = displayAppLabel(app) + if (isNewApp(app.pkg)) NEW_APP_MARKER else ""
-            h.name.setTextColor(if (i == 0) pal.cAccent else pal.cFg)
+            h.name.setTextColor(if (i == 0) pal.on(pal.cSel) else pal.cFg)
             h.name.setBackgroundColor(if (i == 0) pal.cSel else Color.TRANSPARENT)
             h.name.setOnClickListener { launchApp(app) }
             h.name.setOnLongClickListener {
