@@ -96,6 +96,8 @@ import java.text.Normalizer
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import org.json.JSONArray
+import org.json.JSONObject
 
 
 import kotlin.math.abs
@@ -1029,51 +1031,76 @@ class MainActivity : AppCompatActivity() {
     private var monitorLastTx = 0L
     private var monitorLastSummaryT = 0L
 
-    private val exportHiddenFile = registerForActivityResult(
-        ActivityResultContracts.CreateDocument("text/plain")
+    private val exportConfigFile = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
         if (uri != null) {
             try {
-                val list = hiddenSet().sorted()
-                contentResolver.openOutputStream(uri, "wt")?.use { out ->
-                    out.write(list.joinToString("\n").toByteArray())
+                val values = JSONObject()
+                prefs.all.forEach { (key, value) ->
+                    when (value) {
+                        is Set<*> -> values.put(key, JSONArray(value.filterIsInstance<String>()))
+                        is String, is Int, is Long, is Float, is Boolean -> values.put(key, value)
+                    }
                 }
-                Toast.makeText(this, "saved ${list.size} hidden apps", Toast.LENGTH_SHORT).show()
+                val backup = JSONObject()
+                    .put("format", "sorairo-config")
+                    .put("version", 1)
+                    .put("preferences", values)
+                contentResolver.openOutputStream(uri, "wt")?.bufferedWriter()?.use {
+                    it.write(backup.toString(2))
+                } ?: throw IllegalStateException("Unable to open destination")
+                Toast.makeText(this, "Sorairo config exported", Toast.LENGTH_SHORT).show()
             } catch (_: Exception) {
-                Toast.makeText(this, "couldn't save the file", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "couldn't export config", Toast.LENGTH_SHORT).show()
             }
         }
     }
 
-    private val importHiddenFile = registerForActivityResult(
+    private val importConfigFile = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
             try {
-                val imported = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readLines() }
-                    .orEmpty()
-                    .map { it.trim() }
-                    .filter { line ->
-                        line.isNotEmpty() && line.all { c -> c.isLetterOrDigit() || c == '.' || c == '_' }
+                val backup = contentResolver.openInputStream(uri)?.bufferedReader()?.use {
+                    JSONObject(it.readText())
+                } ?: throw IllegalArgumentException("Empty file")
+                require(backup.optString("format") == "sorairo-config") { "Not a Sorairo config" }
+                require(backup.optInt("version", -1) == 1) { "Unsupported config version" }
+                val values = backup.getJSONObject("preferences")
+                val editor = prefs.edit().clear()
+                val keys = values.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    when (val value = values.get(key)) {
+                        is JSONObject -> Unit
+                        is JSONArray -> {
+                            val set = LinkedHashSet<String>()
+                            for (i in 0 until value.length()) {
+                                val item = value.optString(i, "")
+                                if (item.isNotEmpty()) set.add(item)
+                            }
+                            editor.putStringSet(key, set)
+                        }
+                        is String -> editor.putString(key, value)
+                        is Boolean -> editor.putBoolean(key, value)
+                        is Int -> editor.putInt(key, value)
+                        is Long -> editor.putLong(key, value)
+                        is Double -> editor.putFloat(key, value.toFloat())
+                        else -> Unit
                     }
-                    .toSet()
-                if (imported.isEmpty()) {
-                    Toast.makeText(this, "no apps found in that file", Toast.LENGTH_SHORT).show()
-                } else {
-                    val merged = hiddenSet() + imported
-                    prefs.edit().putString("hidden", merged.joinToString(",")).apply()
-                    apps = visibleApps()
-                    adapter.items = apps
-                    adapter.notifyDataSetChanged()
-                    for (i in 0..4) {
-                        fillPins(i)
-                        refreshFetch(i)
-                    }
-                    if (settings.visibility == View.VISIBLE) fillHidden()
-                    Toast.makeText(this, "restored ${imported.size} hidden apps", Toast.LENGTH_SHORT).show()
                 }
+                editor.apply()
+                apps = visibleApps()
+                adapter.items = apps
+                adapter.notifyDataSetChanged()
+                rebuild(false)
+                fillSettings()
+                setScroll.scrollTo(0, 0)
+                showOverlay()
+                Toast.makeText(this, "Sorairo config imported", Toast.LENGTH_SHORT).show()
             } catch (_: Exception) {
-                Toast.makeText(this, "couldn't read the file", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "invalid or unsupported Sorairo config", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -2666,18 +2693,6 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, dp(8), 0, dp(8))
             setOnClickListener { fillSettings(); setScroll.scrollTo(0, 0) }
         })
-        fun fileRow(k: String, v: String, onTap: () -> Unit) {
-            val r = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                setPadding(0, dp(9), 0, dp(9))
-                setOnClickListener { onTap() }
-            }
-            r.addView(txt(14f, p.cFg, k), LinearLayout.LayoutParams(0, -2, 1f))
-            r.addView(txt(14f, p.cAccent, v))
-            setBox.addView(r)
-        }
-        fileRow("save list to a file", "export ›") { exportHiddenFile.launch("sorairo-hidden-apps.txt") }
-        fileRow("restore list from a file", "import ›") { importHiddenFile.launch(arrayOf("*/*")) }
         allApps.forEach { app ->
             val chosen = app.pkg == prefs.getString("vpn_pkg", null)
             setBox.addView(
@@ -3157,10 +3172,45 @@ class MainActivity : AppCompatActivity() {
         row("vpn app", allApps.find { it.pkg == prefs.getString("vpn_pkg", null) }?.label ?: "choose ›") {
             fillVpnPicker(); setScroll.scrollTo(0, 0)
         }
+        row("import/export config", "backup or restore ›") {
+            fillConfigTransfer(); setScroll.scrollTo(0, 0)
+        }
         row("hidden apps", "${allApps.size - apps.size} ›") {
             fillHidden(); setScroll.scrollTo(0, 0)
         }
         row("close", "esc") { closeSettings() }
+    }
+
+    private fun fillConfigTransfer() {
+        val p = pal
+        setBox.removeAllViews()
+        setBox.addView(txt(15f, p.cBlue, "~/config/import-export"))
+        setBox.addView(txt(11f, p.cDim, "back up or restore your complete Sorairo configuration").apply {
+            setPadding(0, dp(2), 0, dp(6))
+        })
+        setBox.addView(txt(14f, p.cAccent, "← back").apply {
+            setPadding(0, dp(8), 0, dp(8))
+            setOnClickListener { fillSettings(); setScroll.scrollTo(0, 0) }
+        })
+        fun action(label: String, detail: String, onTap: () -> Unit) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, dp(11), 0, dp(11))
+                setOnClickListener { onTap() }
+            }
+            row.addView(txt(14f, p.cFg, label), LinearLayout.LayoutParams(0, -2, 1f))
+            row.addView(txt(14f, p.cAccent, detail))
+            setBox.addView(row)
+        }
+        action("export complete config", "export ›") {
+            exportConfigFile.launch("sorairo-config.json")
+        }
+        action("import complete config", "import ›") {
+            importConfigFile.launch(arrayOf("application/json", "text/*", "*/*"))
+        }
+        setBox.addView(txt(11f, p.cDim,
+            "Includes themes, layout, pinned and hidden apps, VPN app, wallpaper selection, and other saved preferences. Wallpaper files and app installations themselves are not included."
+        ).apply { setPadding(0, dp(8), 0, 0) })
     }
 
     private fun fillPermissionSettings() {
