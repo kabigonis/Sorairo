@@ -128,6 +128,28 @@ object CommunityThemes {
             ?: emptySet()
 
     /**
+     * Installed themes with original catalog metadata when available. The
+     * fallback keeps offline or no-longer-listed installs visible as well.
+     */
+    fun installedCatalog(context: Context, catalog: List<CatalogTheme>): List<CatalogTheme> {
+        val byId = catalog.associateBy { it.id }
+        return (root(context).listFiles() ?: emptyArray())
+            .filter { File(it, "colors.toml").isFile }
+            .sortedBy { File(it, "colors.toml").lastModified() }
+            .mapNotNull { dir ->
+                byId[dir.name] ?: runCatching {
+                    val repo = File(dir, "repo.txt").takeIf { it.isFile }?.readText()?.trim()
+                        ?: return@runCatching null
+                    val parts = repo.split("/")
+                    if (parts.size != 2 || parts.any { !PART.matches(it) }) return@runCatching null
+                    val title = File(dir, "title.txt").takeIf { it.isFile }?.readText()?.trim()
+                        ?.takeIf { it.isNotEmpty() } ?: OmarchyThemes.titleOf(dir.name)
+                    CatalogTheme(title, parts[0], parts[1], "")
+                }.getOrNull()
+            }
+    }
+
+    /**
      * The theme's palette, downloading it first when it isn't installed yet.
      * Blocking: call from a background thread. Throws with a readable message.
      */
