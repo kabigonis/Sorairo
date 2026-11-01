@@ -3832,11 +3832,52 @@ class MainActivity : AppCompatActivity() {
         return columns * 4
     }
 
-    // Size thumbnails so the four-row page, its controls and the "show more"
-    // affordance fit inside the fixed Community Themes window without scrolling.
-    private fun communityThumbHeight(): Int {
-        val available = resources.displayMetrics.heightPixels - dp(48 + 180 + (4 * 68))
-        return (available / 4).coerceIn(dp(40), dp(112))
+    // Start with the normal preview size. Once Android has measured the actual
+    // fixed-size window, fit the first four rows into its remaining space.
+    private fun communityThumbHeight(): Int = dp(112)
+
+    private fun fitInitialCommunityPage(grid: LinearLayout) {
+        if (communityShown > communityPageSize()) return
+        setScroll.post {
+            if (!::setScroll.isInitialized || setScroll.height <= 0) return@post
+            val rows = (0 until minOf(4, grid.childCount))
+                .mapNotNull { grid.getChildAt(it) as? LinearLayout }
+                .filter { it.childCount > 0 && it.getChildAt(0) is LinearLayout }
+            if (rows.isEmpty()) return@post
+
+            // The ScrollView measures the complete content. Reduce only preview
+            // images by the measured overflow; keep titles, labels and controls intact.
+            val overflow = setBox.measuredHeight - setScroll.height
+            if (overflow <= 0) return@post
+            val reductionPerRow = (overflow + dp(8) + rows.size - 1) / rows.size
+            rows.forEach { row ->
+                for (i in 0 until row.childCount) {
+                    val card = row.getChildAt(i) as? LinearLayout ?: continue
+                    val image = card.getChildAt(0) as? ImageView ?: continue
+                    val lp = image.layoutParams
+                    lp.height = (lp.height - reductionPerRow).coerceAtLeast(dp(20))
+                    image.layoutParams = lp
+                }
+            }
+            setBox.requestLayout()
+            setScroll.post {
+                // A second small correction accounts for font metrics and rounding.
+                val remaining = setBox.measuredHeight - setScroll.height
+                if (remaining > 0) {
+                    val correction = (remaining + rows.size - 1) / rows.size
+                    rows.forEach { row ->
+                        for (i in 0 until row.childCount) {
+                            val card = row.getChildAt(i) as? LinearLayout ?: continue
+                            val image = card.getChildAt(0) as? ImageView ?: continue
+                            val lp = image.layoutParams
+                            lp.height = (lp.height - correction).coerceAtLeast(dp(12))
+                            image.layoutParams = lp
+                        }
+                    }
+                    setBox.requestLayout()
+                }
+            }
+        }
     }
 
     private fun fillCommunityThemes() {
@@ -4020,7 +4061,9 @@ class MainActivity : AppCompatActivity() {
                 .setDuration(120).start()
         }
         grid.animate().alpha(1f).setDuration(120).start()
-        // Do not resize the outer window after rendering the grid.
+        // The initial page must fit completely, including the Show More row.
+        // After the user loads more, normal scrolling can reveal added rows.
+        fitInitialCommunityPage(grid)
     }
 
     private fun communityCard(t: CatalogTheme, installed: Boolean, active: Boolean): View {
