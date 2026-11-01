@@ -1308,6 +1308,9 @@ class MainActivity : AppCompatActivity() {
         setStroke(dp(2), stroke)
     }
 
+    private fun onFill(preferred: Int, fill: Int): Int =
+        Contrast.readable(preferred, fill, pal.cFg, pal.cBg)
+
     private fun txt(size: Float, color: Int, s: CharSequence = ""): TextView = TextView(this).apply {
         text = s
         textSize = size
@@ -2808,8 +2811,8 @@ class MainActivity : AppCompatActivity() {
         } catch (_: Exception) {
             if (hasWifi) "Connected network · name hidden by Android" else "Not connected"
         }
-        current.addView(txt(14f, p.cFg, currentName))
-        current.addView(txt(11f, p.cAccent, if (hasWifi) "connected" else "not connected").apply {
+        current.addView(txt(14f, onFill(p.cFg, p.cSel), currentName))
+        current.addView(txt(11f, onFill(p.cAccent, p.cSel), if (hasWifi) "connected" else "not connected").apply {
             setPadding(0, dp(3), 0, 0)
         })
         root.addView(current)
@@ -2823,7 +2826,7 @@ class MainActivity : AppCompatActivity() {
         root.addView(status.apply { setPadding(0, dp(5), 0, 0) })
 
         fun action(label: String, primary: Boolean = false, onClick: () -> Unit) =
-            txt(12f, if (primary) p.cBg else p.cFg, label).apply {
+            txt(12f, if (primary) onFill(p.cBg, p.cAccent) else onFill(p.cFg, p.cSel), label).apply {
                 gravity = Gravity.CENTER
                 setPadding(dp(12), dp(9), dp(12), dp(9))
                 background = box(if (primary) p.cAccent else p.cSel, if (primary) p.cAccent else p.cDim)
@@ -3035,8 +3038,8 @@ class MainActivity : AppCompatActivity() {
                 setOnClickListener { tap() }
                 if (hold != null) setOnLongClickListener { hold(); true }
             }
-            t.addView(txt(14f, p.cFg, name))
-            t.addView(txt(11f, if (on) p.cAccent else p.cDim, state))
+            t.addView(txt(14f, if (on) onFill(p.cFg, p.cSel) else p.cFg, name))
+            t.addView(txt(11f, if (on) onFill(p.cAccent, p.cSel) else p.cDim, state))
             return t
         }
 
@@ -3480,7 +3483,9 @@ class MainActivity : AppCompatActivity() {
                     showOverlay()
                 }
             }
-            row.addView(txt(12f, if (active) p.cAccent else theme.cFg,
+            row.addView(txt(12f,
+                if (active) Contrast.readable(p.cAccent, theme.cSel, p.cFg, p.cBg)
+                else Contrast.readable(theme.cFg, p.cBg, p.cFg),
                 (if (active) "● " else "  ") + theme.name),
                 LinearLayout.LayoutParams(0, -2, 1f))
             val swatches = LinearLayout(this).apply {
@@ -4716,7 +4721,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             h.name.text = displayAppLabel(app) + if (isNewApp(app.pkg)) NEW_APP_MARKER else ""
-            h.name.setTextColor(if (i == 0) pal.cAccent else pal.cFg)
+            h.name.setTextColor(if (i == 0) onFill(pal.cAccent, pal.cSel) else pal.cFg)
             h.name.setBackgroundColor(if (i == 0) pal.cSel else Color.TRANSPARENT)
             h.name.setOnClickListener { launchApp(app) }
             h.name.setOnLongClickListener {
