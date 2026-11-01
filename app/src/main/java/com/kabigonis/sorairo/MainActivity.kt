@@ -384,11 +384,24 @@ class MainActivity : AppCompatActivity() {
         Pal("Nord", "#2e3440", "#d8dee9", "#4c566a", "#81a1c1", "#a3be8c", "#ebcb8b", "#434c5e"),
         Pal("Dracula", "#282a36", "#f8f8f2", "#6272a4", "#bd93f9", "#50fa7b", "#ff79c6", "#44475a")
     )
-    private val pals: List<Pal> by lazy {
+    private var palsCache: List<Pal>? = null
+    private var builtInCount = 0
+    private val pals: List<Pal> get() = palsCache ?: buildPals().also { palsCache = it }
+
+    private fun invalidatePals() {
+        palsCache = null
+    }
+
+    private fun toPal(t: OmarchyThemes.Palette) =
+        Pal(t.name, t.bg, t.fg, t.dim, t.blue, t.green, t.accent, t.sel, t.ansiColors)
+
+    private fun buildPals(): List<Pal> {
         val have = basePals.map { it.name.lowercase().replace(" ", "") }.toSet()
-        basePals + OmarchyThemes.loadBundled(this)
+        val builtIn = basePals + OmarchyThemes.loadBundled(this)
             .filter { !it.isLight && it.name.lowercase().replace(" ", "") !in have }
-            .map { Pal(it.name, it.bg, it.fg, it.dim, it.blue, it.green, it.accent, it.sel, it.ansiColors) }
+            .map { toPal(it) }
+        builtInCount = builtIn.size
+        return builtIn + CommunityThemes.loadInstalled(this).map { toPal(it) }
     }
     private val fontNames = listOf(
         "monospace", "serif-monospace", "sans-serif", "sans-serif-condensed", "casual", "serif"
@@ -3429,6 +3442,7 @@ class MainActivity : AppCompatActivity() {
             prefs.edit().remove("wall").apply(); wall.setImageDrawable(null)
         }
         row("theme", pal.name) { cycle("theme", pals.size) }
+        row("community themes", "browse ›") { fillCommunityThemes(); setScroll.scrollTo(0, 0) }
         row("font", fontNames[prefs.getInt("font", 0).coerceIn(0, fontNames.size - 1)]) {
             cycle("font", fontNames.size)
         }
@@ -3598,6 +3612,236 @@ class MainActivity : AppCompatActivity() {
             r.setOnClickListener { toggleHidden(app); paint() }
             setBox.addView(r)
         }
+    }
+
+    // ================= community themes =================
+    private val netPool = java.util.concurrent.Executors.newFixedThreadPool(3)
+    private val themeThumbs = android.util.LruCache<String, android.graphics.Bitmap>(30)
+    private var communityCatalog: List<CatalogTheme> = emptyList()
+    private var communityQuery = ""
+    private var communityShown = 24
+    private var communityStatus = ""
+    private val communityBusy = HashSet<String>()
+
+    private fun ui(block: () -> Unit) {
+        if (!isDestroyed) runOnUiThread(block)
+    }
+
+    private fun fillCommunityThemes() {
+        val p = pal
+        setBox.removeAllViews()
+        setBox.addView(txt(15f, p.cBlue, "~/config/community-themes"))
+        setBox.addView(
+            txt(11f, p.cDim, "made by the community, listed on omarchy.org/themes. tap one to install and apply it. hold an installed one to remove it.").apply {
+                setPadding(0, dp(2), 0, dp(6))
+            }
+        )
+        setBox.addView(txt(14f, p.cAccent, "← back").apply {
+            setPadding(0, dp(8), 0, dp(8))
+            setOnClickListener { fillStyleSettings(); setScroll.scrollTo(0, 0) }
+        })
+        val search = EditText(this).apply {
+            hint = "search themes"
+            setHintTextColor(p.cDim)
+            setTextColor(p.cFg)
+            typeface = font
+            textSize = 14f
+            isSingleLine = true
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            background = box(Color.TRANSPARENT, p.cDim)
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            setText(communityQuery)
+        }
+        val status = txt(11f, p.cDim, communityStatus).apply { setPadding(0, dp(6), 0, dp(2)) }
+        val grid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        setBox.addView(search, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
+        setBox.addView(status)
+        setBox.addView(grid)
+        search.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) {
+                communityQuery = s?.toString().orEmpty()
+                communityShown = 24
+                renderCommunityGrid(grid, status)
+            }
+        })
+        renderCommunityGrid(grid, status)
+        loadCommunityCatalog { renderCommunityGrid(grid, status) }
+    }
+
+    // Shows the saved list straight away, then refreshes it from omarchy.org when it is stale.
+    private fun loadCommunityCatalog(onChange: () -> Unit) {
+        if (communityCatalog.isEmpty()) {
+            communityStatus = "loading..."
+            onChange()
+        }
+        netPool.execute {
+            var have = communityCatalog
+            if (have.isEmpty()) {
+                have = CommunityThemes.cachedCatalog(this)
+                if (have.isNotEmpty()) ui { communityCatalog = have; communityStatus = ""; onChange() }
+            }
+            if (have.isEmpty() || !CommunityThemes.catalogIsFresh(this)) {
+                try {
+                    val fresh = CommunityThemes.fetchCatalog(this)
+                    ui { communityCatalog = fresh; communityStatus = ""; onChange() }
+                } catch (e: Exception) {
+                    ui {
+                        communityStatus = if (communityCatalog.isEmpty()) {
+                            "couldn't load the list (${e.message}). check your connection."
+                        } else {
+                            "offline, showing the saved list"
+                        }
+                        onChange()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun renderCommunityGrid(grid: LinearLayout, status: TextView) {
+        val p = pal
+        grid.removeAllViews()
+        val q = communityQuery.trim().lowercase()
+        val matches = communityCatalog.filter {
+            q.isEmpty() || it.title.lowercase().contains(q) || it.label.lowercase().contains(q)
+        }
+        status.text = when {
+            communityStatus.isNotEmpty() -> communityStatus
+            communityCatalog.isEmpty() -> ""
+            matches.isEmpty() -> "nothing matches \"$communityQuery\""
+            else -> "${matches.size} themes"
+        }
+        val installed = CommunityThemes.installedIds(this)
+        val activeName = pal.name
+        val shown = matches.take(communityShown)
+        shown.chunked(2).forEach { pair ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, dp(4), 0, dp(4))
+            }
+            pair.forEachIndexed { i, t ->
+                val isInstalled = t.id in installed
+                val card = communityCard(t, isInstalled, isInstalled && t.title == activeName)
+                row.addView(card, LinearLayout.LayoutParams(0, -2, 1f).apply {
+                    if (i == 0) {
+                        marginEnd = dp(4)
+                    } else {
+                        marginStart = dp(4)
+                    }
+                })
+            }
+            if (pair.size == 1) {
+                row.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f).apply { marginStart = dp(4) })
+            }
+            grid.addView(row)
+        }
+        if (matches.size > shown.size) {
+            grid.addView(txt(14f, p.cAccent, "show more (${matches.size - shown.size} left) ›").apply {
+                setPadding(0, dp(12), 0, dp(8))
+                setOnClickListener { communityShown += 24; renderCommunityGrid(grid, status) }
+            })
+        }
+    }
+
+    private fun communityCard(t: CatalogTheme, installed: Boolean, active: Boolean): View {
+        val p = pal
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(5), dp(5), dp(5), dp(5))
+            background = GradientDrawable().apply {
+                setColor(Color.TRANSPARENT)
+                setStroke(dp(if (active) 2 else 1), if (active) p.cAccent else p.cDim)
+            }
+        }
+        val img = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            setBackgroundColor((p.cDim and 0x00FFFFFF) or (0x33 shl 24))
+        }
+        card.addView(img, LinearLayout.LayoutParams(-1, dp(112)))
+        card.addView(txt(13f, p.cFg, t.title).apply {
+            isSingleLine = true
+            ellipsize = TextUtils.TruncateAt.END
+            setPadding(0, dp(5), 0, 0)
+        })
+        card.addView(txt(10f, p.cDim, t.label).apply {
+            isSingleLine = true
+            ellipsize = TextUtils.TruncateAt.END
+        })
+        val state = txt(
+            11f,
+            if (active) p.cAccent else if (installed) p.cGreen else p.cDim,
+            if (active) "active" else if (installed) "installed" else "tap to install"
+        ).apply { setPadding(0, dp(3), 0, 0) }
+        card.addView(state)
+        card.setOnClickListener { installCommunityTheme(t, state) }
+        card.setOnLongClickListener {
+            if (installed) { removeCommunityTheme(t); true } else false
+        }
+        loadThumb(t, img)
+        return card
+    }
+
+    private fun loadThumb(t: CatalogTheme, img: ImageView) {
+        img.tag = t.key
+        themeThumbs.get(t.key)?.let { img.setImageBitmap(it); return }
+        netPool.execute {
+            val file = CommunityThemes.imageFile(this, t) ?: return@execute
+            val bmp = decodeThumb(file) ?: return@execute
+            themeThumbs.put(t.key, bmp)
+            ui { if (img.tag == t.key) img.setImageBitmap(bmp) }
+        }
+    }
+
+    private fun decodeThumb(file: File): android.graphics.Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.path, bounds)
+        if (bounds.outWidth <= 0) return null
+        var sample = 1
+        while (bounds.outWidth / (sample * 2) >= 560) sample *= 2
+        return BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = sample })
+    }
+
+    private fun installCommunityTheme(t: CatalogTheme, state: TextView) {
+        if (!communityBusy.add(t.key)) return
+        state.text = "downloading..."
+        netPool.execute {
+            val result = runCatching { CommunityThemes.install(this, t) }
+            ui {
+                communityBusy.remove(t.key)
+                result.onSuccess { palette ->
+                    invalidatePals()
+                    val index = pals.indexOfLast { it.name == palette.name }.coerceAtLeast(0)
+                    prefs.edit().putInt("theme", index).apply()
+                    rebuild(false)
+                    fillCommunityThemes()
+                    showOverlay()
+                    Toast.makeText(this, "applied ${palette.name}", Toast.LENGTH_SHORT).show()
+                }.onFailure { e ->
+                    state.text = "failed, tap to retry"
+                    Toast.makeText(this, "couldn't install ${t.title}: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun removeCommunityTheme(t: CatalogTheme) {
+        val activeIndex = prefs.getInt("theme", 0).coerceIn(0, pals.size - 1)
+        val activeName = pals[activeIndex].name
+        CommunityThemes.remove(this, t.id)
+        invalidatePals()
+        val newIndex = when {
+            activeIndex < builtInCount -> activeIndex
+            activeName == t.title -> 0
+            else -> pals.indexOfLast { it.name == activeName }.takeIf { it >= builtInCount } ?: 0
+        }
+        val activeChanged = pals.getOrNull(newIndex)?.name != activeName
+        prefs.edit().putInt("theme", newIndex).apply()
+        if (activeChanged) rebuild(false)
+        fillCommunityThemes()
+        showOverlay()
+        Toast.makeText(this, "removed ${t.title}", Toast.LENGTH_SHORT).show()
     }
 
     private fun rebuild(reopenSettings: Boolean) {
