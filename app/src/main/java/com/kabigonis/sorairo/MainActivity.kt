@@ -7,6 +7,7 @@ import android.animation.AnimatorListenerAdapter
 import android.animation.LayoutTransition
 import android.animation.ValueAnimator
 import android.app.ActivityManager
+import android.app.Dialog
 import android.app.NotificationManager
 import android.app.role.RoleManager
 import android.bluetooth.BluetoothManager
@@ -3413,20 +3414,117 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showThemePicker() {
-        val names = pals.map { it.name }.toTypedArray()
-        val selected = prefs.getInt("theme", 0).coerceIn(0, names.lastIndex.coerceAtLeast(0))
-        AlertDialog.Builder(this)
-            .setTitle("Choose theme")
-            .setSingleChoiceItems(names, selected) { dialog, which ->
-                prefs.edit().putInt("theme", which).apply()
-                dialog.dismiss()
-                rebuild(false)
-                fillStyleSettings()
-                setScroll.scrollTo(0, 0)
-                showOverlay()
+        val p = pal
+        val selected = prefs.getInt("theme", 0).coerceIn(0, pals.lastIndex.coerceAtLeast(0))
+        val dialog = Dialog(this)
+        val shell = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = box(solidColor(), p.cAccent)
+            setPadding(dp(16), dp(14), dp(16), dp(12))
+        }
+        shell.addView(txt(16f, p.cBlue, "~/config/theme"))
+        shell.addView(txt(11f, p.cDim, "choose a palette · color preview").apply {
+            setPadding(0, dp(2), 0, dp(10))
+        })
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val scroll = ScrollView(this).apply {
+            isVerticalScrollBarEnabled = false
+            addView(list, FrameLayout.LayoutParams(-1, -2))
+        }
+        shell.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        pals.forEachIndexed { index, theme ->
+            val active = index == selected
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(9), dp(7), dp(8), dp(7))
+                background = if (active) box(theme.cSel, p.cAccent) else null
+                setOnClickListener {
+                    prefs.edit().putInt("theme", index).apply()
+                    dialog.dismiss()
+                    rebuild(false)
+                    fillStyleSettings()
+                    setScroll.scrollTo(0, 0)
+                    showOverlay()
+                }
             }
-            .setNegativeButton("Close", null)
-            .show()
+            row.addView(txt(12f, if (active) p.cAccent else theme.cFg,
+                (if (active) "● " else "  ") + theme.name),
+                LinearLayout.LayoutParams(0, -2, 1f))
+            val swatches = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            theme.cAnsi.forEach { color ->
+                swatches.addView(View(this).apply {
+                    background = GradientDrawable().apply {
+                        setColor(color)
+                        setStroke(dp(1), (theme.cFg and 0x00FFFFFF) or (0x55 shl 24))
+                    }
+                }, LinearLayout.LayoutParams(dp(9), dp(12)).apply {
+                    marginStart = dp(1)
+                })
+            }
+            row.addView(swatches)
+            list.addView(row, LinearLayout.LayoutParams(-1, -2).apply {
+                bottomMargin = dp(3)
+            })
+        }
+        val close = txt(12f, p.cAccent, "CLOSE").apply {
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            setPadding(dp(12), dp(12), dp(4), dp(4))
+            setOnClickListener { dialog.dismiss() }
+        }
+        shell.addView(close)
+        dialog.setContentView(shell)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.show()
+        dialog.window?.setLayout(
+            min(dp(680), resources.displayMetrics.widthPixels - dp(40)),
+            min(dp(760), resources.displayMetrics.heightPixels - dp(64))
+        )
+    }
+
+    private fun showSorairoConfirmDialog(
+        title: String,
+        message: String,
+        confirmLabel: String,
+        onConfirm: () -> Unit
+    ) {
+        val p = pal
+        val dialog = Dialog(this)
+        val shell = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = box(solidColor(), p.cAccent)
+            setPadding(dp(18), dp(16), dp(18), dp(12))
+        }
+        shell.addView(txt(16f, p.cBlue, title))
+        shell.addView(txt(13f, p.cFg, message).apply {
+            setPadding(0, dp(8), 0, dp(16))
+        })
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+        }
+        actions.addView(txt(12f, p.cDim, "CANCEL").apply {
+            setPadding(dp(12), dp(10), dp(12), dp(8))
+            setOnClickListener { dialog.dismiss() }
+        })
+        actions.addView(txt(12f, p.cAccent, confirmLabel.uppercase()).apply {
+            setPadding(dp(12), dp(10), dp(4), dp(8))
+            setOnClickListener {
+                dialog.dismiss()
+                onConfirm()
+            }
+        })
+        shell.addView(actions)
+        dialog.setContentView(shell)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.show()
+        dialog.window?.setLayout(
+            min(dp(520), resources.displayMetrics.widthPixels - dp(40)),
+            WindowManager.LayoutParams.WRAP_CONTENT
+        )
     }
 
     private fun fillStyleSettings() {
@@ -3655,7 +3753,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun fillCommunityThemes() {
         (setScroll.layoutParams as? FrameLayout.LayoutParams)?.let {
-            it.height = min(dp(760), (resources.displayMetrics.heightPixels - dp(48)).coerceAtLeast(dp(240)))
+            it.width = (resources.displayMetrics.widthPixels - dp(64)).coerceAtLeast(dp(320))
+            it.height = (resources.displayMetrics.heightPixels - dp(48)).coerceAtLeast(dp(240))
             setScroll.layoutParams = it
         }
         setScroll.clipChildren = true
@@ -3771,24 +3870,19 @@ class MainActivity : AppCompatActivity() {
         val installed = installedIds
         val activeName = pal.name
         val shown = matches.take(communityShown)
-        shown.chunked(2).forEach { pair ->
+        val columns = ((resources.displayMetrics.widthPixels - dp(112)) / dp(170)).coerceIn(2, 8)
+        shown.chunked(columns).forEach { cards ->
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 setPadding(0, dp(4), 0, dp(4))
             }
-            pair.forEachIndexed { i, t ->
+            cards.forEachIndexed { i, t ->
                 val isInstalled = t.id in installed
                 val card = communityCard(t, isInstalled, isInstalled && t.title == activeName)
                 row.addView(card, LinearLayout.LayoutParams(0, -2, 1f).apply {
-                    if (i == 0) {
-                        marginEnd = dp(4)
-                    } else {
-                        marginStart = dp(4)
-                    }
+                    if (i > 0) marginStart = dp(4)
+                    if (i < cards.lastIndex) marginEnd = dp(4)
                 })
-            }
-            if (pair.size == 1) {
-                row.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f).apply { marginStart = dp(4) })
             }
             grid.addView(row)
         }
@@ -3834,22 +3928,20 @@ class MainActivity : AppCompatActivity() {
             if (installed) {
                 installCommunityTheme(t, state)
             } else {
-                AlertDialog.Builder(this)
-                    .setTitle("Install theme?")
-                    .setMessage("Install and apply ${t.title}?")
-                    .setNegativeButton("Cancel", null)
-                    .setPositiveButton("Install") { _, _ -> installCommunityTheme(t, state) }
-                    .show()
+                showSorairoConfirmDialog(
+                    "Install theme?",
+                    "Install and apply ${t.title}?",
+                    "Install"
+                ) { installCommunityTheme(t, state) }
             }
         }
         card.setOnLongClickListener {
             if (installed) {
-                AlertDialog.Builder(this)
-                    .setTitle("Uninstall theme?")
-                    .setMessage("Remove ${t.title} from your installed community themes?")
-                    .setNegativeButton("Cancel", null)
-                    .setPositiveButton("Uninstall") { _, _ -> removeCommunityTheme(t) }
-                    .show()
+                showSorairoConfirmDialog(
+                    "Uninstall theme?",
+                    "Remove ${t.title} from your installed community themes?",
+                    "Uninstall"
+                ) { removeCommunityTheme(t) }
                 true
             } else false
         }
