@@ -1624,20 +1624,11 @@ class MainActivity : AppCompatActivity() {
         }
         setScroll = ScrollView(this).apply {
             isVerticalScrollBarEnabled = false
-            clipChildren = true
-            clipToPadding = true
-            setPadding(0, 0, 0, 0)
             addView(setBox, FrameLayout.LayoutParams(-1, -2))
         }
-        settings.clipChildren = true
-        settings.clipToPadding = true
         settings.addView(
             setScroll,
-            FrameLayout.LayoutParams(
-                min(dp(520), dm.widthPixels - dp(32)),
-                min(dp(760), (dm.heightPixels - dp(48)).coerceAtLeast(dp(240))),
-                Gravity.CENTER
-            ).apply {
+            FrameLayout.LayoutParams(min(dp(520), dm.widthPixels - dp(32)), -2, Gravity.CENTER).apply {
                 topMargin = dp(24); bottomMargin = dp(24)
             }
         )
@@ -3439,6 +3430,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun fillStyleSettings() {
+        (setScroll.layoutParams as? FrameLayout.LayoutParams)?.let {
+            it.height = -2
+            setScroll.layoutParams = it
+        }
         styleConfigOpen = true
         val p = pal
         setBox.removeAllViews()
@@ -3659,6 +3654,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun fillCommunityThemes() {
+        (setScroll.layoutParams as? FrameLayout.LayoutParams)?.let {
+            it.height = min(dp(760), (dm.heightPixels - dp(48)).coerceAtLeast(dp(240)))
+            setScroll.layoutParams = it
+        }
+        setScroll.clipChildren = true
+        setScroll.clipToPadding = true
         val p = pal
         setBox.removeAllViews()
         setBox.addView(txt(15f, p.cBlue, "~/config/community-themes"))
