@@ -2573,7 +2573,7 @@ class MainActivity : AppCompatActivity() {
             p.cAnsi[1], p.cAnsi[2], p.cAnsi[3],
             p.cAnsi[4], p.cAnsi[5], p.cAnsi[6]
         ))
-        sb.append("\\n")
+        sb.append("\n")
         kv("Up", "${mins / 60}h ${mins % 60}m")
         sb.add("\ntype help for commands\n", p.cDim)
     }
