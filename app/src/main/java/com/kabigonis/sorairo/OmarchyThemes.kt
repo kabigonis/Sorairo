@@ -105,6 +105,15 @@ object OmarchyThemes {
         default("green") { c["color2"] }
         default("yellow") { c["color3"] }
         default("blue") { c["color4"] }
+        default("red") { c["color1"] }
+        default("magenta") { c["color5"] }
+        default("cyan") { c["color6"] }
+        default("bright_red") { c["color9"] }
+        default("bright_green") { c["color10"] }
+        default("bright_yellow") { c["color11"] }
+        default("bright_blue") { c["color12"] }
+        default("bright_magenta") { c["color13"] }
+        default("bright_cyan") { c["color14"] }
         default("bright_foreground") { c["color15"] ?: c["foreground"] }
         default("dark_foreground") { c["color8"] ?: c["foreground"] }
         default("muted") { c["color8"] ?: c["dark_foreground"] }
