@@ -3655,7 +3655,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun fillCommunityThemes() {
         (setScroll.layoutParams as? FrameLayout.LayoutParams)?.let {
-            it.height = min(dp(760), (dm.heightPixels - dp(48)).coerceAtLeast(dp(240)))
+            it.height = min(dp(760), (resources.displayMetrics.heightPixels - dp(48)).coerceAtLeast(dp(240)))
             setScroll.layoutParams = it
         }
         setScroll.clipChildren = true
