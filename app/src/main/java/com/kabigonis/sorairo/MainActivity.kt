@@ -3192,6 +3192,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun fillSettings() {
+        // Restore the standard config panel size even if the previous visit
+        // ended while the wide Community Themes browser was open.
+        (setScroll.layoutParams as? FrameLayout.LayoutParams)?.let {
+            it.width = min(dp(520), resources.displayMetrics.widthPixels - dp(32))
+            it.height = ViewGroup.LayoutParams.WRAP_CONTENT
+            setScroll.layoutParams = it
+        }
         styleConfigOpen = false
         permissionConfigOpen = false
         val p = pal
@@ -3562,8 +3569,10 @@ class MainActivity : AppCompatActivity() {
         row("theme", pal.name) { showThemePicker() }
         row("community themes", "browse ›") {
             communityTab = "browse"
-            fillCommunityThemes()
-            setScroll.scrollTo(0, 0)
+            switchSettingsContent {
+                fillCommunityThemes()
+                setScroll.scrollTo(0, 0)
+            }
         }
         row("font", fontNames[prefs.getInt("font", 0).coerceIn(0, fontNames.size - 1)]) {
             cycle("font", fontNames.size)
@@ -3751,6 +3760,15 @@ class MainActivity : AppCompatActivity() {
         if (!isDestroyed) runOnUiThread(block)
     }
 
+    private fun switchSettingsContent(update: () -> Unit) {
+        setBox.animate().cancel()
+        setBox.animate().alpha(0f).setDuration(90).withEndAction {
+            update()
+            setBox.alpha = 0f
+            setBox.animate().alpha(1f).setDuration(140).start()
+        }.start()
+    }
+
     private fun fillCommunityThemes() {
         (setScroll.layoutParams as? FrameLayout.LayoutParams)?.let {
             it.width = (resources.displayMetrics.widthPixels - dp(64)).coerceAtLeast(dp(320))
@@ -3769,7 +3787,12 @@ class MainActivity : AppCompatActivity() {
         )
         setBox.addView(txt(14f, p.cAccent, "← back").apply {
             setPadding(0, dp(8), 0, dp(8))
-            setOnClickListener { fillStyleSettings(); setScroll.scrollTo(0, 0) }
+            setOnClickListener {
+                switchSettingsContent {
+                    fillStyleSettings()
+                    setScroll.scrollTo(0, 0)
+                }
+            }
         })
         val search = EditText(this).apply {
             hint = "search themes"
