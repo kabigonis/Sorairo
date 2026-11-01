@@ -64,6 +64,7 @@ import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.TextUtils
 import android.text.style.ForegroundColorSpan
+import android.text.style.ReplacementSpan
 import android.view.GestureDetector
 import android.view.Gravity
 import android.view.MotionEvent
@@ -96,6 +97,8 @@ import java.text.Normalizer
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import org.json.JSONArray
+import org.json.JSONObject
 
 
 import kotlin.math.abs
@@ -354,8 +357,17 @@ class MainActivity : AppCompatActivity() {
 
     class Pal(
         val name: String, bg: String, fg: String, dim: String,
-        blue: String, green: String, accent: String, sel: String
+        blue: String, green: String, accent: String, sel: String,
+        ansi: List<String> = emptyList()
     ) {
+        val cAnsi: List<Int> = if (ansi.size == 16) ansi.map { Color.parseColor(it) } else listOf(
+            Color.parseColor(bg), Color.parseColor("#f7768e"), Color.parseColor(green),
+            Color.parseColor(accent), Color.parseColor(blue), Color.parseColor("#bb9af7"),
+            Color.parseColor("#7dcfff"), Color.parseColor(fg),
+            Color.parseColor(dim), Color.parseColor("#ff899d"), Color.parseColor("#b9f27c"),
+            Color.parseColor("#ffda8b"), Color.parseColor("#8db0ff"), Color.parseColor("#c7a0ff"),
+            Color.parseColor("#8de6ff"), Color.parseColor(fg)
+        )
         val cBg = Color.parseColor(bg)
         val cFg = Color.parseColor(fg)
         val cDim = Color.parseColor(dim)
@@ -376,7 +388,7 @@ class MainActivity : AppCompatActivity() {
         val have = basePals.map { it.name.lowercase().replace(" ", "") }.toSet()
         basePals + OmarchyThemes.loadBundled(this)
             .filter { !it.isLight && it.name.lowercase().replace(" ", "") !in have }
-            .map { Pal(it.name, it.bg, it.fg, it.dim, it.blue, it.green, it.accent, it.sel) }
+            .map { Pal(it.name, it.bg, it.fg, it.dim, it.blue, it.green, it.accent, it.sel, it.ansiColors) }
     }
     private val fontNames = listOf(
         "monospace", "serif-monospace", "sans-serif", "sans-serif-condensed", "casual", "serif"
@@ -1029,51 +1041,76 @@ class MainActivity : AppCompatActivity() {
     private var monitorLastTx = 0L
     private var monitorLastSummaryT = 0L
 
-    private val exportHiddenFile = registerForActivityResult(
-        ActivityResultContracts.CreateDocument("text/plain")
+    private val exportConfigFile = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
         if (uri != null) {
             try {
-                val list = hiddenSet().sorted()
-                contentResolver.openOutputStream(uri, "wt")?.use { out ->
-                    out.write(list.joinToString("\n").toByteArray())
+                val values = JSONObject()
+                prefs.all.forEach { (key, value) ->
+                    when (value) {
+                        is Set<*> -> values.put(key, JSONArray(value.filterIsInstance<String>()))
+                        is String, is Int, is Long, is Float, is Boolean -> values.put(key, value)
+                    }
                 }
-                Toast.makeText(this, "saved ${list.size} hidden apps", Toast.LENGTH_SHORT).show()
+                val backup = JSONObject()
+                    .put("format", "sorairo-config")
+                    .put("version", 1)
+                    .put("preferences", values)
+                contentResolver.openOutputStream(uri, "wt")?.bufferedWriter()?.use {
+                    it.write(backup.toString(2))
+                } ?: throw IllegalStateException("Unable to open destination")
+                Toast.makeText(this, "Sorairo config exported", Toast.LENGTH_SHORT).show()
             } catch (_: Exception) {
-                Toast.makeText(this, "couldn't save the file", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "couldn't export config", Toast.LENGTH_SHORT).show()
             }
         }
     }
 
-    private val importHiddenFile = registerForActivityResult(
+    private val importConfigFile = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
             try {
-                val imported = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readLines() }
-                    .orEmpty()
-                    .map { it.trim() }
-                    .filter { line ->
-                        line.isNotEmpty() && line.all { c -> c.isLetterOrDigit() || c == '.' || c == '_' }
+                val backup = contentResolver.openInputStream(uri)?.bufferedReader()?.use {
+                    JSONObject(it.readText())
+                } ?: throw IllegalArgumentException("Empty file")
+                require(backup.optString("format") == "sorairo-config") { "Not a Sorairo config" }
+                require(backup.optInt("version", -1) == 1) { "Unsupported config version" }
+                val values = backup.getJSONObject("preferences")
+                val editor = prefs.edit().clear()
+                val keys = values.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    when (val value = values.get(key)) {
+                        is JSONObject -> Unit
+                        is JSONArray -> {
+                            val set = LinkedHashSet<String>()
+                            for (i in 0 until value.length()) {
+                                val item = value.optString(i, "")
+                                if (item.isNotEmpty()) set.add(item)
+                            }
+                            editor.putStringSet(key, set)
+                        }
+                        is String -> editor.putString(key, value)
+                        is Boolean -> editor.putBoolean(key, value)
+                        is Int -> editor.putInt(key, value)
+                        is Long -> editor.putLong(key, value)
+                        is Double -> editor.putFloat(key, value.toFloat())
+                        else -> Unit
                     }
-                    .toSet()
-                if (imported.isEmpty()) {
-                    Toast.makeText(this, "no apps found in that file", Toast.LENGTH_SHORT).show()
-                } else {
-                    val merged = hiddenSet() + imported
-                    prefs.edit().putString("hidden", merged.joinToString(",")).apply()
-                    apps = visibleApps()
-                    adapter.items = apps
-                    adapter.notifyDataSetChanged()
-                    for (i in 0..4) {
-                        fillPins(i)
-                        refreshFetch(i)
-                    }
-                    if (settings.visibility == View.VISIBLE) fillHidden()
-                    Toast.makeText(this, "restored ${imported.size} hidden apps", Toast.LENGTH_SHORT).show()
                 }
+                editor.apply()
+                apps = visibleApps()
+                adapter.items = apps
+                adapter.notifyDataSetChanged()
+                rebuild(false)
+                fillSettings()
+                setScroll.scrollTo(0, 0)
+                showOverlay()
+                Toast.makeText(this, "Sorairo config imported", Toast.LENGTH_SHORT).show()
             } catch (_: Exception) {
-                Toast.makeText(this, "couldn't read the file", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "invalid or unsupported Sorairo config", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -2268,12 +2305,13 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, dp(10), 0, dp(6))
         }
         logoView()?.let { r.addView(it) }
-        val info = txt(12f, termFg()).apply {
-            setLineSpacing(0f, 1.15f)
+        val info = txt(11.5f, termFg()).apply {
+            setLineSpacing(0f, 1.08f)
+            includeFontPadding = false
             text = fetchText()
         }
         fetchInfos[ws] = info
-        r.addView(info, LinearLayout.LayoutParams(-2, -2))
+        r.addView(info, LinearLayout.LayoutParams(0, -2, 1f))
         v.addView(r, LinearLayout.LayoutParams(-1, -2))
         return v
     }
@@ -2302,7 +2340,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun logoView(): View? {
+    private fun logoView(sizeDp: Int = 112): View? {
         val p = pal
         val name = logoNames[prefs.getInt("logo", 0).coerceIn(0, logoNames.size - 1)]
         if (name == "none") return null
@@ -2312,22 +2350,49 @@ class MainActivity : AppCompatActivity() {
                 return ImageView(this).apply {
                     setImageDrawable(d)
                     scaleType = ImageView.ScaleType.FIT_CENTER
+                    // Keep the original fastfetch custom-image size; only vector logos use the compact size.
                     layoutParams = LinearLayout.LayoutParams(dp(150), dp(150)).apply { marginEnd = dp(18) }
                 }
             }
         }
-        val art = when (name) {
-            "arch" -> archArt
-            "omarchy" -> omarchyArt
-            else -> androidArt
+        if (name == "omarchy") {
+            return object : View(this) {
+                private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = p.cAccent
+                    style = Paint.Style.STROKE
+                    strokeWidth = 8f
+                    strokeCap = Paint.Cap.SQUARE
+                    strokeJoin = Paint.Join.MITER
+                }
+                private val path = Path()
+                override fun onDraw(canvas: Canvas) {
+                    super.onDraw(canvas)
+                    val side = minOf(width, height).toFloat()
+                    val inset = dp(5).toFloat()
+                    val scale = (side - inset * 2) / 100f
+                    canvas.save()
+                    canvas.translate((width - side) / 2f + inset, (height - side) / 2f + inset)
+                    canvas.scale(scale, scale)
+                    path.reset()
+                    path.moveTo(8f, 8f); path.lineTo(92f, 8f); path.lineTo(92f, 92f); path.lineTo(66f, 92f)
+                    path.moveTo(8f, 8f); path.lineTo(8f, 92f); path.lineTo(50f, 92f); path.lineTo(50f, 76f)
+                    path.lineTo(24f, 76f); path.lineTo(24f, 24f); path.lineTo(76f, 24f); path.lineTo(76f, 8f)
+                    path.moveTo(76f, 24f); path.lineTo(76f, 76f); path.lineTo(50f, 76f)
+                    canvas.drawPath(path, paint)
+                    canvas.restore()
+                }
+            }.apply {
+                layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp)).apply { marginEnd = dp(16) }
+            }
         }
+        val art = if (name == "arch") archArt else androidArt
         return TextView(this).apply {
             text = art
             typeface = Typeface.MONOSPACE
             textSize = 8f
             includeFontPadding = false
             setTextColor(if (name == "arch") p.cBlue else p.cGreen)
-            layoutParams = LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(18) }
+            layoutParams = LinearLayout.LayoutParams(dp(112), dp(112)).apply { marginEnd = dp(16) }
         }
     }
 
@@ -2443,6 +2508,32 @@ class MainActivity : AppCompatActivity() {
         return best
     }
 
+    private fun appendPaletteRow(sb: SpannableStringBuilder, colors: List<Int>) {
+        colors.forEach { color ->
+            val start = sb.length
+            sb.append(" ")
+            sb.setSpan(object : ReplacementSpan() {
+                private val swatchPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    style = Paint.Style.FILL
+                    this.color = color
+                }
+                override fun getSize(
+                    paint: Paint, text: CharSequence, start: Int, end: Int,
+                    fm: android.graphics.Paint.FontMetricsInt?
+                ): Int = dp(12)
+                override fun draw(
+                    canvas: Canvas, text: CharSequence, start: Int, end: Int,
+                    x: Float, top: Int, y: Int, bottom: Int, paint: Paint
+                ) {
+                    val left = x + dp(1).toFloat()
+                    val topY = y.toFloat() - dp(9).toFloat()
+                    canvas.drawRect(left, topY, left + dp(10).toFloat(),
+                        topY + dp(5).toFloat(), swatchPaint)
+                }
+            }, start, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+    }
+
     private fun fetchInto(sb: SpannableStringBuilder) {
         val p = pal
         val fg = termFg()
@@ -2459,7 +2550,7 @@ class MainActivity : AppCompatActivity() {
         val ct = cpuTemp()
         val sd = sdPath()
 
-        sb.add("┌─ Hardware ───────────\n", p.cDim)
+        sb.add("▣ Hardware ───────────\n", p.cDim)
         kv("PC", "${Build.MANUFACTURER} ${Build.MODEL}")
         kv("SoC", Build.HARDWARE)
         kv("RAM", "%.1f / %.1f GiB".format((mi.totalMem - mi.availMem) / gb, mi.totalMem / gb))
@@ -2469,15 +2560,21 @@ class MainActivity : AppCompatActivity() {
             (if (bt != null) "batt %.1f°C".format(bt) else "batt n/a") + "  " +
                 (if (ct != null) "cpu %.0f°C".format(ct) else "cpu n/a")
         )
-        sb.add("\n┌─ Storage ────────────\n", p.cDim)
+        sb.add("\n▤ Storage ────────────\n", p.cDim)
         kv("Disk", disk(Environment.getDataDirectory().path))
         kv("SD", if (sd != null) disk(sd) else "not inserted")
-        sb.add("\n┌─ Software ───────────\n", p.cDim)
+        sb.add("\n⚙ Software ───────────\n", p.cDim)
         kv("OS", "Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})")
         kv("Kernel", System.getProperty("os.version") ?: "?")
         kv("Shell", "Sorairo")
         kv("Apps", "${apps.size} (${allApps.size - apps.size} hidden)")
         kv("Theme", pal.name)
+        sb.append("        ")
+        appendPaletteRow(sb, listOf(
+            p.cAnsi[1], p.cAnsi[2], p.cAnsi[3],
+            p.cAnsi[4], p.cAnsi[5], p.cAnsi[6]
+        ))
+        sb.append("\n")
         kv("Up", "${mins / 60}h ${mins % 60}m")
         sb.add("\ntype help for commands\n", p.cDim)
     }
@@ -2639,18 +2736,6 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, dp(8), 0, dp(8))
             setOnClickListener { fillSettings(); setScroll.scrollTo(0, 0) }
         })
-        fun fileRow(k: String, v: String, onTap: () -> Unit) {
-            val r = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                setPadding(0, dp(9), 0, dp(9))
-                setOnClickListener { onTap() }
-            }
-            r.addView(txt(14f, p.cFg, k), LinearLayout.LayoutParams(0, -2, 1f))
-            r.addView(txt(14f, p.cAccent, v))
-            setBox.addView(r)
-        }
-        fileRow("save list to a file", "export ›") { exportHiddenFile.launch("sorairo-hidden-apps.txt") }
-        fileRow("restore list from a file", "import ›") { importHiddenFile.launch(arrayOf("*/*")) }
         allApps.forEach { app ->
             val chosen = app.pkg == prefs.getString("vpn_pkg", null)
             setBox.addView(
@@ -3130,10 +3215,45 @@ class MainActivity : AppCompatActivity() {
         row("vpn app", allApps.find { it.pkg == prefs.getString("vpn_pkg", null) }?.label ?: "choose ›") {
             fillVpnPicker(); setScroll.scrollTo(0, 0)
         }
+        row("import/export config", "backup or restore ›") {
+            fillConfigTransfer(); setScroll.scrollTo(0, 0)
+        }
         row("hidden apps", "${allApps.size - apps.size} ›") {
             fillHidden(); setScroll.scrollTo(0, 0)
         }
         row("close", "esc") { closeSettings() }
+    }
+
+    private fun fillConfigTransfer() {
+        val p = pal
+        setBox.removeAllViews()
+        setBox.addView(txt(15f, p.cBlue, "~/config/import-export"))
+        setBox.addView(txt(11f, p.cDim, "back up or restore your complete Sorairo configuration").apply {
+            setPadding(0, dp(2), 0, dp(6))
+        })
+        setBox.addView(txt(14f, p.cAccent, "← back").apply {
+            setPadding(0, dp(8), 0, dp(8))
+            setOnClickListener { fillSettings(); setScroll.scrollTo(0, 0) }
+        })
+        fun action(label: String, detail: String, onTap: () -> Unit) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, dp(11), 0, dp(11))
+                setOnClickListener { onTap() }
+            }
+            row.addView(txt(14f, p.cFg, label), LinearLayout.LayoutParams(0, -2, 1f))
+            row.addView(txt(14f, p.cAccent, detail))
+            setBox.addView(row)
+        }
+        action("export complete config", "export ›") {
+            exportConfigFile.launch("sorairo-config.json")
+        }
+        action("import complete config", "import ›") {
+            importConfigFile.launch(arrayOf("application/json", "text/*", "*/*"))
+        }
+        setBox.addView(txt(11f, p.cDim,
+            "Includes themes, layout, pinned and hidden apps, VPN app, wallpaper selection, and other saved preferences. Wallpaper files and app installations themselves are not included."
+        ).apply { setPadding(0, dp(8), 0, 0) })
     }
 
     private fun fillPermissionSettings() {
