@@ -1624,11 +1624,20 @@ class MainActivity : AppCompatActivity() {
         }
         setScroll = ScrollView(this).apply {
             isVerticalScrollBarEnabled = false
+            clipChildren = true
+            clipToPadding = true
+            setPadding(0, 0, 0, 0)
             addView(setBox, FrameLayout.LayoutParams(-1, -2))
         }
+        settings.clipChildren = true
+        settings.clipToPadding = true
         settings.addView(
             setScroll,
-            FrameLayout.LayoutParams(min(dp(520), dm.widthPixels - dp(32)), -2, Gravity.CENTER).apply {
+            FrameLayout.LayoutParams(
+                min(dp(520), dm.widthPixels - dp(32)),
+                min(dp(760), (dm.heightPixels - dp(48)).coerceAtLeast(dp(240))),
+                Gravity.CENTER
+            ).apply {
                 topMargin = dp(24); bottomMargin = dp(24)
             }
         )
@@ -3412,6 +3421,23 @@ class MainActivity : AppCompatActivity() {
         ).apply { setPadding(0, dp(10), 0, dp(4)) })
     }
 
+    private fun showThemePicker() {
+        val names = pals.map { it.name }.toTypedArray()
+        val selected = prefs.getInt("theme", 0).coerceIn(0, names.lastIndex.coerceAtLeast(0))
+        AlertDialog.Builder(this)
+            .setTitle("Choose theme")
+            .setSingleChoiceItems(names, selected) { dialog, which ->
+                prefs.edit().putInt("theme", which).apply()
+                dialog.dismiss()
+                rebuild(false)
+                fillStyleSettings()
+                setScroll.scrollTo(0, 0)
+                showOverlay()
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
     private fun fillStyleSettings() {
         styleConfigOpen = true
         val p = pal
@@ -3441,8 +3467,12 @@ class MainActivity : AppCompatActivity() {
         row("clear wallpaper", "›") {
             prefs.edit().remove("wall").apply(); wall.setImageDrawable(null)
         }
-        row("theme", pal.name) { cycle("theme", pals.size) }
-        row("community themes", "browse ›") { fillCommunityThemes(); setScroll.scrollTo(0, 0) }
+        row("theme", pal.name) { showThemePicker() }
+        row("community themes", "browse ›") {
+            communityTab = "browse"
+            fillCommunityThemes()
+            setScroll.scrollTo(0, 0)
+        }
         row("font", fontNames[prefs.getInt("font", 0).coerceIn(0, fontNames.size - 1)]) {
             cycle("font", fontNames.size)
         }
@@ -3620,6 +3650,7 @@ class MainActivity : AppCompatActivity() {
     private var communityCatalog: List<CatalogTheme> = emptyList()
     private var communityQuery = ""
     private var communityShown = 24
+    private var communityTab = "browse"
     private var communityStatus = ""
     private val communityBusy = HashSet<String>()
 
@@ -3652,8 +3683,13 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(10), dp(8), dp(10), dp(8))
             setText(communityQuery)
         }
+        val tabs = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(8), 0, dp(2))
+        }
         val status = txt(11f, p.cDim, communityStatus).apply { setPadding(0, dp(6), 0, dp(2)) }
         val grid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        setBox.addView(tabs)
         setBox.addView(search, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
         setBox.addView(status)
         setBox.addView(grid)
@@ -3663,11 +3699,11 @@ class MainActivity : AppCompatActivity() {
             override fun afterTextChanged(s: android.text.Editable?) {
                 communityQuery = s?.toString().orEmpty()
                 communityShown = 24
-                renderCommunityGrid(grid, status)
+                renderCommunityGrid(grid, status, tabs)
             }
         })
-        renderCommunityGrid(grid, status)
-        loadCommunityCatalog { renderCommunityGrid(grid, status) }
+        renderCommunityGrid(grid, status, tabs)
+        loadCommunityCatalog { renderCommunityGrid(grid, status, tabs) }
     }
 
     // Shows the saved list straight away, then refreshes it from omarchy.org when it is stale.
@@ -3700,20 +3736,38 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun renderCommunityGrid(grid: LinearLayout, status: TextView) {
+    private fun renderCommunityGrid(grid: LinearLayout, status: TextView, tabs: LinearLayout) {
         val p = pal
         grid.removeAllViews()
+        tabs.removeAllViews()
+        val installedIds = CommunityThemes.installedIds(this)
+        fun addTab(label: String, id: String, count: Int) {
+            val selected = communityTab == id
+            tabs.addView(txt(13f, if (selected) p.cAccent else p.cDim, "${label} (${count})").apply {
+                setPadding(dp(10), dp(7), dp(10), dp(7))
+                background = if (selected) box(Color.TRANSPARENT, p.cAccent) else null
+                setOnClickListener {
+                    communityTab = id
+                    communityShown = 24
+                    renderCommunityGrid(grid, status, tabs)
+                }
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+        }
+        val installedThemes = CommunityThemes.installedCatalog(this, communityCatalog)
+        addTab("Browse", "browse", communityCatalog.size)
+        addTab("Installed", "installed", installedThemes.size)
+        val source = if (communityTab == "installed") installedThemes else communityCatalog
         val q = communityQuery.trim().lowercase()
-        val matches = communityCatalog.filter {
+        val matches = source.filter {
             q.isEmpty() || it.title.lowercase().contains(q) || it.label.lowercase().contains(q)
         }
         status.text = when {
             communityStatus.isNotEmpty() -> communityStatus
             communityCatalog.isEmpty() -> ""
             matches.isEmpty() -> "nothing matches \"$communityQuery\""
-            else -> "${matches.size} themes"
+            else -> if (communityTab == "installed") "${matches.size} installed themes" else "${matches.size} themes"
         }
-        val installed = CommunityThemes.installedIds(this)
+        val installed = installedIds
         val activeName = pal.name
         val shown = matches.take(communityShown)
         shown.chunked(2).forEach { pair ->
@@ -3775,9 +3829,28 @@ class MainActivity : AppCompatActivity() {
             if (active) "active" else if (installed) "installed" else "tap to install"
         ).apply { setPadding(0, dp(3), 0, 0) }
         card.addView(state)
-        card.setOnClickListener { installCommunityTheme(t, state) }
+        card.setOnClickListener {
+            if (installed) {
+                installCommunityTheme(t, state)
+            } else {
+                AlertDialog.Builder(this)
+                    .setTitle("Install theme?")
+                    .setMessage("Install and apply ${t.title}?")
+                    .setNegativeButton("Cancel", null)
+                    .setPositiveButton("Install") { _, _ -> installCommunityTheme(t, state) }
+                    .show()
+            }
+        }
         card.setOnLongClickListener {
-            if (installed) { removeCommunityTheme(t); true } else false
+            if (installed) {
+                AlertDialog.Builder(this)
+                    .setTitle("Uninstall theme?")
+                    .setMessage("Remove ${t.title} from your installed community themes?")
+                    .setNegativeButton("Cancel", null)
+                    .setPositiveButton("Uninstall") { _, _ -> removeCommunityTheme(t) }
+                    .show()
+                true
+            } else false
         }
         loadThumb(t, img)
         return card
