@@ -2300,51 +2300,20 @@ class MainActivity : AppCompatActivity() {
                 SpannableStringBuilder().add("~ ", p.cBlue).add("❯ ", p.cGreen).add("fastfetch", termFg())
             )
         )
-        // Omalauncher's fetch layout: compact logo, identity, theme and palette first.
-        val header = LinearLayout(this).apply {
+        val r = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(10), 0, dp(10))
+            setPadding(0, dp(10), 0, dp(6))
         }
-        logoView(72)?.let { header.addView(it) }
-        val identity = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        val host = Build.MODEL.lowercase(Locale.ROOT).replace(" ", "-")
-        identity.addView(txt(14f, p.cAccent, "user@$host").apply {
-            typeface = Typeface.MONOSPACE
-            maxLines = 1
-        })
-        identity.addView(txt(10f, p.cDim, "sorairo · ${p.name.lowercase(Locale.ROOT)}").apply {
-            typeface = Typeface.MONOSPACE
-            setPadding(0, dp(2), 0, dp(5))
-            maxLines = 1
-        })
-        identity.addView(fetchPaletteView(p))
-        header.addView(identity, LinearLayout.LayoutParams(0, -2, 1f))
-        v.addView(header, LinearLayout.LayoutParams(-1, -2))
+        logoView()?.let { r.addView(it) }
         val info = txt(11.5f, termFg()).apply {
             setLineSpacing(0f, 1.08f)
             includeFontPadding = false
             text = fetchText()
         }
         fetchInfos[ws] = info
-        v.addView(info, LinearLayout.LayoutParams(-1, -2))
+        r.addView(info, LinearLayout.LayoutParams(0, -2, 1f))
+        v.addView(r, LinearLayout.LayoutParams(-1, -2))
         return v
-    }
-
-    private fun fetchPaletteView(p: Pal): View {
-        val palette = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        listOf(p.cAnsi.take(8), p.cAnsi.drop(8).take(8)).forEach { colors ->
-            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            colors.forEach { color ->
-                row.addView(View(this).apply { setBackgroundColor(color) },
-                    LinearLayout.LayoutParams(dp(18), dp(9)).apply { marginEnd = dp(2) })
-            }
-            palette.addView(row, LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = dp(2) })
-        }
-        return palette
     }
 
     private fun logoDrawable(): Drawable? {
@@ -2538,6 +2507,32 @@ class MainActivity : AppCompatActivity() {
         return best
     }
 
+    private fun appendPaletteRow(sb: SpannableStringBuilder, colors: List<Int>) {
+        colors.forEach { color ->
+            val start = sb.length
+            sb.append(" ")
+            sb.setSpan(object : ReplacementSpan() {
+                private val swatchPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    style = Paint.Style.FILL
+                    this.color = color
+                }
+                override fun getSize(
+                    paint: Paint, text: CharSequence, start: Int, end: Int,
+                    fm: android.graphics.Paint.FontMetricsInt?
+                ): Int = dp(12)
+                override fun draw(
+                    canvas: Canvas, text: CharSequence, start: Int, end: Int,
+                    x: Float, top: Int, y: Int, bottom: Int, paint: Paint
+                ) {
+                    val left = x + dp(1).toFloat()
+                    val topY = y.toFloat() - dp(9).toFloat()
+                    canvas.drawRect(left, topY, left + dp(10).toFloat(),
+                        topY + dp(5).toFloat(), swatchPaint)
+                }
+            }, start, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+    }
+
     private fun fetchInto(sb: SpannableStringBuilder) {
         val p = pal
         val fg = termFg()
@@ -2572,6 +2567,13 @@ class MainActivity : AppCompatActivity() {
         kv("Kernel", System.getProperty("os.version") ?: "?")
         kv("Shell", "Sorairo")
         kv("Apps", "${apps.size} (${allApps.size - apps.size} hidden)")
+        kv("Theme", pal.name)
+        sb.append("        ")
+        appendPaletteRow(sb, listOf(
+            p.cAnsi[1], p.cAnsi[2], p.cAnsi[3],
+            p.cAnsi[4], p.cAnsi[5], p.cAnsi[6]
+        ))
+        sb.append("\\n")
         kv("Up", "${mins / 60}h ${mins % 60}m")
         sb.add("\ntype help for commands\n", p.cDim)
     }
