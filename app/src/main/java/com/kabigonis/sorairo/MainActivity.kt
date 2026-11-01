@@ -3771,8 +3771,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun fillCommunityThemes() {
         (setScroll.layoutParams as? FrameLayout.LayoutParams)?.let {
-            it.width = (resources.displayMetrics.widthPixels - dp(32)).coerceAtLeast(dp(320))
-            it.height = ViewGroup.LayoutParams.WRAP_CONTENT
+            it.width = (resources.displayMetrics.widthPixels - dp(96)).coerceAtLeast(dp(320))
+            it.height = (resources.displayMetrics.heightPixels - dp(48)).coerceAtLeast(dp(240))
             setScroll.layoutParams = it
         }
         setScroll.clipChildren = true
@@ -3832,7 +3832,7 @@ class MainActivity : AppCompatActivity() {
             val contentHeight = setBox.measuredHeight
             val lp = setScroll.layoutParams as? FrameLayout.LayoutParams
             if (lp != null) {
-                val target = min(contentHeight, available)
+                val target = available
                 if (lp.height != target) {
                     lp.height = target
                     setScroll.layoutParams = lp
@@ -3964,7 +3964,7 @@ class MainActivity : AppCompatActivity() {
             val contentHeight = setBox.measuredHeight
             val lp = setScroll.layoutParams as? FrameLayout.LayoutParams
             if (lp != null) {
-                val target = min(contentHeight, available)
+                val target = available
                 if (lp.height != target) {
                     lp.height = target
                     setScroll.layoutParams = lp
