@@ -3772,7 +3772,7 @@ class MainActivity : AppCompatActivity() {
     private fun fillCommunityThemes() {
         (setScroll.layoutParams as? FrameLayout.LayoutParams)?.let {
             it.width = (resources.displayMetrics.widthPixels - dp(96)).coerceAtLeast(dp(320))
-            it.height = (resources.displayMetrics.heightPixels - dp(48)).coerceAtLeast(dp(240))
+            it.height = min(dp(760), resources.displayMetrics.heightPixels - dp(48))
             setScroll.layoutParams = it
         }
         setScroll.clipChildren = true
@@ -3828,7 +3828,7 @@ class MainActivity : AppCompatActivity() {
         renderCommunityGrid(grid, status, tabs)
         // Fit short lists to their content, but keep long catalogs scrollable.
         setScroll.post {
-            val available = (resources.displayMetrics.heightPixels - dp(24)).coerceAtLeast(dp(240))
+            val available = min(dp(760), resources.displayMetrics.heightPixels - dp(48))
             val contentHeight = setBox.measuredHeight
             val lp = setScroll.layoutParams as? FrameLayout.LayoutParams
             if (lp != null) {
@@ -3960,7 +3960,7 @@ class MainActivity : AppCompatActivity() {
         }
         grid.animate().alpha(1f).setDuration(120).start()
         setScroll.post {
-            val available = (resources.displayMetrics.heightPixels - dp(24)).coerceAtLeast(dp(240))
+            val available = min(dp(760), resources.displayMetrics.heightPixels - dp(48))
             val contentHeight = setBox.measuredHeight
             val lp = setScroll.layoutParams as? FrameLayout.LayoutParams
             if (lp != null) {
