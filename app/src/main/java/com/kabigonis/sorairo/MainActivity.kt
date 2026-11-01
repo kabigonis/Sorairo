@@ -27,6 +27,7 @@ import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.ColorUtils
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import android.content.Context
@@ -103,6 +104,33 @@ import org.json.JSONObject
 
 import kotlin.math.abs
 import kotlin.math.min
+
+object Contrast {
+    private fun channel(v: Int): Double {
+        val s = v / 255.0
+        return if (s <= 0.03928) s / 12.92 else Math.pow((s + 0.055) / 1.055, 2.4)
+    }
+    fun luminance(c: Int): Double =
+        0.2126 * channel(Color.red(c)) + 0.7152 * channel(Color.green(c)) + 0.0722 * channel(Color.blue(c))
+    fun ratio(a: Int, b: Int): Double {
+        val x = luminance(a); val y = luminance(b)
+        return (maxOf(x, y) + 0.05) / (minOf(x, y) + 0.05)
+    }
+    fun ensure(fg: Int, bg: Int, min: Double): Int {
+        if (ratio(fg, bg) >= min) return fg
+        val target = if (luminance(bg) < 0.5) Color.WHITE else Color.BLACK
+        for (i in 1..20) {
+            val c = ColorUtils.blendARGB(fg, target, i / 20f)
+            if (ratio(c, bg) >= min) return c
+        }
+        return target
+    }
+    fun on(fill: Int, preferred: Int, alt: Int): Int {
+        if (ratio(preferred, fill) >= 4.5) return preferred
+        if (ratio(alt, fill) >= 4.5) return alt
+        return if (ratio(Color.BLACK, fill) >= ratio(Color.WHITE, fill)) Color.BLACK else Color.WHITE
+    }
+}
 
 /**
  * Positions the existing workspace window views without recreating them.
@@ -369,12 +397,23 @@ class MainActivity : AppCompatActivity() {
             Color.parseColor("#8de6ff"), Color.parseColor(fg)
         )
         val cBg = Color.parseColor(bg)
-        val cFg = Color.parseColor(fg)
-        val cDim = Color.parseColor(dim)
-        val cBlue = Color.parseColor(blue)
-        val cGreen = Color.parseColor(green)
-        val cAccent = Color.parseColor(accent)
+        val cFg = Contrast.ensure(Color.parseColor(fg), cBg, 4.5)
+        val cDim = Contrast.ensure(Color.parseColor(dim), cBg, 3.0)
+        val cBlue = Contrast.ensure(Color.parseColor(blue), cBg, 3.0)
+        val cGreen = Contrast.ensure(Color.parseColor(green), cBg, 3.0)
+        val cAccent = Contrast.ensure(Color.parseColor(accent), cBg, 3.0)
         val cSel = Color.parseColor(sel)
+
+        fun on(fill: Int): Int {
+            val solid = ColorUtils.compositeColors(fill, cBg)
+            return Contrast.on(solid, cFg, cBg)
+        }
+
+        fun onDim(fill: Int): Int {
+            val solid = ColorUtils.compositeColors(fill, cBg)
+            val base = Contrast.on(solid, cFg, cBg)
+            return Contrast.ensure(ColorUtils.blendARGB(base, solid, 0.3f), solid, 3.5)
+        }
     }
 
     private val basePals = listOf(
@@ -384,11 +423,24 @@ class MainActivity : AppCompatActivity() {
         Pal("Nord", "#2e3440", "#d8dee9", "#4c566a", "#81a1c1", "#a3be8c", "#ebcb8b", "#434c5e"),
         Pal("Dracula", "#282a36", "#f8f8f2", "#6272a4", "#bd93f9", "#50fa7b", "#ff79c6", "#44475a")
     )
-    private val pals: List<Pal> by lazy {
+    private var palsCache: List<Pal>? = null
+    private var builtInCount = 0
+    private val pals: List<Pal> get() = palsCache ?: buildPals().also { palsCache = it }
+
+    private fun invalidatePals() {
+        palsCache = null
+    }
+
+    private fun toPal(t: OmarchyThemes.Palette) =
+        Pal(t.name, t.bg, t.fg, t.dim, t.blue, t.green, t.accent, t.sel, t.ansiColors)
+
+    private fun buildPals(): List<Pal> {
         val have = basePals.map { it.name.lowercase().replace(" ", "") }.toSet()
-        basePals + OmarchyThemes.loadBundled(this)
+        val builtIn = basePals + OmarchyThemes.loadBundled(this)
             .filter { !it.isLight && it.name.lowercase().replace(" ", "") !in have }
-            .map { Pal(it.name, it.bg, it.fg, it.dim, it.blue, it.green, it.accent, it.sel, it.ansiColors) }
+            .map { toPal(it) }
+        builtInCount = builtIn.size
+        return builtIn + CommunityThemes.loadInstalled(this).map { toPal(it) }
     }
     private val fontNames = listOf(
         "monospace", "serif-monospace", "sans-serif", "sans-serif-condensed", "casual", "serif"
@@ -939,13 +991,11 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 queue.forEachIndexed { index, item ->
-                    rows.getOrNull(index)?.setTextColor(
-                        if (activeQueueId != null && item.queueId == activeQueueId) {
-                            pal.cAccent
-                        } else {
-                            pal.cFg
-                        }
-                    )
+                    val active = activeQueueId != null && item.queueId == activeQueueId
+                    rows.getOrNull(index)?.apply {
+                        setBackgroundColor(if (active) pal.cSel else Color.TRANSPARENT)
+                        setTextColor(if (active) pal.on(pal.cSel) else pal.cFg)
+                    }
                 }
             }
         }
@@ -2666,6 +2716,7 @@ class MainActivity : AppCompatActivity() {
     private fun showSettings() {
         closeDrawer()
         closeQs()
+        setSettingsWide(false)
         fillSettings()
         setScroll.scrollTo(0, 0)
         showOverlay()
@@ -2789,8 +2840,8 @@ class MainActivity : AppCompatActivity() {
         } catch (_: Exception) {
             if (hasWifi) "Connected network · name hidden by Android" else "Not connected"
         }
-        current.addView(txt(14f, p.cFg, currentName))
-        current.addView(txt(11f, p.cAccent, if (hasWifi) "connected" else "not connected").apply {
+        current.addView(txt(14f, p.on(p.cSel), currentName))
+        current.addView(txt(11f, p.onDim(p.cSel), if (hasWifi) "connected" else "not connected").apply {
             setPadding(0, dp(3), 0, 0)
         })
         root.addView(current)
@@ -2803,13 +2854,15 @@ class MainActivity : AppCompatActivity() {
         wifiScanStatus = status
         root.addView(status.apply { setPadding(0, dp(5), 0, 0) })
 
-        fun action(label: String, primary: Boolean = false, onClick: () -> Unit) =
-            txt(12f, if (primary) p.cBg else p.cFg, label).apply {
+        fun action(label: String, primary: Boolean = false, onClick: () -> Unit): TextView {
+            val fill = if (primary) p.cAccent else p.cSel
+            return txt(12f, p.on(fill), label).apply {
                 gravity = Gravity.CENTER
                 setPadding(dp(12), dp(9), dp(12), dp(9))
-                background = box(if (primary) p.cAccent else p.cSel, if (primary) p.cAccent else p.cDim)
+                background = box(fill, if (primary) p.cAccent else p.cDim)
                 setOnClickListener { onClick() }
             }
+        }
 
         fun locationEnabled(): Boolean = if (Build.VERSION.SDK_INT >= 28) {
             (getSystemService(LOCATION_SERVICE) as android.location.LocationManager).isLocationEnabled
@@ -3005,19 +3058,17 @@ class MainActivity : AppCompatActivity() {
         val vpnApp = allApps.find { it.pkg == prefs.getString("vpn_pkg", null) }
 
         fun tile(name: String, state: String, on: Boolean, hold: (() -> Unit)? = null, tap: () -> Unit): View {
+            val fill = if (on) p.cSel else (p.cSel and 0x00FFFFFF) or (0x44 shl 24)
             val t = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(12), dp(6), dp(12), dp(6))
-                background = box(
-                    if (on) p.cSel else (p.cSel and 0x00FFFFFF) or (0x44 shl 24),
-                    if (on) p.cAccent else p.cDim
-                )
+                background = box(fill, if (on) p.cAccent else p.cDim)
                 setOnClickListener { tap() }
                 if (hold != null) setOnLongClickListener { hold(); true }
             }
-            t.addView(txt(14f, p.cFg, name))
-            t.addView(txt(11f, if (on) p.cAccent else p.cDim, state))
+            t.addView(txt(14f, if (on) p.on(fill) else p.cFg, name))
+            t.addView(txt(11f, if (on) p.onDim(fill) else p.cDim, state))
             return t
         }
 
@@ -3158,6 +3209,7 @@ class MainActivity : AppCompatActivity() {
                 // Capture the view being closed; never hide a replacement overlay
                 // created by rebuild() while this animation is finishing.
                 closingSettings.visibility = View.GONE
+                setSettingsWide(false)
             }.start()
     }
 
@@ -3429,6 +3481,7 @@ class MainActivity : AppCompatActivity() {
             prefs.edit().remove("wall").apply(); wall.setImageDrawable(null)
         }
         row("theme", pal.name) { cycle("theme", pals.size) }
+        row("community themes", "browse ›") { fillCommunityThemes(); setScroll.scrollTo(0, 0) }
         row("font", fontNames[prefs.getInt("font", 0).coerceIn(0, fontNames.size - 1)]) {
             cycle("font", fontNames.size)
         }
@@ -3600,7 +3653,268 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun rebuild(reopenSettings: Boolean) {
+        // ================= community themes =================
+    private val netPool = java.util.concurrent.Executors.newFixedThreadPool(3)
+    private val themeThumbs = android.util.LruCache<String, android.graphics.Bitmap>(30)
+    private var communityCatalog: List<CatalogTheme> = emptyList()
+    private var communityQuery = ""
+    private var communityPages = 1
+    private var communityStatus = ""
+    private val communityBusy = HashSet<String>()
+
+    private fun ui(block: () -> Unit) {
+        if (!isDestroyed) runOnUiThread(block)
+    }
+
+    // The community browser opens as a big window; every other settings page keeps the
+    // normal narrow panel.
+    private fun setSettingsWide(wide: Boolean) {
+        if (!::setScroll.isInitialized) return
+        val lp = setScroll.layoutParams as? FrameLayout.LayoutParams ?: return
+        val screen = resources.displayMetrics.widthPixels
+        lp.width = if (wide) {
+            (screen * 0.94f).toInt().coerceAtMost(dp(1500))
+        } else {
+            min(dp(520), screen - dp(32))
+        }
+        lp.height = if (wide) ViewGroup.LayoutParams.MATCH_PARENT else ViewGroup.LayoutParams.WRAP_CONTENT
+        setScroll.layoutParams = lp
+        setScroll.isFillViewport = wide
+    }
+
+    // How many theme cards fit across the window, and how tall a 16:9 screenshot is in a card.
+    private fun communityColumns(): Int {
+        val panel = setScroll.layoutParams?.width?.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
+        return ((panel - dp(36)) / dp(200)).coerceIn(2, 8)
+    }
+
+    private fun communityImageHeight(cols: Int): Int {
+        val panel = setScroll.layoutParams?.width?.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
+        val cardWidth = (panel - dp(36)) / cols - dp(8)
+        return ((cardWidth - dp(10)) * 9 / 16).coerceAtLeast(dp(60))
+    }
+
+    private fun fillCommunityThemes() {
+        val p = pal
+        setSettingsWide(true)
+        setBox.removeAllViews()
+        setBox.addView(txt(15f, p.cBlue, "~/config/community-themes"))
+        setBox.addView(
+            txt(11f, p.cDim, "made by the community, listed on omarchy.org/themes. tap one to install and apply it. hold an installed one to remove it.").apply {
+                setPadding(0, dp(2), 0, dp(6))
+            }
+        )
+        setBox.addView(txt(14f, p.cAccent, "← back").apply {
+            setPadding(0, dp(8), 0, dp(8))
+            setOnClickListener { setSettingsWide(false); fillStyleSettings(); setScroll.scrollTo(0, 0) }
+        })
+        val search = EditText(this).apply {
+            hint = "search themes"
+            setHintTextColor(p.cDim)
+            setTextColor(p.cFg)
+            typeface = font
+            textSize = 14f
+            isSingleLine = true
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            background = box(Color.TRANSPARENT, p.cDim)
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            setText(communityQuery)
+        }
+        val status = txt(11f, p.cDim, communityStatus).apply { setPadding(0, dp(6), 0, dp(2)) }
+        val grid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        setBox.addView(search, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
+        setBox.addView(status)
+        setBox.addView(grid)
+        search.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) {
+                communityQuery = s?.toString().orEmpty()
+                communityPages = 1
+                renderCommunityGrid(grid, status)
+            }
+        })
+        renderCommunityGrid(grid, status)
+        loadCommunityCatalog { renderCommunityGrid(grid, status) }
+    }
+
+    // Shows the saved list straight away, then refreshes it from omarchy.org when it is stale.
+    private fun loadCommunityCatalog(onChange: () -> Unit) {
+        if (communityCatalog.isEmpty()) {
+            communityStatus = "loading..."
+            onChange()
+        }
+        netPool.execute {
+            var have = communityCatalog
+            if (have.isEmpty()) {
+                have = CommunityThemes.cachedCatalog(this)
+                if (have.isNotEmpty()) ui { communityCatalog = have; communityStatus = ""; onChange() }
+            }
+            if (have.isEmpty() || !CommunityThemes.catalogIsFresh(this)) {
+                try {
+                    val fresh = CommunityThemes.fetchCatalog(this)
+                    ui { communityCatalog = fresh; communityStatus = ""; onChange() }
+                } catch (e: Exception) {
+                    ui {
+                        communityStatus = if (communityCatalog.isEmpty()) {
+                            "couldn't load the list (${e.message}). check your connection."
+                        } else {
+                            "offline, showing the saved list"
+                        }
+                        onChange()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun renderCommunityGrid(grid: LinearLayout, status: TextView) {
+        val p = pal
+        grid.removeAllViews()
+        val q = communityQuery.trim().lowercase()
+        val matches = communityCatalog.filter {
+            q.isEmpty() || it.title.lowercase().contains(q) || it.label.lowercase().contains(q)
+        }
+        status.text = when {
+            communityStatus.isNotEmpty() -> communityStatus
+            communityCatalog.isEmpty() -> ""
+            matches.isEmpty() -> "nothing matches \"$communityQuery\""
+            else -> "${matches.size} themes"
+        }
+        val installed = CommunityThemes.installedIds(this)
+        val activeName = pal.name
+        val cols = communityColumns()
+        val imageHeight = communityImageHeight(cols)
+        val shown = matches.take(cols * 4 * communityPages)
+        shown.chunked(cols).forEach { rowThemes ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, dp(4), 0, dp(4))
+            }
+            rowThemes.forEach { t ->
+                val isInstalled = t.id in installed
+                val card = communityCard(t, isInstalled, isInstalled && t.title == activeName, imageHeight)
+                row.addView(card, LinearLayout.LayoutParams(0, -2, 1f).apply {
+                    marginStart = dp(4)
+                    marginEnd = dp(4)
+                })
+            }
+            // Keep the last row's cards the same width as the rows above it.
+            repeat(cols - rowThemes.size) {
+                row.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f).apply {
+                    marginStart = dp(4)
+                    marginEnd = dp(4)
+                })
+            }
+            grid.addView(row)
+        }
+        if (matches.size > shown.size) {
+            grid.addView(txt(14f, p.cAccent, "show more (${matches.size - shown.size} left) ›").apply {
+                setPadding(0, dp(12), 0, dp(8))
+                setOnClickListener { communityPages += 1; renderCommunityGrid(grid, status) }
+            })
+        }
+    }
+
+    private fun communityCard(t: CatalogTheme, installed: Boolean, active: Boolean, imageHeight: Int): View {
+        val p = pal
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(5), dp(5), dp(5), dp(5))
+            background = GradientDrawable().apply {
+                setColor(Color.TRANSPARENT)
+                setStroke(dp(if (active) 2 else 1), if (active) p.cAccent else p.cDim)
+            }
+        }
+        val img = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            setBackgroundColor((p.cDim and 0x00FFFFFF) or (0x33 shl 24))
+        }
+        card.addView(img, LinearLayout.LayoutParams(-1, imageHeight))
+        card.addView(txt(13f, p.cFg, t.title).apply {
+            isSingleLine = true
+            ellipsize = TextUtils.TruncateAt.END
+            setPadding(0, dp(5), 0, 0)
+        })
+        card.addView(txt(10f, p.cDim, t.label).apply {
+            isSingleLine = true
+            ellipsize = TextUtils.TruncateAt.END
+        })
+        val state = txt(
+            11f,
+            if (active) p.cAccent else if (installed) p.cGreen else p.cDim,
+            if (active) "active" else if (installed) "installed" else "tap to install"
+        ).apply { setPadding(0, dp(3), 0, 0) }
+        card.addView(state)
+        card.setOnClickListener { installCommunityTheme(t, state) }
+        card.setOnLongClickListener {
+            if (installed) { removeCommunityTheme(t); true } else false
+        }
+        loadThumb(t, img)
+        return card
+    }
+
+    private fun loadThumb(t: CatalogTheme, img: ImageView) {
+        img.tag = t.key
+        themeThumbs.get(t.key)?.let { img.setImageBitmap(it); return }
+        netPool.execute {
+            val file = CommunityThemes.imageFile(this, t) ?: return@execute
+            val bmp = decodeThumb(file) ?: return@execute
+            themeThumbs.put(t.key, bmp)
+            ui { if (img.tag == t.key) img.setImageBitmap(bmp) }
+        }
+    }
+
+    private fun decodeThumb(file: File): android.graphics.Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.path, bounds)
+        if (bounds.outWidth <= 0) return null
+        var sample = 1
+        while (bounds.outWidth / (sample * 2) >= 560) sample *= 2
+        return BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = sample })
+    }
+
+    private fun installCommunityTheme(t: CatalogTheme, state: TextView) {
+        if (!communityBusy.add(t.key)) return
+        state.text = "downloading..."
+        netPool.execute {
+            val result = runCatching { CommunityThemes.install(this, t) }
+            ui {
+                communityBusy.remove(t.key)
+                result.onSuccess { palette ->
+                    invalidatePals()
+                    val index = pals.indexOfLast { it.name == palette.name }.coerceAtLeast(0)
+                    prefs.edit().putInt("theme", index).apply()
+                    rebuild(false)
+                    fillCommunityThemes()
+                    showOverlay()
+                    Toast.makeText(this, "applied ${palette.name}", Toast.LENGTH_SHORT).show()
+                }.onFailure { e ->
+                    state.text = "failed, tap to retry"
+                    Toast.makeText(this, "couldn't install ${t.title}: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun removeCommunityTheme(t: CatalogTheme) {
+        val activeIndex = prefs.getInt("theme", 0).coerceIn(0, pals.size - 1)
+        val activeName = pals[activeIndex].name
+        CommunityThemes.remove(this, t.id)
+        invalidatePals()
+        val newIndex = when {
+            activeIndex < builtInCount -> activeIndex
+            activeName == t.title -> 0
+            else -> pals.indexOfLast { it.name == activeName }.takeIf { it >= builtInCount } ?: 0
+        }
+        val activeChanged = pals.getOrNull(newIndex)?.name != activeName
+        prefs.edit().putInt("theme", newIndex).apply()
+        if (activeChanged) rebuild(false)
+        fillCommunityThemes()
+        showOverlay()
+        Toast.makeText(this, "removed ${t.title}", Toast.LENGTH_SHORT).show()
+    }
+private fun rebuild(reopenSettings: Boolean) {
         initHistory()
         buildUi()
         refreshPaletteSurfaces()
@@ -3678,6 +3992,7 @@ class MainActivity : AppCompatActivity() {
                     "  logo [name]    android/arch/omarchy/image/none",
                     "  ws <1-5>       switch workspace",
                     "  theme [name]   change theme",
+                    "  contrast       show theme contrast ratios",
                     "  font [name]    change font",
                     "  wall           pick wallpaper",
                     "  config         open settings",
@@ -3748,6 +4063,20 @@ class MainActivity : AppCompatActivity() {
                         prefs.edit().putInt("logo", i).apply()
                         rebuild(false)
                         return
+                    }
+                }
+                "contrast" -> {
+                    val checks = listOf(
+                        Triple("fg/bg", Contrast.ratio(p.cFg, p.cBg), 4.5),
+                        Triple("dim/bg", Contrast.ratio(p.cDim, p.cBg), 3.0),
+                        Triple("accent/bg", Contrast.ratio(p.cAccent, p.cBg), 3.0),
+                        Triple("on(sel)/sel", Contrast.ratio(p.on(p.cSel), p.cSel), 4.5),
+                        Triple("onDim(sel)/sel", Contrast.ratio(p.onDim(p.cSel), p.cSel), 3.5)
+                    )
+                    checks.forEach { (label, value, target) ->
+                        val color = if (value < target) Color.RED else fg
+                        sb.add(label + " " + "%.2f".format(Locale.US, value) +
+                            ":1 (target " + "%.1f".format(Locale.US, target) + ":1)\n", color)
                     }
                 }
                 "theme" -> {
@@ -4134,7 +4463,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             h.name.text = displayAppLabel(app) + if (isNewApp(app.pkg)) NEW_APP_MARKER else ""
-            h.name.setTextColor(if (i == 0) pal.cAccent else pal.cFg)
+            h.name.setTextColor(if (i == 0) pal.on(pal.cSel) else pal.cFg)
             h.name.setBackgroundColor(if (i == 0) pal.cSel else Color.TRANSPARENT)
             h.name.setOnClickListener { launchApp(app) }
             h.name.setOnLongClickListener {
