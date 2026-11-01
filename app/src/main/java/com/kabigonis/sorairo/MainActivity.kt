@@ -3740,7 +3740,7 @@ class MainActivity : AppCompatActivity() {
     private val themeThumbs = android.util.LruCache<String, android.graphics.Bitmap>(30)
     private var communityCatalog: List<CatalogTheme> = emptyList()
     private var communityQuery = ""
-    private var communityShown = 24
+    private var communityShown = 32
     private var communityTab = "browse"
     private var communityStatus = ""
     private var communityRenderGeneration = 0
@@ -3774,8 +3774,14 @@ class MainActivity : AppCompatActivity() {
         setScroll.isFillViewport = wide
     }
 
+    private fun communityPageSize(): Int {
+        val columns = ((resources.displayMetrics.widthPixels - dp(112)) / dp(170)).coerceIn(2, 8)
+        return columns * 4
+    }
+
     private fun fillCommunityThemes() {
         setSettingsWide(true)
+        communityShown = communityPageSize()
         setScroll.clipChildren = true
         setScroll.clipToPadding = true
         val p = pal
@@ -3822,22 +3828,17 @@ class MainActivity : AppCompatActivity() {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: android.text.Editable?) {
                 communityQuery = s?.toString().orEmpty()
-                communityShown = 24
+                communityShown = communityPageSize()
                 renderCommunityGrid(grid, status, tabs)
             }
         })
         renderCommunityGrid(grid, status, tabs)
         // Fit short lists to their content, but keep long catalogs scrollable.
         setScroll.post {
-            val available = min(dp(760), resources.displayMetrics.heightPixels - dp(48))
-            val contentHeight = setBox.measuredHeight
             val lp = setScroll.layoutParams as? FrameLayout.LayoutParams
-            if (lp != null) {
-                val target = available
-                if (lp.height != target) {
-                    lp.height = target
-                    setScroll.layoutParams = lp
-                }
+            if (lp != null && lp.height != ViewGroup.LayoutParams.MATCH_PARENT) {
+                lp.height = ViewGroup.LayoutParams.MATCH_PARENT
+                setScroll.layoutParams = lp
             }
             setBox.alpha = 0f
             setBox.animate().alpha(1f).setDuration(120).start()
@@ -3904,7 +3905,7 @@ class MainActivity : AppCompatActivity() {
                 background = if (selected) box(Color.TRANSPARENT, p.cAccent) else null
                 setOnClickListener {
                     communityTab = id
-                    communityShown = 24
+                    communityShown = communityPageSize()
                     renderCommunityGrid(grid, status, tabs)
                 }
             }, LinearLayout.LayoutParams(0, -2, 1f))
@@ -3951,7 +3952,7 @@ class MainActivity : AppCompatActivity() {
                 setPadding(0, dp(12), 0, dp(8))
                 alpha = 0f
                 setOnClickListener {
-                    communityShown += 24
+                    communityShown += communityPageSize()
                     renderCommunityGrid(grid, status, tabs)
                 }
             }
@@ -3961,15 +3962,10 @@ class MainActivity : AppCompatActivity() {
         }
         grid.animate().alpha(1f).setDuration(120).start()
         setScroll.post {
-            val available = min(dp(760), resources.displayMetrics.heightPixels - dp(48))
-            val contentHeight = setBox.measuredHeight
             val lp = setScroll.layoutParams as? FrameLayout.LayoutParams
-            if (lp != null) {
-                val target = available
-                if (lp.height != target) {
-                    lp.height = target
-                    setScroll.layoutParams = lp
-                }
+            if (lp != null && lp.height != ViewGroup.LayoutParams.MATCH_PARENT) {
+                lp.height = ViewGroup.LayoutParams.MATCH_PARENT
+                setScroll.layoutParams = lp
             }
         }
     }
