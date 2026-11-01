@@ -3529,6 +3529,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun fillStyleSettings() {
         (setScroll.layoutParams as? FrameLayout.LayoutParams)?.let {
+            it.width = min(dp(520), resources.displayMetrics.widthPixels - dp(32))
             it.height = -2
             setScroll.layoutParams = it
         }
