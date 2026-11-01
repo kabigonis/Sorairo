@@ -3794,7 +3794,7 @@ class MainActivity : AppCompatActivity() {
         if (matches.size > shown.size) {
             grid.addView(txt(14f, p.cAccent, "show more (${matches.size - shown.size} left) ›").apply {
                 setPadding(0, dp(12), 0, dp(8))
-                setOnClickListener { communityShown += 24; renderCommunityGrid(grid, status) }
+                setOnClickListener { communityShown += 24; renderCommunityGrid(grid, status, tabs) }
             })
         }
     }
