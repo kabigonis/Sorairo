@@ -2679,6 +2679,7 @@ class MainActivity : AppCompatActivity() {
     private fun showSettings() {
         closeDrawer()
         closeQs()
+        setSettingsWide(false)
         fillSettings()
         setScroll.scrollTo(0, 0)
         showOverlay()
@@ -3171,6 +3172,7 @@ class MainActivity : AppCompatActivity() {
                 // Capture the view being closed; never hide a replacement overlay
                 // created by rebuild() while this animation is finishing.
                 closingSettings.visibility = View.GONE
+                setSettingsWide(false)
             }.start()
     }
 
@@ -3614,12 +3616,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ================= community themes =================
+        // ================= community themes =================
     private val netPool = java.util.concurrent.Executors.newFixedThreadPool(3)
     private val themeThumbs = android.util.LruCache<String, android.graphics.Bitmap>(30)
     private var communityCatalog: List<CatalogTheme> = emptyList()
     private var communityQuery = ""
-    private var communityShown = 24
+    private var communityPages = 1
     private var communityStatus = ""
     private val communityBusy = HashSet<String>()
 
@@ -3627,8 +3629,37 @@ class MainActivity : AppCompatActivity() {
         if (!isDestroyed) runOnUiThread(block)
     }
 
+    // The community browser opens as a big window; every other settings page keeps the
+    // normal narrow panel.
+    private fun setSettingsWide(wide: Boolean) {
+        if (!::setScroll.isInitialized) return
+        val lp = setScroll.layoutParams as? FrameLayout.LayoutParams ?: return
+        val screen = resources.displayMetrics.widthPixels
+        lp.width = if (wide) {
+            (screen * 0.94f).toInt().coerceAtMost(dp(1500))
+        } else {
+            min(dp(520), screen - dp(32))
+        }
+        lp.height = if (wide) ViewGroup.LayoutParams.MATCH_PARENT else ViewGroup.LayoutParams.WRAP_CONTENT
+        setScroll.layoutParams = lp
+        setScroll.isFillViewport = wide
+    }
+
+    // How many theme cards fit across the window, and how tall a 16:9 screenshot is in a card.
+    private fun communityColumns(): Int {
+        val panel = setScroll.layoutParams?.width?.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
+        return ((panel - dp(36)) / dp(200)).coerceIn(2, 8)
+    }
+
+    private fun communityImageHeight(cols: Int): Int {
+        val panel = setScroll.layoutParams?.width?.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
+        val cardWidth = (panel - dp(36)) / cols - dp(8)
+        return ((cardWidth - dp(10)) * 9 / 16).coerceAtLeast(dp(60))
+    }
+
     private fun fillCommunityThemes() {
         val p = pal
+        setSettingsWide(true)
         setBox.removeAllViews()
         setBox.addView(txt(15f, p.cBlue, "~/config/community-themes"))
         setBox.addView(
@@ -3638,7 +3669,7 @@ class MainActivity : AppCompatActivity() {
         )
         setBox.addView(txt(14f, p.cAccent, "← back").apply {
             setPadding(0, dp(8), 0, dp(8))
-            setOnClickListener { fillStyleSettings(); setScroll.scrollTo(0, 0) }
+            setOnClickListener { setSettingsWide(false); fillStyleSettings(); setScroll.scrollTo(0, 0) }
         })
         val search = EditText(this).apply {
             hint = "search themes"
@@ -3662,7 +3693,7 @@ class MainActivity : AppCompatActivity() {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: android.text.Editable?) {
                 communityQuery = s?.toString().orEmpty()
-                communityShown = 24
+                communityPages = 1
                 renderCommunityGrid(grid, status)
             }
         })
@@ -3715,37 +3746,40 @@ class MainActivity : AppCompatActivity() {
         }
         val installed = CommunityThemes.installedIds(this)
         val activeName = pal.name
-        val shown = matches.take(communityShown)
-        shown.chunked(2).forEach { pair ->
+        val cols = communityColumns()
+        val imageHeight = communityImageHeight(cols)
+        val shown = matches.take(cols * 4 * communityPages)
+        shown.chunked(cols).forEach { rowThemes ->
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 setPadding(0, dp(4), 0, dp(4))
             }
-            pair.forEachIndexed { i, t ->
+            rowThemes.forEach { t ->
                 val isInstalled = t.id in installed
-                val card = communityCard(t, isInstalled, isInstalled && t.title == activeName)
+                val card = communityCard(t, isInstalled, isInstalled && t.title == activeName, imageHeight)
                 row.addView(card, LinearLayout.LayoutParams(0, -2, 1f).apply {
-                    if (i == 0) {
-                        marginEnd = dp(4)
-                    } else {
-                        marginStart = dp(4)
-                    }
+                    marginStart = dp(4)
+                    marginEnd = dp(4)
                 })
             }
-            if (pair.size == 1) {
-                row.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f).apply { marginStart = dp(4) })
+            // Keep the last row's cards the same width as the rows above it.
+            repeat(cols - rowThemes.size) {
+                row.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f).apply {
+                    marginStart = dp(4)
+                    marginEnd = dp(4)
+                })
             }
             grid.addView(row)
         }
         if (matches.size > shown.size) {
             grid.addView(txt(14f, p.cAccent, "show more (${matches.size - shown.size} left) ›").apply {
                 setPadding(0, dp(12), 0, dp(8))
-                setOnClickListener { communityShown += 24; renderCommunityGrid(grid, status) }
+                setOnClickListener { communityPages += 1; renderCommunityGrid(grid, status) }
             })
         }
     }
 
-    private fun communityCard(t: CatalogTheme, installed: Boolean, active: Boolean): View {
+    private fun communityCard(t: CatalogTheme, installed: Boolean, active: Boolean, imageHeight: Int): View {
         val p = pal
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -3759,7 +3793,7 @@ class MainActivity : AppCompatActivity() {
             scaleType = ImageView.ScaleType.CENTER_CROP
             setBackgroundColor((p.cDim and 0x00FFFFFF) or (0x33 shl 24))
         }
-        card.addView(img, LinearLayout.LayoutParams(-1, dp(112)))
+        card.addView(img, LinearLayout.LayoutParams(-1, imageHeight))
         card.addView(txt(13f, p.cFg, t.title).apply {
             isSingleLine = true
             ellipsize = TextUtils.TruncateAt.END
@@ -3843,8 +3877,7 @@ class MainActivity : AppCompatActivity() {
         showOverlay()
         Toast.makeText(this, "removed ${t.title}", Toast.LENGTH_SHORT).show()
     }
-
-    private fun rebuild(reopenSettings: Boolean) {
+private fun rebuild(reopenSettings: Boolean) {
         initHistory()
         buildUi()
         refreshPaletteSurfaces()
