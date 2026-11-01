@@ -3832,11 +3832,20 @@ class MainActivity : AppCompatActivity() {
         return columns * 4
     }
 
+    // Size thumbnails so the four-row page, its controls and the "show more"
+    // affordance fit inside the fixed Community Themes window without scrolling.
+    private fun communityThumbHeight(): Int {
+        val available = resources.displayMetrics.heightPixels - dp(48 + 180 + (4 * 68))
+        return (available / 4).coerceIn(dp(40), dp(112))
+    }
+
     private fun fillCommunityThemes() {
         setSettingsWide(true)
         communityShown = communityPageSize()
         setScroll.clipChildren = true
         setScroll.clipToPadding = true
+        setScroll.isFillViewport = true
+        setScroll.isVerticalScrollBarEnabled = false
         val p = pal
         setBox.removeAllViews()
         setBox.addView(txt(15f, p.cBlue, "~/config/community-themes"))
@@ -4028,7 +4037,7 @@ class MainActivity : AppCompatActivity() {
             scaleType = ImageView.ScaleType.CENTER_CROP
             setBackgroundColor((p.cDim and 0x00FFFFFF) or (0x33 shl 24))
         }
-        card.addView(img, LinearLayout.LayoutParams(-1, dp(112)))
+        card.addView(img, LinearLayout.LayoutParams(-1, communityThumbHeight()))
         card.addView(txt(13f, p.cFg, t.title).apply {
             isSingleLine = true
             ellipsize = TextUtils.TruncateAt.END
