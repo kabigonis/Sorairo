@@ -3819,7 +3819,7 @@ class MainActivity : AppCompatActivity() {
             min(dp(520), screen - dp(32))
         }
         lp.height = if (wide) {
-            (resources.displayMetrics.heightPixels * 0.72f).toInt().coerceAtLeast(dp(320))
+            ViewGroup.LayoutParams.MATCH_PARENT
         } else {
             ViewGroup.LayoutParams.WRAP_CONTENT
         }
@@ -3886,16 +3886,10 @@ class MainActivity : AppCompatActivity() {
             }
         })
         renderCommunityGrid(grid, status, tabs)
-        // Fit short lists to their content, but keep long catalogs scrollable.
+        // Keep the established full-height outer window; the ScrollView
+        // handles overflow so the header, search and remaining themes scroll inside it.
         setScroll.post {
-            val lp = setScroll.layoutParams as? FrameLayout.LayoutParams
-            if (lp != null) {
-                val targetHeight = (resources.displayMetrics.heightPixels * 0.72f).toInt().coerceAtLeast(dp(320))
-                if (lp.height != targetHeight) {
-                    lp.height = targetHeight
-                    setScroll.layoutParams = lp
-                }
-            }
+            setScroll.scrollTo(0, 0)
             setBox.alpha = 0f
             setBox.animate().alpha(1f).setDuration(120).start()
         }
@@ -4017,16 +4011,7 @@ class MainActivity : AppCompatActivity() {
                 .setDuration(120).start()
         }
         grid.animate().alpha(1f).setDuration(120).start()
-        setScroll.post {
-            val lp = setScroll.layoutParams as? FrameLayout.LayoutParams
-            if (lp != null) {
-                val targetHeight = (resources.displayMetrics.heightPixels * 0.72f).toInt().coerceAtLeast(dp(320))
-                if (lp.height != targetHeight) {
-                    lp.height = targetHeight
-                    setScroll.layoutParams = lp
-                }
-            }
-        }
+        // Do not resize the outer window after rendering the grid.
     }
 
     private fun communityCard(t: CatalogTheme, installed: Boolean, active: Boolean): View {
