@@ -3458,11 +3458,8 @@ class MainActivity : AppCompatActivity() {
             // Match the compact six-color strip shown by the terminal fetch.
             listOf(1, 2, 3, 4, 5, 6).forEach { colorIndex ->
                 swatches.addView(View(this).apply {
-                    background = GradientDrawable().apply {
-                        setColor(theme.cAnsi[colorIndex])
-                        setStroke(dp(1), (theme.cFg and 0x00FFFFFF) or (0x55 shl 24))
-                    }
-                }, LinearLayout.LayoutParams(dp(12), dp(12)).apply {
+                    setBackgroundColor(theme.cAnsi[colorIndex])
+                }, LinearLayout.LayoutParams(dp(10), dp(5)).apply {
                     marginStart = dp(2)
                 })
             }
@@ -3747,6 +3744,7 @@ class MainActivity : AppCompatActivity() {
     private var communityShown = 24
     private var communityTab = "browse"
     private var communityStatus = ""
+    private var communityRenderGeneration = 0
     private val communityBusy = HashSet<String>()
 
     private fun ui(block: () -> Unit) {
@@ -3853,10 +3851,25 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun renderCommunityGrid(grid: LinearLayout, status: TextView, tabs: LinearLayout) {
+    private fun renderCommunityGrid(
+        grid: LinearLayout,
+        status: TextView,
+        tabs: LinearLayout,
+        animateOut: Boolean = true
+    ) {
+        if (animateOut && grid.childCount > 0) {
+            val generation = ++communityRenderGeneration
+            grid.animate().cancel()
+            grid.animate().alpha(0f).setDuration(90).withEndAction {
+                if (generation == communityRenderGeneration) {
+                    renderCommunityGrid(grid, status, tabs, animateOut = false)
+                }
+            }.start()
+            return
+        }
         val p = pal
         grid.animate().cancel()
-        grid.alpha = 1f
+        grid.alpha = 0f
         grid.removeAllViews()
         tabs.removeAllViews()
         val installedIds = CommunityThemes.installedIds(this)
@@ -3914,17 +3927,26 @@ class MainActivity : AppCompatActivity() {
                 setPadding(0, dp(12), 0, dp(8))
                 alpha = 0f
                 setOnClickListener {
-                    grid.animate().alpha(0f).setDuration(90).withEndAction {
-                        communityShown += 24
-                        renderCommunityGrid(grid, status, tabs)
-                        grid.alpha = 0f
-                        grid.animate().alpha(1f).setDuration(120).start()
-                    }.start()
+                    communityShown += 24
+                    renderCommunityGrid(grid, status, tabs)
                 }
             }
             grid.addView(more)
             more.animate().alpha(1f).setStartDelay((animationIndex * 18L).coerceAtMost(180L))
                 .setDuration(120).start()
+        }
+        grid.animate().alpha(1f).setDuration(120).start()
+        setScroll.post {
+            val available = (resources.displayMetrics.heightPixels - dp(48)).coerceAtLeast(dp(240))
+            val contentHeight = setBox.measuredHeight
+            val lp = setScroll.layoutParams as? FrameLayout.LayoutParams
+            if (lp != null) {
+                val target = min(contentHeight, available)
+                if (lp.height != target) {
+                    lp.height = target
+                    setScroll.layoutParams = lp
+                }
+            }
         }
     }
 
