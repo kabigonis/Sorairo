@@ -3192,13 +3192,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun fillSettings() {
-        // Restore the standard config panel size even if the previous visit
-        // ended while the wide Community Themes browser was open.
-        (setScroll.layoutParams as? FrameLayout.LayoutParams)?.let {
-            it.width = min(dp(520), resources.displayMetrics.widthPixels - dp(32))
-            it.height = ViewGroup.LayoutParams.WRAP_CONTENT
-            setScroll.layoutParams = it
-        }
+        setSettingsWide(false)
         styleConfigOpen = false
         permissionConfigOpen = false
         val p = pal
@@ -3533,11 +3527,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun fillStyleSettings() {
-        (setScroll.layoutParams as? FrameLayout.LayoutParams)?.let {
-            it.width = min(dp(520), resources.displayMetrics.widthPixels - dp(32))
-            it.height = -2
-            setScroll.layoutParams = it
-        }
+        setSettingsWide(false)
         styleConfigOpen = true
         val p = pal
         setBox.removeAllViews()
@@ -3769,12 +3759,23 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
-    private fun fillCommunityThemes() {
-        (setScroll.layoutParams as? FrameLayout.LayoutParams)?.let {
-            it.width = (resources.displayMetrics.widthPixels - dp(96)).coerceAtLeast(dp(320))
-            it.height = min(dp(760), resources.displayMetrics.heightPixels - dp(48))
-            setScroll.layoutParams = it
+    // Match the established Community Themes window dimensions from the reference implementation.
+    private fun setSettingsWide(wide: Boolean) {
+        if (!::setScroll.isInitialized) return
+        val lp = setScroll.layoutParams as? FrameLayout.LayoutParams ?: return
+        val screen = resources.displayMetrics.widthPixels
+        lp.width = if (wide) {
+            (screen * 0.94f).toInt().coerceAtMost(dp(1500))
+        } else {
+            min(dp(520), screen - dp(32))
         }
+        lp.height = if (wide) ViewGroup.LayoutParams.MATCH_PARENT else ViewGroup.LayoutParams.WRAP_CONTENT
+        setScroll.layoutParams = lp
+        setScroll.isFillViewport = wide
+    }
+
+    private fun fillCommunityThemes() {
+        setSettingsWide(true)
         setScroll.clipChildren = true
         setScroll.clipToPadding = true
         val p = pal
