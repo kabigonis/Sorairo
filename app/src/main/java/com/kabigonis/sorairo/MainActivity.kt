@@ -2268,12 +2268,13 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, dp(10), 0, dp(6))
         }
         logoView()?.let { r.addView(it) }
-        val info = txt(12f, termFg()).apply {
-            setLineSpacing(0f, 1.15f)
+        val info = txt(11.5f, termFg()).apply {
+            setLineSpacing(0f, 1.08f)
+            includeFontPadding = false
             text = fetchText()
         }
         fetchInfos[ws] = info
-        r.addView(info, LinearLayout.LayoutParams(-2, -2))
+        r.addView(info, LinearLayout.LayoutParams(0, -2, 1f))
         v.addView(r, LinearLayout.LayoutParams(-1, -2))
         return v
     }
@@ -2316,18 +2317,44 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-        val art = when (name) {
-            "arch" -> archArt
-            "omarchy" -> omarchyArt
-            else -> androidArt
+        if (name == "omarchy") {
+            return object : View(this) {
+                private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = p.cAccent
+                    style = Paint.Style.STROKE
+                    strokeWidth = 8f
+                    strokeCap = Paint.Cap.SQUARE
+                    strokeJoin = Paint.Join.MITER
+                }
+                private val path = Path()
+                override fun onDraw(canvas: Canvas) {
+                    super.onDraw(canvas)
+                    val side = minOf(width, height).toFloat()
+                    val inset = dp(5).toFloat()
+                    val scale = (side - inset * 2) / 100f
+                    canvas.save()
+                    canvas.translate((width - side) / 2f + inset, (height - side) / 2f + inset)
+                    canvas.scale(scale, scale)
+                    path.reset()
+                    path.moveTo(8f, 8f); path.lineTo(92f, 8f); path.lineTo(92f, 92f); path.lineTo(66f, 92f)
+                    path.moveTo(8f, 8f); path.lineTo(8f, 92f); path.lineTo(50f, 92f); path.lineTo(50f, 76f)
+                    path.lineTo(24f, 76f); path.lineTo(24f, 24f); path.lineTo(76f, 24f); path.lineTo(76f, 8f)
+                    path.moveTo(76f, 24f); path.lineTo(76f, 76f); path.lineTo(50f, 76f)
+                    canvas.drawPath(path, paint)
+                    canvas.restore()
+                }
+            }.apply {
+                layoutParams = LinearLayout.LayoutParams(dp(112), dp(112)).apply { marginEnd = dp(16) }
+            }
         }
+        val art = if (name == "arch") archArt else androidArt
         return TextView(this).apply {
             text = art
             typeface = Typeface.MONOSPACE
             textSize = 8f
             includeFontPadding = false
             setTextColor(if (name == "arch") p.cBlue else p.cGreen)
-            layoutParams = LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(18) }
+            layoutParams = LinearLayout.LayoutParams(dp(112), dp(112)).apply { marginEnd = dp(16) }
         }
     }
 
