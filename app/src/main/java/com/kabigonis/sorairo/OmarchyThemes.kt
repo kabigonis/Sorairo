@@ -22,7 +22,8 @@ object OmarchyThemes {
         val green: String,
         val accent: String,
         val sel: String,
-        val isLight: Boolean
+        val isLight: Boolean,
+        val ansiColors: List<String>
     )
 
     private const val BUNDLE = "omarchy-themes.txt"
@@ -75,12 +76,22 @@ object OmarchyThemes {
         val green = hex("green") ?: return null
         val accent = hex("yellow") ?: hex("accent") ?: return null
         val sel = hex("selection") ?: hex("selection_background") ?: dim
+        val ansiKeys = listOf(
+            "background", "red", "green", "yellow", "blue", "magenta", "cyan", "foreground",
+            "dark_foreground", "bright_red", "bright_green", "bright_yellow", "bright_blue",
+            "bright_magenta", "bright_cyan", "bright_foreground"
+        )
+        val ansiFallbacks = listOf(bg, "#f7768e", green, accent, blue, "#bb9af7", "#7dcfff", fg,
+            dim, "#ff899d", "#b9f27c", "#ffda8b", "#8db0ff", "#c7a0ff", "#8de6ff", fg)
+        val ansiColors = ansiKeys.mapIndexed { index, key ->
+            hex(key) ?: ansiFallbacks[index]
+        }
         val light = when (c["mode"]) {
             "light" -> true
             "dark" -> false
             else -> luminance(bg) > 0.5
         }
-        return Palette(id, titleOf(id), bg, fg, dim, blue, green, accent, sel, light)
+        return Palette(id, titleOf(id), bg, fg, dim, blue, green, accent, sel, light, ansiColors)
     }
 
     /** Fills in what a theme leaves out, falling back to the older ANSI colorN names. */

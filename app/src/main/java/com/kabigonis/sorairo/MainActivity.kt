@@ -356,8 +356,17 @@ class MainActivity : AppCompatActivity() {
 
     class Pal(
         val name: String, bg: String, fg: String, dim: String,
-        blue: String, green: String, accent: String, sel: String
+        blue: String, green: String, accent: String, sel: String,
+        ansi: List<String> = emptyList()
     ) {
+        val cAnsi: List<Int> = if (ansi.size == 16) ansi.map { Color.parseColor(it) } else listOf(
+            Color.parseColor(bg), Color.parseColor("#f7768e"), Color.parseColor(green),
+            Color.parseColor(accent), Color.parseColor(blue), Color.parseColor("#bb9af7"),
+            Color.parseColor("#7dcfff"), Color.parseColor(fg),
+            Color.parseColor(dim), Color.parseColor("#ff899d"), Color.parseColor("#b9f27c"),
+            Color.parseColor("#ffda8b"), Color.parseColor("#8db0ff"), Color.parseColor("#c7a0ff"),
+            Color.parseColor("#8de6ff"), Color.parseColor(fg)
+        )
         val cBg = Color.parseColor(bg)
         val cFg = Color.parseColor(fg)
         val cDim = Color.parseColor(dim)
@@ -378,7 +387,7 @@ class MainActivity : AppCompatActivity() {
         val have = basePals.map { it.name.lowercase().replace(" ", "") }.toSet()
         basePals + OmarchyThemes.loadBundled(this)
             .filter { !it.isLight && it.name.lowercase().replace(" ", "") !in have }
-            .map { Pal(it.name, it.bg, it.fg, it.dim, it.blue, it.green, it.accent, it.sel) }
+            .map { Pal(it.name, it.bg, it.fg, it.dim, it.blue, it.green, it.accent, it.sel, it.ansiColors) }
     }
     private val fontNames = listOf(
         "monospace", "serif-monospace", "sans-serif", "sans-serif-condensed", "casual", "serif"
@@ -2513,7 +2522,7 @@ class MainActivity : AppCompatActivity() {
         val ct = cpuTemp()
         val sd = sdPath()
 
-        sb.add("┌─ Hardware ───────────\n", p.cDim)
+        sb.add("▣ Hardware ───────────\n", p.cDim)
         kv("PC", "${Build.MANUFACTURER} ${Build.MODEL}")
         kv("SoC", Build.HARDWARE)
         kv("RAM", "%.1f / %.1f GiB".format((mi.totalMem - mi.availMem) / gb, mi.totalMem / gb))
@@ -2523,15 +2532,23 @@ class MainActivity : AppCompatActivity() {
             (if (bt != null) "batt %.1f°C".format(bt) else "batt n/a") + "  " +
                 (if (ct != null) "cpu %.0f°C".format(ct) else "cpu n/a")
         )
-        sb.add("\n┌─ Storage ────────────\n", p.cDim)
+        sb.add("\n▤ Storage ────────────\n", p.cDim)
         kv("Disk", disk(Environment.getDataDirectory().path))
         kv("SD", if (sd != null) disk(sd) else "not inserted")
-        sb.add("\n┌─ Software ───────────\n", p.cDim)
+        sb.add("\n⚙ Software ───────────\n", p.cDim)
         kv("OS", "Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})")
         kv("Kernel", System.getProperty("os.version") ?: "?")
         kv("Shell", "Sorairo")
         kv("Apps", "${apps.size} (${allApps.size - apps.size} hidden)")
         kv("Theme", pal.name)
+        sb.add("        ", p.cDim)
+        p.cAnsi.forEachIndexed { index, color ->
+            val start = sb.length
+            sb.append("■")
+            sb.setSpan(ForegroundColorSpan(color), start, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            if (index != p.cAnsi.lastIndex) sb.append(" ")
+        }
+        sb.append("\n")
         kv("Up", "${mins / 60}h ${mins % 60}m")
         sb.add("\ntype help for commands\n", p.cDim)
     }
