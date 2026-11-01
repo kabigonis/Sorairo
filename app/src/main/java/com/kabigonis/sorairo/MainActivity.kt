@@ -2748,7 +2748,12 @@ class MainActivity : AppCompatActivity() {
         )
         setBox.addView(txt(14f, p.cAccent, "← back").apply {
             setPadding(0, dp(8), 0, dp(8))
-            setOnClickListener { fillSettings(); setScroll.scrollTo(0, 0) }
+            setOnClickListener {
+                switchSettingsContent {
+                    fillSettings()
+                    setScroll.scrollTo(0, 0)
+                }
+            }
         })
         allApps.forEach { app ->
             val chosen = app.pkg == prefs.getString("vpn_pkg", null)
@@ -3212,11 +3217,16 @@ class MainActivity : AppCompatActivity() {
             setBox.addView(r)
         }
         row("style", "appearance & layout ›") {
-            fillStyleSettings()
-            setScroll.scrollTo(0, 0)
+            switchSettingsContent {
+                fillStyleSettings()
+                setScroll.scrollTo(0, 0)
+            }
         }
         row("pinned apps", "workspace ${curWs + 1} ›") {
-            fillPinnedPicker(curWs); setScroll.scrollTo(0, 0)
+            switchSettingsContent {
+                fillPinnedPicker(curWs)
+                setScroll.scrollTo(0, 0)
+            }
         }
         row("default launcher", "change ›") {
             closeSettings()
@@ -3224,17 +3234,28 @@ class MainActivity : AppCompatActivity() {
             catch (_: Exception) { startActivity(Intent(Settings.ACTION_SETTINGS)) }
         }
         row("perms", "access & system settings ›") {
-            fillPermissionSettings()
-            setScroll.scrollTo(0, 0)
+            switchSettingsContent {
+                fillPermissionSettings()
+                setScroll.scrollTo(0, 0)
+            }
         }
         row("vpn app", allApps.find { it.pkg == prefs.getString("vpn_pkg", null) }?.label ?: "choose ›") {
-            fillVpnPicker(); setScroll.scrollTo(0, 0)
+            switchSettingsContent {
+                fillVpnPicker()
+                setScroll.scrollTo(0, 0)
+            }
         }
         row("import/export config", "backup or restore ›") {
-            fillConfigTransfer(); setScroll.scrollTo(0, 0)
+            switchSettingsContent {
+                fillConfigTransfer()
+                setScroll.scrollTo(0, 0)
+            }
         }
         row("hidden apps", "${allApps.size - apps.size} ›") {
-            fillHidden(); setScroll.scrollTo(0, 0)
+            switchSettingsContent {
+                fillHidden()
+                setScroll.scrollTo(0, 0)
+            }
         }
         row("close", "esc") { closeSettings() }
     }
@@ -3248,7 +3269,12 @@ class MainActivity : AppCompatActivity() {
         })
         setBox.addView(txt(14f, p.cAccent, "← back").apply {
             setPadding(0, dp(8), 0, dp(8))
-            setOnClickListener { fillSettings(); setScroll.scrollTo(0, 0) }
+            setOnClickListener {
+                switchSettingsContent {
+                    fillSettings()
+                    setScroll.scrollTo(0, 0)
+                }
+            }
         })
         fun action(label: String, detail: String, onTap: () -> Unit) {
             val row = LinearLayout(this).apply {
@@ -3282,7 +3308,12 @@ class MainActivity : AppCompatActivity() {
         })
         setBox.addView(txt(14f, p.cAccent, "← back").apply {
             setPadding(0, dp(8), 0, dp(8))
-            setOnClickListener { fillSettings(); setScroll.scrollTo(0, 0) }
+            setOnClickListener {
+                switchSettingsContent {
+                    fillSettings()
+                    setScroll.scrollTo(0, 0)
+                }
+            }
         })
 
         fun locationEnabled(): Boolean = if (Build.VERSION.SDK_INT >= 28) {
@@ -3537,7 +3568,12 @@ class MainActivity : AppCompatActivity() {
         })
         setBox.addView(txt(14f, p.cAccent, "← back").apply {
             setPadding(0, dp(8), 0, dp(8))
-            setOnClickListener { fillSettings(); setScroll.scrollTo(0, 0) }
+            setOnClickListener {
+                switchSettingsContent {
+                    fillSettings()
+                    setScroll.scrollTo(0, 0)
+                }
+            }
         })
         fun row(k: String, v: String, onTap: () -> Unit) {
             val r = LinearLayout(this).apply {
@@ -3550,7 +3586,10 @@ class MainActivity : AppCompatActivity() {
             setBox.addView(r)
         }
         row("home screen", "customize ›") {
-            fillHomeScreenSettings(); setScroll.scrollTo(0, 0)
+            switchSettingsContent {
+                fillHomeScreenSettings()
+                setScroll.scrollTo(0, 0)
+            }
         }
         row("wallpaper", "choose ›") { closeSettings(); pickWall.launch(arrayOf("image/*")) }
         row("clear wallpaper", "›") {
@@ -3629,7 +3668,12 @@ class MainActivity : AppCompatActivity() {
         )
         setBox.addView(txt(14f, p.cAccent, "← back").apply {
             setPadding(0, dp(8), 0, dp(8))
-            setOnClickListener { fillStyleSettings(); setScroll.scrollTo(0, 0) }
+            setOnClickListener {
+                switchSettingsContent {
+                    fillStyleSettings()
+                    setScroll.scrollTo(0, 0)
+                }
+            }
         })
 
         fun refreshVisibility() {
@@ -3712,7 +3756,12 @@ class MainActivity : AppCompatActivity() {
         )
         setBox.addView(txt(14f, p.cAccent, "← back").apply {
             setPadding(0, dp(8), 0, dp(8))
-            setOnClickListener { fillSettings(); setScroll.scrollTo(0, 0) }
+            setOnClickListener {
+                switchSettingsContent {
+                    fillSettings()
+                    setScroll.scrollTo(0, 0)
+                }
+            }
         })
         allApps.forEach { app ->
             val r = LinearLayout(this).apply {
@@ -3769,7 +3818,11 @@ class MainActivity : AppCompatActivity() {
         } else {
             min(dp(520), screen - dp(32))
         }
-        lp.height = if (wide) ViewGroup.LayoutParams.MATCH_PARENT else ViewGroup.LayoutParams.WRAP_CONTENT
+        lp.height = if (wide) {
+            (resources.displayMetrics.heightPixels * 0.72f).toInt().coerceAtLeast(dp(320))
+        } else {
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        }
         setScroll.layoutParams = lp
         setScroll.isFillViewport = wide
     }
@@ -3836,9 +3889,12 @@ class MainActivity : AppCompatActivity() {
         // Fit short lists to their content, but keep long catalogs scrollable.
         setScroll.post {
             val lp = setScroll.layoutParams as? FrameLayout.LayoutParams
-            if (lp != null && lp.height != ViewGroup.LayoutParams.MATCH_PARENT) {
-                lp.height = ViewGroup.LayoutParams.MATCH_PARENT
-                setScroll.layoutParams = lp
+            if (lp != null) {
+                val targetHeight = (resources.displayMetrics.heightPixels * 0.72f).toInt().coerceAtLeast(dp(320))
+                if (lp.height != targetHeight) {
+                    lp.height = targetHeight
+                    setScroll.layoutParams = lp
+                }
             }
             setBox.alpha = 0f
             setBox.animate().alpha(1f).setDuration(120).start()
@@ -3963,9 +4019,12 @@ class MainActivity : AppCompatActivity() {
         grid.animate().alpha(1f).setDuration(120).start()
         setScroll.post {
             val lp = setScroll.layoutParams as? FrameLayout.LayoutParams
-            if (lp != null && lp.height != ViewGroup.LayoutParams.MATCH_PARENT) {
-                lp.height = ViewGroup.LayoutParams.MATCH_PARENT
-                setScroll.layoutParams = lp
+            if (lp != null) {
+                val targetHeight = (resources.displayMetrics.heightPixels * 0.72f).toInt().coerceAtLeast(dp(320))
+                if (lp.height != targetHeight) {
+                    lp.height = targetHeight
+                    setScroll.layoutParams = lp
+                }
             }
         }
     }
