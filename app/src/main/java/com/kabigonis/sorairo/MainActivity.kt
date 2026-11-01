@@ -2350,7 +2350,8 @@ class MainActivity : AppCompatActivity() {
                 return ImageView(this).apply {
                     setImageDrawable(d)
                     scaleType = ImageView.ScaleType.FIT_CENTER
-                    layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp)).apply { marginEnd = dp(16) }
+                    // Keep the original fastfetch custom-image size; only vector logos use the compact size.
+                    layoutParams = LinearLayout.LayoutParams(dp(150), dp(150)).apply { marginEnd = dp(18) }
                 }
             }
         }
