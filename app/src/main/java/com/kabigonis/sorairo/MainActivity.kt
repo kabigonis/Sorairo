@@ -3455,14 +3455,15 @@ class MainActivity : AppCompatActivity() {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
             }
-            theme.cAnsi.forEach { color ->
+            // Match the compact six-color strip shown by the terminal fetch.
+            listOf(1, 2, 3, 4, 5, 6).forEach { colorIndex ->
                 swatches.addView(View(this).apply {
                     background = GradientDrawable().apply {
-                        setColor(color)
+                        setColor(theme.cAnsi[colorIndex])
                         setStroke(dp(1), (theme.cFg and 0x00FFFFFF) or (0x55 shl 24))
                     }
-                }, LinearLayout.LayoutParams(dp(9), dp(12)).apply {
-                    marginStart = dp(1)
+                }, LinearLayout.LayoutParams(dp(12), dp(12)).apply {
+                    marginStart = dp(2)
                 })
             }
             row.addView(swatches)
@@ -3755,7 +3756,7 @@ class MainActivity : AppCompatActivity() {
     private fun fillCommunityThemes() {
         (setScroll.layoutParams as? FrameLayout.LayoutParams)?.let {
             it.width = (resources.displayMetrics.widthPixels - dp(64)).coerceAtLeast(dp(320))
-            it.height = (resources.displayMetrics.heightPixels - dp(48)).coerceAtLeast(dp(240))
+            it.height = ViewGroup.LayoutParams.WRAP_CONTENT
             setScroll.layoutParams = it
         }
         setScroll.clipChildren = true
@@ -3804,6 +3805,21 @@ class MainActivity : AppCompatActivity() {
             }
         })
         renderCommunityGrid(grid, status, tabs)
+        // Fit short lists to their content, but keep long catalogs scrollable.
+        setScroll.post {
+            val available = (resources.displayMetrics.heightPixels - dp(48)).coerceAtLeast(dp(240))
+            val contentHeight = setBox.measuredHeight
+            val lp = setScroll.layoutParams as? FrameLayout.LayoutParams
+            if (lp != null) {
+                val target = min(contentHeight, available)
+                if (lp.height != target) {
+                    lp.height = target
+                    setScroll.layoutParams = lp
+                }
+            }
+            setBox.alpha = 0f
+            setBox.animate().alpha(1f).setDuration(120).start()
+        }
         loadCommunityCatalog { renderCommunityGrid(grid, status, tabs) }
     }
 
@@ -3839,6 +3855,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderCommunityGrid(grid: LinearLayout, status: TextView, tabs: LinearLayout) {
         val p = pal
+        grid.animate().cancel()
+        grid.alpha = 1f
         grid.removeAllViews()
         tabs.removeAllViews()
         val installedIds = CommunityThemes.installedIds(this)
@@ -3872,6 +3890,7 @@ class MainActivity : AppCompatActivity() {
         val activeName = pal.name
         val shown = matches.take(communityShown)
         val columns = ((resources.displayMetrics.widthPixels - dp(112)) / dp(170)).coerceIn(2, 8)
+        var animationIndex = 0
         shown.chunked(columns).forEach { cards ->
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -3885,13 +3904,27 @@ class MainActivity : AppCompatActivity() {
                     if (i < cards.lastIndex) marginEnd = dp(4)
                 })
             }
+            row.alpha = 0f
             grid.addView(row)
+            row.animate().alpha(1f).setStartDelay((animationIndex++ * 18L).coerceAtMost(180L))
+                .setDuration(120).start()
         }
         if (matches.size > shown.size) {
-            grid.addView(txt(14f, p.cAccent, "show more (${matches.size - shown.size} left) ›").apply {
+            val more = txt(14f, p.cAccent, "show more (${matches.size - shown.size} left) ›").apply {
                 setPadding(0, dp(12), 0, dp(8))
-                setOnClickListener { communityShown += 24; renderCommunityGrid(grid, status, tabs) }
-            })
+                alpha = 0f
+                setOnClickListener {
+                    grid.animate().alpha(0f).setDuration(90).withEndAction {
+                        communityShown += 24
+                        renderCommunityGrid(grid, status, tabs)
+                        grid.alpha = 0f
+                        grid.animate().alpha(1f).setDuration(120).start()
+                    }.start()
+                }
+            }
+            grid.addView(more)
+            more.animate().alpha(1f).setStartDelay((animationIndex * 18L).coerceAtMost(180L))
+                .setDuration(120).start()
         }
     }
 
