@@ -365,13 +365,19 @@ class MainActivity : AppCompatActivity() {
         val cSel = Color.parseColor(sel)
     }
 
-    private val pals = listOf(
+    private val basePals = listOf(
         Pal("Tokyo Night", "#1a1b26", "#c0caf5", "#565f89", "#7aa2f7", "#9ece6a", "#e0af68", "#33467c"),
         Pal("Catppuccin", "#1e1e2e", "#cdd6f4", "#6c7086", "#89b4fa", "#a6e3a1", "#f9e2af", "#45475a"),
         Pal("Gruvbox", "#282828", "#ebdbb2", "#928374", "#83a598", "#b8bb26", "#fabd2f", "#504945"),
         Pal("Nord", "#2e3440", "#d8dee9", "#4c566a", "#81a1c1", "#a3be8c", "#ebcb8b", "#434c5e"),
         Pal("Dracula", "#282a36", "#f8f8f2", "#6272a4", "#bd93f9", "#50fa7b", "#ff79c6", "#44475a")
     )
+    private val pals: List<Pal> by lazy {
+        val have = basePals.map { it.name.lowercase().replace(" ", "") }.toSet()
+        basePals + OmarchyThemes.loadBundled(this)
+            .filter { !it.isLight && it.name.lowercase().replace(" ", "") !in have }
+            .map { Pal(it.name, it.bg, it.fg, it.dim, it.blue, it.green, it.accent, it.sel) }
+    }
     private val fontNames = listOf(
         "monospace", "serif-monospace", "sans-serif", "sans-serif-condensed", "casual", "serif"
     )
