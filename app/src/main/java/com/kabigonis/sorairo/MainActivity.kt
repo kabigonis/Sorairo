@@ -64,6 +64,7 @@ import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.TextUtils
 import android.text.style.ForegroundColorSpan
+import android.text.style.ReplacementSpan
 import android.view.GestureDetector
 import android.view.Gravity
 import android.view.MotionEvent
@@ -2506,6 +2507,31 @@ class MainActivity : AppCompatActivity() {
         return best
     }
 
+    private fun appendPaletteRow(sb: SpannableStringBuilder, colors: List<Int>) {
+        colors.forEach { color ->
+            val start = sb.length
+            sb.append(" ")
+            sb.setSpan(object : ReplacementSpan() {
+                private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    style = Paint.Style.FILL
+                    this.color = color
+                }
+                override fun getSize(
+                    paint: Paint, text: CharSequence, start: Int, end: Int,
+                    fm: android.graphics.Paint.FontMetricsInt?
+                ): Int = dp(12)
+                override fun draw(
+                    canvas: Canvas, text: CharSequence, start: Int, end: Int,
+                    x: Float, top: Int, y: Int, bottom: Int, paint: Paint
+                ) {
+                    val left = x + dp(1)
+                    val topY = y - dp(9)
+                    canvas.drawRect(left, topY, left + dp(10), topY + dp(5), this.paint)
+                }
+            }, start, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+    }
+
     private fun fetchInto(sb: SpannableStringBuilder) {
         val p = pal
         val fg = termFg()
@@ -2541,13 +2567,10 @@ class MainActivity : AppCompatActivity() {
         kv("Shell", "Sorairo")
         kv("Apps", "${apps.size} (${allApps.size - apps.size} hidden)")
         kv("Theme", pal.name)
-        sb.add("        ", p.cDim)
-        p.cAnsi.forEachIndexed { index, color ->
-            val start = sb.length
-            sb.append("■")
-            sb.setSpan(ForegroundColorSpan(color), start, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            if (index != p.cAnsi.lastIndex) sb.append(" ")
-        }
+        sb.append("        ")
+        appendPaletteRow(sb, p.cAnsi.take(8))
+        sb.append("\n        ")
+        appendPaletteRow(sb, p.cAnsi.drop(8).take(8))
         sb.append("\n")
         kv("Up", "${mins / 60}h ${mins % 60}m")
         sb.add("\ntype help for commands\n", p.cDim)
