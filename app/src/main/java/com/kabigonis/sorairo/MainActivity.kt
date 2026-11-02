@@ -6126,7 +6126,7 @@ class MainActivity : AppCompatActivity() {
     private fun applyThemeWallpaperFromCard(source: ThemeWallpaperSource, item: ThemeWallpaperRemoteFile, card: LinearLayout) {
         val existing = findThemeWallpaperEntry(source, item)
         if (existing != null) {
-            applyWallpaper(existing.id)
+            applyWallpaper(existing.id, applyToSystem = true)
             return
         }
         val key = "${source.id}/${item.name}"
@@ -6141,7 +6141,7 @@ class MainActivity : AppCompatActivity() {
             ui {
                 themeWallpaperCardBusy.remove(key)
                 card.removeView(progress)
-                result.onSuccess { applyWallpaper(it.id) }
+                result.onSuccess { applyWallpaper(it.id, applyToSystem = true) }
                     .onFailure { Toast.makeText(this, it.message ?: "couldn't download wallpaper", Toast.LENGTH_SHORT).show() }
             }
         }
