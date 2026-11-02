@@ -5017,7 +5017,7 @@ class MainActivity : AppCompatActivity() {
             writeWallpaperIndex(readWallpaperIndex().map { if (it.id == id) it.copy(lastUsed = now) else it })
         }
         val edit = prefs.edit().putString("wall_current_id", id).remove("wall")
-        if (rememberForTheme && prefs.getBoolean("wallpaper_follows_theme", true)) {
+        if (rememberForTheme) {
             currentThemeWallpaperSource()?.let { edit.putString("theme_wall_${it.id}", id) }
         }
         edit.apply()
