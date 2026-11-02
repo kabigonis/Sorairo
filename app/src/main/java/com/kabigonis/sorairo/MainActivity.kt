@@ -3536,6 +3536,7 @@ class MainActivity : AppCompatActivity() {
                     prefs.edit().putInt("theme", index).apply()
                     dialog.dismiss()
                     rebuild(false)
+                    onThemeApplied(index)
                     fillStyleSettings()
                     setScroll.scrollTo(0, 0)
                     showOverlay()
@@ -3659,6 +3660,14 @@ class MainActivity : AppCompatActivity() {
                 fillWallpaperSettings()
                 setScroll.scrollTo(0, 0)
             }
+        }
+        row("wallpaper downloads", if (prefs.getBoolean("wallpaper_any_network", false)) "any network" else "wifi only") {
+            prefs.edit().putBoolean("wallpaper_any_network", !prefs.getBoolean("wallpaper_any_network", false)).apply()
+            fillStyleSettings(); showOverlay()
+        }
+        row("wallpaper follows theme", if (prefs.getBoolean("wallpaper_follows_theme", true)) "on" else "off") {
+            prefs.edit().putBoolean("wallpaper_follows_theme", !prefs.getBoolean("wallpaper_follows_theme", true)).apply()
+            fillStyleSettings(); showOverlay()
         }
         row("theme", pal.name) { showThemePicker() }
         row("community themes", "browse ›") {
@@ -4167,7 +4176,7 @@ class MainActivity : AppCompatActivity() {
             } else {
                 showSorairoConfirmDialog(
                     "Install theme?",
-                    "Install and apply ${t.title}?",
+                    "Install and apply ${t.title}? This also downloads its wallpapers on Wi-Fi.",
                     "Install"
                 ) { installCommunityTheme(t, state) }
             }
@@ -4218,6 +4227,7 @@ class MainActivity : AppCompatActivity() {
                     val index = pals.indexOfLast { it.name == palette.name }.coerceAtLeast(0)
                     prefs.edit().putInt("theme", index).apply()
                     rebuild(false)
+                    onThemeApplied(index, communityInstalled = true)
                     fillCommunityThemes()
                     showOverlay()
                     Toast.makeText(this, "applied ${palette.name}", Toast.LENGTH_SHORT).show()
@@ -4412,6 +4422,7 @@ class MainActivity : AppCompatActivity() {
                     } else {
                         prefs.edit().putInt("theme", i).apply()
                         rebuild(false)
+                        onThemeApplied(i)
                         return
                     }
                 }
@@ -5306,6 +5317,11 @@ class MainActivity : AppCompatActivity() {
         section.addView(txt(13f, p.cBlue, "from ${pal.name}"))
         val status = txt(11f, p.cDim, themeWallpaperStatus).apply {
             setPadding(0, dp(3), 0, dp(5))
+            setOnClickListener {
+                if (themeWallpaperStatus == "wallpapers not downloaded (mobile data)" && source != null) {
+                    beginThemeWallpaperDownloads(source, firstImmediately = false, allowMetered = true)
+                }
+            }
         }
         section.addView(status)
         val grid = RecyclerView(this).apply {
@@ -5600,13 +5616,15 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun beginThemeWallpaperDownloads(source: ThemeWallpaperSource, firstImmediately: Boolean) {
+    private fun beginThemeWallpaperDownloads(
+        source: ThemeWallpaperSource, firstImmediately: Boolean, allowMetered: Boolean = false
+    ) {
         if (!themeWallpaperBusy.add(source.id)) return
         themeWallpaperExecutor.execute {
             try {
                 val files = runCatching { fetchThemeWallpaperFiles(source) }.getOrElse { emptyList() }
                 if (files.isEmpty()) return@execute
-                if (!isWallpaperDownloadAllowed()) {
+                if (!isWallpaperDownloadAllowed() && !allowMetered) {
                     ui {
                         themeWallpaperStatus = "wallpapers not downloaded (mobile data)"
                         if (wallpaperPageOpen && settings.visibility == View.VISIBLE) fillWallpaperSettings()
