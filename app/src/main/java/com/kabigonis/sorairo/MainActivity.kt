@@ -4937,9 +4937,9 @@ class MainActivity : AppCompatActivity() {
         synchronized(this) {
             if (prefs.getBoolean("wallpaper_sha256_migrated_v1", false)) return
             val index = readWallpaperIndex()
-            val hashes = index.mapNotNull { entry ->
-                runCatching { entry.id to sha256File(File(wallpaperDir(), entry.file)) }.getOrNull()
-            }.toMap()
+            val hashes = index.associate { entry ->
+                entry.id to sha256File(File(wallpaperDir(), entry.file))
+            }
             val plan = buildWallpaperMergePlan(index, hashes)
             val editor = prefs.edit()
             prefs.getString("wall_current_id", null)?.let { id ->
@@ -5276,7 +5276,8 @@ class MainActivity : AppCompatActivity() {
         })
 
         setBox.addView(buildThemeWallpaperSection())
-        val wallpaperBytes = readWallpaperIndex().sumOf { File(wallpaperDir(), it.file).length() }
+        val wallpaperBytes = wallpaperDir().listFiles()?.filter { it.isFile && it.extension.equals("jpg", true) }
+            ?.sumOf { it.length() } ?: 0L
         setBox.addView(txt(11f, p.cDim, "wallpapers use %.1f MB".format(wallpaperBytes / 1048576.0)).apply {
             setPadding(0, dp(4), 0, dp(5))
         })
