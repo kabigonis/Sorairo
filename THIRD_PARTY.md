@@ -57,7 +57,7 @@ SOFTWARE.
 
 ## Wallpapers
 
-Wallpaper images from community and Omarchy themes are downloaded only when the user requests them. Downloaded images are stored on the device and are not bundled with or committed to the app; they remain the property of their authors.
+Wallpaper images from community and Omarchy themes are downloaded when a theme is installed or applied, subject to the wallpaper download network setting. Downloaded images stay on the device and are not bundled with or committed to the app. The images remain the property of their respective authors, and credits are shown in the wallpaper page.
 
 ## Community themes
 
