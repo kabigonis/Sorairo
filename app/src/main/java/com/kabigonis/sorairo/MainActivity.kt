@@ -684,6 +684,8 @@ class MainActivity : AppCompatActivity() {
         override fun sizeOf(key: String, value: android.graphics.Bitmap): Int = value.byteCount
     }
     private var wallpaperPageOpen = false
+    private var wallpaperTab = "theme"
+    private var wallpaperPageShell: LinearLayout? = null
     private var wallpaperMigrationStarted = false
     private val screenWallpaperCache = object : LruCache<String, android.graphics.Bitmap>(3) {
         override fun sizeOf(key: String, value: android.graphics.Bitmap): Int = 1
@@ -3232,6 +3234,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun closeSettings() {
         wallpaperPageOpen = false
+        wallpaperPageShell?.let { settings.removeView(it) }
+        wallpaperPageShell = null
+        setScroll.visibility = View.VISIBLE
         val closingSettings = settings
         if (closingSettings.visibility != View.VISIBLE) return
         closingSettings.animate().cancel()
@@ -5224,28 +5229,23 @@ class MainActivity : AppCompatActivity() {
     private fun openWallpaperPage() {
         showSettings()
         wallpaperPageOpen = true
-        switchSettingsContent {
-            fillWallpaperSettings()
-            setScroll.scrollTo(0, 0)
-        }
+        wallpaperTab = "theme"
+        fillWallpaperSettings()
     }
 
     private fun fillWallpaperSettings() {
         wallpaperPageOpen = true
         val p = pal
-        setSettingsWide(false)
-        setBox.removeAllViews()
-        setBox.addView(txt(15f, p.cBlue, "~/wallpaper"))
-        setBox.addView(txt(11f, p.cDim, "your wallpaper library").apply {
-            setPadding(0, dp(2), 0, dp(8))
-        })
-        setBox.addView(txt(14f, p.cAccent, "← back").apply {
-            setPadding(0, dp(6), 0, dp(10))
-            setOnClickListener {
-                wallpaperPageOpen = false
-                switchSettingsContent { fillStyleSettings(); setScroll.scrollTo(0, 0) }
-            }
-        })
+        setScroll.visibility = View.GONE
+        wallpaperPageShell?.let { settings.removeView(it) }
+
+        val shell = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = box(solidColor(), p.cAccent)
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            isClickable = true
+        }
+        wallpaperPageShell = shell
 
         val current = readWallpaperIndex().firstOrNull {
             it.id == prefs.getString("wall_current_id", null)
@@ -5253,116 +5253,206 @@ class MainActivity : AppCompatActivity() {
         val currentRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(8), dp(8), dp(8), dp(8))
-            background = box((p.cSel and 0x00FFFFFF) or (0x55 shl 24), p.cDim)
+            setPadding(dp(4), dp(2), dp(2), dp(10))
         }
         val preview = ImageView(this).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
             background = box(p.cBg, p.cDim)
         }
         if (current != null) loadWallpaperThumbnail(current, preview, dp(180))
-        currentRow.addView(preview, LinearLayout.LayoutParams(dp(112), dp(68)))
-        currentRow.addView(
-            txt(13f, p.cFg, if (current == null) "no wallpaper selected" else "current")
-                .apply { setPadding(dp(12), 0, dp(8), 0) },
-            LinearLayout.LayoutParams(0, -2, 1f)
-        )
-        currentRow.addView(txt(12f, p.cAccent, "clear").apply {
-            setPadding(dp(12), dp(12), dp(8), dp(12))
-            setOnClickListener { clearCurrentWallpaper() }
+        currentRow.addView(preview, LinearLayout.LayoutParams(dp(76), dp(48)))
+        val currentInfo = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), 0, dp(8), 0)
+            addView(txt(12f, p.cFg, if (current == null) "no wallpaper selected" else "current"))
+            if (current != null && !current.credit.isNullOrBlank()) {
+                addView(txt(10f, p.cDim, current.credit.orEmpty()).apply {
+                    maxLines = 1
+                    ellipsize = TextUtils.TruncateAt.END
+                })
+            }
+        }
+        currentRow.addView(currentInfo, LinearLayout.LayoutParams(0, -2, 1f))
+        currentRow.addView(txt(11f, p.cAccent, "[ clear ]").apply {
+            setPadding(dp(8), dp(10), dp(2), dp(10))
+            setOnClickListener {
+                clearCurrentWallpaper()
+                fillWallpaperSettings()
+            }
         })
-        setBox.addView(currentRow, LinearLayout.LayoutParams(-1, -2).apply {
-            bottomMargin = dp(16)
-        })
+        shell.addView(currentRow, LinearLayout.LayoutParams(-1, -2))
 
-        setBox.addView(buildThemeWallpaperSection())
-        val wallpaperBytes = wallpaperDir().listFiles()?.filter { it.isFile && it.extension.equals("jpg", true) }
-            ?.sumOf { it.length() } ?: 0L
-        setBox.addView(txt(11f, p.cDim, "wallpapers use %.1f MB".format(wallpaperBytes / 1048576.0)).apply {
-            setPadding(0, dp(4), 0, dp(5))
+        val tabRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(8))
+        }
+        fun addTab(label: String, key: String) {
+            tabRow.addView(txt(12f, if (wallpaperTab == key) p.cAccent else p.cDim,
+                if (wallpaperTab == key) "[ " + label + " ]" else label).apply {
+                setPadding(dp(8), dp(8), dp(12), dp(8))
+                setOnClickListener {
+                    wallpaperTab = key
+                    fillWallpaperSettings()
+                }
+            })
+        }
+        addTab("theme", "theme")
+        addTab("library", "library")
+        tabRow.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
+        tabRow.addView(txt(11f, p.cAccent, "+ add from device").apply {
+            setPadding(dp(8), dp(8), dp(2), dp(8))
+            setOnClickListener { pickWall.launch(arrayOf("image/*")) }
         })
-        setBox.addView(txt(11f, p.cAccent, "[ clear downloaded theme wallpapers ]").apply {
+        shell.addView(tabRow, LinearLayout.LayoutParams(-1, -2))
+
+        val innerScroll = ScrollView(this).apply {
+            isVerticalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            isFillViewport = true
+        }
+        val innerContent = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(2), 0, dp(4))
+        }
+        innerScroll.addView(innerContent, android.widget.FrameLayout.LayoutParams(-1, -2))
+        shell.addView(innerScroll, LinearLayout.LayoutParams(-1, 0, 1f))
+
+        if (wallpaperTab == "theme") {
+            innerContent.addView(buildThemeWallpaperSection())
+        } else {
+            buildWallpaperLibrary(innerContent)
+        }
+
+        val dm = resources.displayMetrics
+        val insets = ViewCompat.getRootWindowInsets(settings)
+            ?.getInsets(WindowInsetsCompat.Type.systemBars())
+        val insetHeight = (insets?.top ?: 0) + (insets?.bottom ?: 0)
+        val maxHeight = (dm.heightPixels - insetHeight - dp(48)).coerceAtLeast(dp(240))
+        val width = if (dm.widthPixels >= dp(700)) {
+            (dm.widthPixels * 0.94f).toInt().coerceAtMost(dp(1500))
+        } else {
+            min(dp(520), dm.widthPixels - dp(32))
+        }
+        settings.addView(shell, FrameLayout.LayoutParams(width, maxHeight, Gravity.CENTER))
+    }
+
+    private fun buildWallpaperLibrary(target: LinearLayout) {
+        val p = pal
+        val entries = readWallpaperIndex()
+        val groups = linkedMapOf<String, MutableList<WallpaperEntry>>()
+        entries.forEach { entry ->
+            val label = when {
+                entry.source.equals("device", true) -> "device"
+                entry.themeId != null -> {
+                    val installed = CommunityThemes.installedCatalog(this, communityCatalog)
+                    val title = installed.firstOrNull { it.id == entry.themeId }?.title
+                    "theme · " + (title ?: entry.themeId)
+                }
+                entry.source.equals("wallhaven", true) -> "wallhaven"
+                else -> entry.source.ifBlank { "other" }
+            }
+            groups.getOrPut(label) { mutableListOf() }.add(entry)
+        }
+
+        if (entries.isEmpty()) {
+            target.addView(txt(12f, p.cDim, "no wallpapers yet").apply {
+                setPadding(dp(2), dp(10), 0, dp(14))
+            })
+        }
+        groups.forEach { (sourceLabel, group) ->
+            target.addView(txt(11f, p.cBlue, sourceLabel.lowercase()).apply {
+                setPadding(dp(2), dp(10), 0, dp(5))
+            })
+            val grid = RecyclerView(this).apply {
+                layoutManager = GridLayoutManager(this@MainActivity, 3)
+                isNestedScrollingEnabled = false
+                overScrollMode = View.OVER_SCROLL_NEVER
+                adapter = wallpaperLibraryAdapter(group)
+            }
+            target.addView(grid, LinearLayout.LayoutParams(-1, -2))
+            grid.post {
+                val columns = (grid.width / dp(132)).coerceIn(1, 10)
+                (grid.layoutManager as? GridLayoutManager)?.spanCount = columns
+                val rows = (group.size + columns - 1) / columns
+                grid.layoutParams = grid.layoutParams.apply { height = rows * dp(140) }
+            }
+        }
+
+        val bytes = wallpaperDir().listFiles()
+            ?.filter { it.isFile && it.extension.equals("jpg", true) }
+            ?.sumOf { it.length() } ?: 0L
+        target.addView(txt(11f, p.cDim,
+            "wallpapers use %.1f MB".format(bytes / 1048576.0)).apply {
+            setPadding(0, dp(12), 0, dp(5))
+        })
+        target.addView(txt(11f, p.cAccent, "[ clear downloaded theme wallpapers ]").apply {
             setPadding(0, dp(4), 0, dp(12))
             setOnClickListener {
                 showSorairoConfirmDialog(
                     "Clear downloaded theme wallpapers?",
                     "Only automatically downloaded theme wallpapers will be removed. Wallpapers added from your device stay untouched.",
                     "Clear"
-                ) { clearDownloadedThemeWallpapers() }
-            }
-        })
-        
-        setBox.addView(txt(13f, p.cBlue, "your wallpapers").apply {
-            setPadding(0, 0, 0, dp(8))
-        })
-        val entries = readWallpaperIndex()
-        if (entries.isEmpty()) {
-            setBox.addView(txt(12f, p.cDim, "no wallpapers yet").apply {
-                setPadding(0, 0, 0, dp(12))
-            })
-        } else {
-            val grid = RecyclerView(this).apply {
-                layoutManager = GridLayoutManager(this@MainActivity, 6)
-                isNestedScrollingEnabled = false
-                overScrollMode = View.OVER_SCROLL_NEVER
-                adapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
-                    override fun getItemCount() = entries.size
-                    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
-                        val card = LinearLayout(parent.context).apply {
-                            orientation = LinearLayout.VERTICAL
-                            setPadding(dp(3), dp(3), dp(3), dp(3))
-                        }
-                        val image = ImageView(parent.context).apply {
-                            scaleType = ImageView.ScaleType.CENTER_CROP
-                            background = box(p.cBg, p.cDim)
-                        }
-                        card.addView(image, LinearLayout.LayoutParams(-1, dp(88)))
-                        card.addView(txt(9f, p.cDim, "").apply {
-                            maxLines = 1
-                            ellipsize = TextUtils.TruncateAt.END
-                            setPadding(dp(2), dp(2), dp(2), 0)
-                        }, LinearLayout.LayoutParams(-1, dp(16)))
-                        card.layoutParams = RecyclerView.LayoutParams(-1, dp(110)).apply {
-                            setMargins(dp(2), dp(2), dp(2), dp(2))
-                        }
-                        return object : RecyclerView.ViewHolder(card) {}
-                    }
-                    override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
-                        val card = holder.itemView as LinearLayout
-                        val image = card.getChildAt(0) as ImageView
-                        val credit = card.getChildAt(1) as TextView
-                        val entry = entries[position]
-                        loadWallpaperThumbnail(entry, image, dp(180))
-                        credit.text = entry.credit.orEmpty()
-                        credit.visibility = if (entry.credit.isNullOrBlank()) View.GONE else View.VISIBLE
-                        card.setOnClickListener { applyWallpaper(entry.id) }
-                        card.setOnLongClickListener {
-                            showSorairoConfirmDialog(
-                                "Remove this wallpaper?",
-                                "This removes the saved copy from your wallpaper library.",
-                                "Remove"
-                            ) { removeWallpaper(entry) }
-                            true
-                        }
-                    }
+                ) {
+                    clearDownloadedThemeWallpapers()
+                    fillWallpaperSettings()
                 }
             }
-            grid.post {
-                val cell = dp(112)
-                val columns = (grid.width / cell).coerceIn(1, 6)
-                (grid.layoutManager as? GridLayoutManager)?.spanCount = columns
-                val rows = (entries.size + columns - 1) / columns
-                grid.layoutParams = grid.layoutParams.apply { height = rows * dp(114) }
-            }
-            setBox.addView(grid, LinearLayout.LayoutParams(-1, -2))
-        }
-
-        setBox.addView(txt(14f, p.cAccent, "+ add from device").apply {
-            setPadding(dp(2), dp(14), dp(2), dp(12))
-            setOnClickListener { pickWall.launch(arrayOf("image/*")) }
         })
     }
 
+    private fun wallpaperLibraryAdapter(entries: List<WallpaperEntry>): RecyclerView.Adapter<RecyclerView.ViewHolder> =
+        object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+            override fun getItemCount() = entries.size
+
+            override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+                val card = LinearLayout(parent.context).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(3), dp(3), dp(3), dp(3))
+                    layoutParams = RecyclerView.LayoutParams(-1, dp(140)).apply {
+                        setMargins(dp(2), dp(2), dp(2), dp(2))
+                    }
+                }
+                val image = ImageView(parent.context).apply {
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                    background = box(pal.cBg, pal.cDim)
+                }
+                card.addView(image, LinearLayout.LayoutParams(-1, dp(92)))
+                card.addView(txt(10f, pal.cFg, "").apply {
+                    maxLines = 1
+                    ellipsize = TextUtils.TruncateAt.MIDDLE
+                    setPadding(dp(2), dp(3), dp(2), 0)
+                }, LinearLayout.LayoutParams(-1, dp(17)))
+                card.addView(txt(9f, pal.cDim, "").apply {
+                    maxLines = 1
+                    ellipsize = TextUtils.TruncateAt.END
+                    setPadding(dp(2), dp(1), dp(2), 0)
+                }, LinearLayout.LayoutParams(-1, dp(15)))
+                return object : RecyclerView.ViewHolder(card) {}
+            }
+
+            override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+                val entry = entries[position]
+                val card = holder.itemView as LinearLayout
+                loadWallpaperThumbnail(entry, card.getChildAt(0) as ImageView, dp(180))
+                (card.getChildAt(1) as TextView).text = entry.file
+                (card.getChildAt(2) as TextView).text = entry.credit.orEmpty()
+                val isCurrent = prefs.getString("wall_current_id", null) == entry.id
+                card.background = if (isCurrent) box(pal.cBg, pal.cAccent) else null
+                card.setOnClickListener { applyWallpaper(entry.id) }
+                card.setOnLongClickListener {
+                    showSorairoConfirmDialog(
+                        "Remove this wallpaper?",
+                        "This removes the saved copy from your wallpaper library.",
+                        "Remove"
+                    ) {
+                        removeWallpaper(entry)
+                        fillWallpaperSettings()
+                    }
+                    true
+                }
+            }
+        }
 
     private fun currentThemeWallpaperSource(): ThemeWallpaperSource? {
         val index = prefs.getInt("theme", 0).coerceIn(0, pals.size - 1)
@@ -5447,21 +5537,8 @@ class MainActivity : AppCompatActivity() {
                 fillWallpaperSettings()
             }
         }
-        val load = txt(13f, p.cAccent, "[ load theme wallpapers ]").apply {
-            setPadding(0, dp(6), 0, dp(8))
-            setOnClickListener {
-                if (source == null) {
-                    status.text = "no wallpapers listed for this theme"
-                } else {
-                    loadThemeWallpapers(source, status, grid, more)
-                }
-            }
-        }
-        section.addView(load)
         if (source == null) {
             status.text = "no wallpapers listed for this theme"
-            load.isEnabled = false
-            load.alpha = 0.45f
         } else {
             val cached = if (themeWallpaperLoadedFor == "${source.owner}/${source.repo}/${source.path}") {
                 themeWallpaperFiles
@@ -5481,6 +5558,18 @@ class MainActivity : AppCompatActivity() {
         }
         section.addView(grid)
         section.addView(more)
+        if (source != null) {
+            val key = source.owner + "/" + source.repo + "/" + source.path
+            val cached = if (themeWallpaperLoadedFor == key) themeWallpaperFiles else readThemeWallpaperCache(source)
+            if (cached != null) {
+                themeWallpaperFiles = cached
+                themeWallpaperLoadedFor = key
+                status.text = if (cached.isEmpty()) "no wallpapers listed for this theme" else cached.size.toString() + " wallpapers"
+                renderThemeWallpaperCards(cached, grid, more, source, allowDownloads = true)
+            } else {
+                loadThemeWallpapers(source, status, grid, more)
+            }
+        }
         return section
     }
 
@@ -5560,14 +5649,20 @@ class MainActivity : AppCompatActivity() {
                 val item = shown[position]
                 val card = holder.itemView as LinearLayout
                 val image = card.getChildAt(0) as ImageView
-                (card.getChildAt(1) as TextView).text = item.name
+                val downloaded = findThemeWallpaperEntry(source, item)
+                (card.getChildAt(1) as TextView).text = (if (downloaded != null) "✓ " else "") + item.name
                 loadThemeWallpaperPreview(item, image, source, generation, allowDownloads)
+                val isCurrent = downloaded != null &&
+                    prefs.getString("wall_current_id", null) == downloaded.id
+                card.background = if (isCurrent) box(pal.cBg, pal.cAccent) else null
                 card.setOnClickListener { applyThemeWallpaperFromCard(source, item, card) }
             }
         }
         grid.visibility = if (shown.isEmpty()) View.GONE else View.VISIBLE
         grid.post {
-            val rows = (shown.size + 2) / 3
+            val columns = (grid.width / dp(132)).coerceIn(1, 10)
+            (grid.layoutManager as? GridLayoutManager)?.spanCount = columns
+            val rows = (shown.size + columns - 1) / columns
             grid.layoutParams = grid.layoutParams.apply { height = rows * dp(122) }
         }
         more.visibility = if (files.size > shown.size) View.VISIBLE else View.GONE
