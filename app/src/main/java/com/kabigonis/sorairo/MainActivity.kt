@@ -5315,7 +5315,7 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(2), 0, dp(4))
         }
-        innerScroll.addView(innerContent, ScrollView.LayoutParams(-1, -2))
+        innerScroll.addView(innerContent, android.widget.FrameLayout.LayoutParams(-1, -2))
         shell.addView(innerScroll, LinearLayout.LayoutParams(-1, 0, 1f))
 
         if (wallpaperTab == "theme") {
