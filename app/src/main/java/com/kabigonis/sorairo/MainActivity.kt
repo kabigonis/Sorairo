@@ -14,12 +14,14 @@ import android.bluetooth.BluetoothManager
 import android.content.ComponentName
 import android.graphics.Canvas
 import android.graphics.LinearGradient
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Rect
 import android.graphics.Shader
 import android.media.MediaMetadata
+import android.media.ExifInterface
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
@@ -91,6 +93,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsAnimationCompat
 import androidx.core.widget.doAfterTextChanged
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
 import java.io.File
@@ -98,6 +101,9 @@ import java.text.Normalizer
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
+import java.util.concurrent.Executors
+import android.util.LruCache
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -658,6 +664,19 @@ class MainActivity : AppCompatActivity() {
     private val focusBorderAnimators = java.util.WeakHashMap<View, ValueAnimator>()
     private val focusBorderColors = java.util.WeakHashMap<View, Int>()
     private lateinit var wall: ImageView
+    private data class WallpaperEntry(
+        val id: String,
+        val file: String,
+        val source: String,
+        val credit: String? = null,
+        val link: String? = null
+    )
+    private val wallpaperExecutor = Executors.newFixedThreadPool(2)
+    private val wallpaperThumbCache = object : LruCache<String, android.graphics.Bitmap>(24 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: android.graphics.Bitmap): Int = value.byteCount
+    }
+    private var wallpaperPageOpen = false
+    private var wallpaperMigrationStarted = false
     private lateinit var clock: TextView
     private lateinit var status: TextView
     private lateinit var pager: ViewPager2
@@ -1131,12 +1150,17 @@ class MainActivity : AppCompatActivity() {
 
     private val pickWall = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
-            try {
-                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            } catch (_: Exception) {
+            wallpaperExecutor.execute {
+                val added = try { importWallpaper(uri, "device") } catch (_: Exception) { null }
+                handler.post {
+                    if (added == null) {
+                        Toast.makeText(this, "couldn't add wallpaper", Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(this, "wallpaper added · tap it to apply", Toast.LENGTH_SHORT).show()
+                        if (wallpaperPageOpen && settings.visibility == View.VISIBLE) fillWallpaperSettings()
+                    }
+                }
             }
-            prefs.edit().putString("wall", uri.toString()).apply()
-            loadWallpaper()
         }
     }
 
@@ -2687,6 +2711,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showSettings() {
+        wallpaperPageOpen = false
         closeDrawer()
         closeQs()
         fillSettings()
@@ -3178,6 +3203,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun closeSettings() {
+        wallpaperPageOpen = false
         val closingSettings = settings
         if (closingSettings.visibility != View.VISIBLE) return
         closingSettings.animate().cancel()
@@ -3602,9 +3628,11 @@ class MainActivity : AppCompatActivity() {
                 setScroll.scrollTo(0, 0)
             }
         }
-        row("wallpaper", "choose ›") { closeSettings(); pickWall.launch(arrayOf("image/*")) }
-        row("clear wallpaper", "›") {
-            prefs.edit().remove("wall").apply(); wall.setImageDrawable(null)
+        row("wallpaper", "manage ›") {
+            switchSettingsContent {
+                fillWallpaperSettings()
+                setScroll.scrollTo(0, 0)
+            }
         }
         row("theme", pal.name) { showThemePicker() }
         row("community themes", "browse ›") {
@@ -4272,7 +4300,8 @@ class MainActivity : AppCompatActivity() {
                     "  ws <1-5>       switch workspace",
                     "  theme [name]   change theme",
                     "  font [name]    change font",
-                    "  wall           pick wallpaper",
+                    "  wall           open wallpaper library",
+                    "  wall clear     clear current wallpaper",
                     "  config         open settings",
                     "  pin <app>      pin to this workspace",
                     "  unpin <app>    unpin it",
@@ -4329,7 +4358,14 @@ class MainActivity : AppCompatActivity() {
                     if (n != null && n in 1..5) pager.setCurrentItem(n - 1, true)
                     else say("usage: ws 1-5", p.cDim)
                 }
-                "wall", "wallpaper" -> pickWall.launch(arrayOf("image/*"))
+                "wall", "wallpaper" -> {
+                    if (arg.equals("clear", true)) {
+                        clearCurrentWallpaper()
+                        say("wallpaper cleared", p.cGreen)
+                    } else {
+                        openWallpaperPage()
+                    }
+                }
                 "config", "settings" -> showSettings()
                 "logo" -> {
                     val i = logoNames.indexOfFirst { it.startsWith(arg.lowercase()) }
@@ -4767,19 +4803,312 @@ class MainActivity : AppCompatActivity() {
         wall.translationX = ((0.5f - fraction) * dp(36)).coerceIn(-dp(18).toFloat(), dp(18).toFloat())
     }
 
-    private fun loadWallpaper() {
-        val s = prefs.getString("wall", null) ?: return
-        try {
-            val uri = Uri.parse(s)
-            val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, o) }
-            var sample = 1
-            while (o.outWidth / sample > 2560) sample *= 2
-            val o2 = BitmapFactory.Options().apply { inSampleSize = sample }
-            val bmp = contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, o2) }
-            if (bmp != null) wall.setImageBitmap(bmp)
-        } catch (_: Exception) {
+    private fun wallpaperDir(): File = File(filesDir, "wallpapers").apply { mkdirs() }
+    private fun wallpaperIndexFile(): File = File(wallpaperDir(), "index.json")
+
+    private fun readWallpaperIndex(): MutableList<WallpaperEntry> {
+        return try {
+            val root = JSONObject(wallpaperIndexFile().takeIf { it.exists() }?.readText() ?: """{"wallpapers":[]}""")
+            val array = root.optJSONArray("wallpapers") ?: JSONArray()
+            MutableList(array.length()) { i ->
+                val item = array.getJSONObject(i)
+                WallpaperEntry(
+                    item.getString("id"), item.getString("file"),
+                    item.optString("source", "unknown"),
+                    item.optString("credit").takeIf { it.isNotBlank() },
+                    item.optString("link").takeIf { it.isNotBlank() }
+                )
+            }.filter { File(wallpaperDir(), it.file).isFile }.toMutableList()
+        } catch (_: Exception) { mutableListOf() }
+    }
+
+    private fun writeWallpaperIndex(items: List<WallpaperEntry>) {
+        val array = JSONArray()
+        items.forEach { entry ->
+            val item = JSONObject()
+                .put("id", entry.id)
+                .put("file", entry.file)
+                .put("source", entry.source)
+            entry.credit?.let { item.put("credit", it) }
+            entry.link?.let { item.put("link", it) }
+            array.put(item)
         }
+        val temp = File(wallpaperDir(), "index.json.tmp")
+        temp.writeText(JSONObject().put("wallpapers", array).toString(2))
+        val target = wallpaperIndexFile()
+        if (target.exists()) target.delete()
+        check(temp.renameTo(target)) { "couldn't save wallpaper index" }
+    }
+
+    private fun importWallpaper(uri: Uri, source: String): WallpaperEntry {
+        val sourceFile = File(cacheDir, "wallpaper-import-${UUID.randomUUID()}.tmp")
+        try {
+            contentResolver.openInputStream(uri)?.use { input ->
+                sourceFile.outputStream().use { output -> input.copyTo(output) }
+            } ?: throw IllegalArgumentException("Unable to read image")
+            val orientation = ExifInterface(sourceFile.absolutePath).getAttributeInt(
+                ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL
+            )
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(sourceFile.absolutePath, bounds)
+            require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Invalid image" }
+
+            var sample = 1
+            while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 2560) sample *= 2
+            val decoded = BitmapFactory.decodeFile(
+                sourceFile.absolutePath,
+                BitmapFactory.Options().apply { inSampleSize = sample }
+            ) ?: throw IllegalArgumentException("Unable to decode image")
+
+        val matrix = Matrix()
+        when (orientation) {
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.setScale(-1f, 1f)
+            ExifInterface.ORIENTATION_ROTATE_180 -> matrix.setRotate(180f)
+            ExifInterface.ORIENTATION_FLIP_VERTICAL -> { matrix.setRotate(180f); matrix.postScale(-1f, 1f) }
+            ExifInterface.ORIENTATION_TRANSPOSE -> { matrix.setRotate(90f); matrix.postScale(-1f, 1f) }
+            ExifInterface.ORIENTATION_ROTATE_90 -> matrix.setRotate(90f)
+            ExifInterface.ORIENTATION_TRANSVERSE -> { matrix.setRotate(-90f); matrix.postScale(-1f, 1f) }
+            ExifInterface.ORIENTATION_ROTATE_270 -> matrix.setRotate(270f)
+        }
+        val oriented = if (!matrix.isIdentity) {
+            android.graphics.Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true)
+                .also { if (it !== decoded) decoded.recycle() }
+        } else decoded
+        val scale = minOf(1f, 2560f / maxOf(oriented.width, oriented.height))
+        val finalBitmap = if (scale < 1f) {
+            android.graphics.Bitmap.createScaledBitmap(
+                oriented, (oriented.width * scale).toInt().coerceAtLeast(1),
+                (oriented.height * scale).toInt().coerceAtLeast(1), true
+            ).also { if (it !== oriented) oriented.recycle() }
+        } else oriented
+
+        val id = UUID.randomUUID().toString()
+        val filename = "$id.jpg"
+        val destination = File(wallpaperDir(), filename)
+        destination.outputStream().use { out ->
+            check(finalBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, out))
+        }
+            finalBitmap.recycle()
+            val entry = WallpaperEntry(id, filename, source)
+            synchronized(this) {
+                val items = readWallpaperIndex()
+                items.add(0, entry)
+                writeWallpaperIndex(items)
+            }
+            return entry
+        } finally {
+            sourceFile.delete()
+        }
+    }
+
+    private fun clearCurrentWallpaper() {
+        prefs.edit().remove("wall_current_id").remove("wall").apply()
+        if (::wall.isInitialized) wall.setImageDrawable(null)
+        wallpaperThumbCache.remove("current")
+        if (wallpaperPageOpen && settings.visibility == View.VISIBLE) fillWallpaperSettings()
+    }
+
+    private fun applyWallpaper(id: String) {
+        val entry = readWallpaperIndex().firstOrNull { it.id == id } ?: return
+        prefs.edit().putString("wall_current_id", id).remove("wall").apply()
+        loadWallpaper()
+        if (wallpaperPageOpen && settings.visibility == View.VISIBLE) fillWallpaperSettings()
+    }
+
+    private fun removeWallpaper(entry: WallpaperEntry) {
+        synchronized(this) {
+            File(wallpaperDir(), entry.file).delete()
+            writeWallpaperIndex(readWallpaperIndex().filterNot { it.id == entry.id })
+        }
+        wallpaperThumbCache.remove(entry.id)
+        if (prefs.getString("wall_current_id", null) == entry.id) clearCurrentWallpaper()
+        else if (wallpaperPageOpen && settings.visibility == View.VISIBLE) fillWallpaperSettings()
+    }
+
+    private fun loadWallpaper() {
+        if (!::wall.isInitialized) return
+        if (!prefs.getBoolean("wall_library_migrated_v1", false) && !wallpaperMigrationStarted) {
+            wallpaperMigrationStarted = true
+            wallpaperExecutor.execute {
+                val legacy = prefs.getString("wall", null)
+                try {
+                    if (!legacy.isNullOrBlank()) {
+                        val imported = importWallpaper(Uri.parse(legacy), "legacy")
+                        if (prefs.getString("wall_current_id", null) == null) {
+                            prefs.edit().putString("wall_current_id", imported.id).apply()
+                        }
+                    }
+                } catch (_: Exception) {
+                } finally {
+                    prefs.edit().remove("wall").putBoolean("wall_library_migrated_v1", true).apply()
+                    handler.post { loadWallpaperFromLibrary() }
+                }
+            }
+        } else if (prefs.getBoolean("wall_library_migrated_v1", false)) {
+            loadWallpaperFromLibrary()
+        }
+    }
+
+    private fun loadWallpaperFromLibrary() {
+        val id = prefs.getString("wall_current_id", null)
+        val entry = readWallpaperIndex().firstOrNull { it.id == id }
+        if (entry == null) {
+            wall.setImageDrawable(null)
+            return
+        }
+        wallpaperExecutor.execute {
+            val bitmap = try {
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(File(wallpaperDir(), entry.file).absolutePath, bounds)
+                var sample = 1
+                while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 2560) sample *= 2
+                BitmapFactory.decodeFile(
+                    File(wallpaperDir(), entry.file).absolutePath,
+                    BitmapFactory.Options().apply { inSampleSize = sample }
+                )
+            } catch (_: Exception) { null }
+            handler.post {
+                if (prefs.getString("wall_current_id", null) == entry.id && bitmap != null) {
+                    wall.setImageBitmap(bitmap)
+                }
+            }
+        }
+    }
+
+    private fun loadWallpaperThumbnail(entry: WallpaperEntry, target: ImageView, sizePx: Int) {
+        target.tag = entry.id
+        wallpaperThumbCache.get(entry.id)?.let {
+            target.setImageBitmap(it)
+            return
+        }
+        target.setImageDrawable(null)
+        wallpaperExecutor.execute {
+            val bitmap = try {
+                val file = File(wallpaperDir(), entry.file)
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(file.absolutePath, bounds)
+                var sample = 1
+                while (maxOf(bounds.outWidth, bounds.outHeight) / sample > sizePx * 2) sample *= 2
+                BitmapFactory.decodeFile(
+                    file.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample }
+                )
+            } catch (_: Exception) { null }
+            if (bitmap != null) wallpaperThumbCache.put(entry.id, bitmap)
+            handler.post {
+                if (target.tag == entry.id && bitmap != null) target.setImageBitmap(bitmap)
+            }
+        }
+    }
+
+    private fun openWallpaperPage() {
+        showSettings()
+        wallpaperPageOpen = true
+        switchSettingsContent {
+            fillWallpaperSettings()
+            setScroll.scrollTo(0, 0)
+        }
+    }
+
+    private fun fillWallpaperSettings() {
+        wallpaperPageOpen = true
+        val p = pal
+        setSettingsWide(false)
+        setBox.removeAllViews()
+        setBox.addView(txt(15f, p.cBlue, "~/wallpaper"))
+        setBox.addView(txt(11f, p.cDim, "your wallpaper library").apply {
+            setPadding(0, dp(2), 0, dp(8))
+        })
+        setBox.addView(txt(14f, p.cAccent, "← back").apply {
+            setPadding(0, dp(6), 0, dp(10))
+            setOnClickListener {
+                wallpaperPageOpen = false
+                switchSettingsContent { fillStyleSettings(); setScroll.scrollTo(0, 0) }
+            }
+        })
+
+        val current = readWallpaperIndex().firstOrNull {
+            it.id == prefs.getString("wall_current_id", null)
+        }
+        val currentRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+            background = box((p.cSel and 0x00FFFFFF) or (0x55 shl 24), p.cDim)
+        }
+        val preview = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            background = box(p.cBg, p.cDim)
+        }
+        if (current != null) loadWallpaperThumbnail(current, preview, dp(180))
+        currentRow.addView(preview, LinearLayout.LayoutParams(dp(112), dp(68)))
+        currentRow.addView(
+            txt(13f, p.cFg, if (current == null) "no wallpaper selected" else "current")
+                .apply { setPadding(dp(12), 0, dp(8), 0) },
+            LinearLayout.LayoutParams(0, -2, 1f)
+        )
+        currentRow.addView(txt(12f, p.cAccent, "clear").apply {
+            setPadding(dp(12), dp(12), dp(8), dp(12))
+            setOnClickListener { clearCurrentWallpaper() }
+        })
+        setBox.addView(currentRow, LinearLayout.LayoutParams(-1, -2).apply {
+            bottomMargin = dp(16)
+        })
+
+        setBox.addView(txt(13f, p.cBlue, "your wallpapers").apply {
+            setPadding(0, 0, 0, dp(8))
+        })
+        val entries = readWallpaperIndex()
+        if (entries.isEmpty()) {
+            setBox.addView(txt(12f, p.cDim, "no wallpapers yet").apply {
+                setPadding(0, 0, 0, dp(12))
+            })
+        } else {
+            val grid = RecyclerView(this).apply {
+                layoutManager = GridLayoutManager(this@MainActivity, 6)
+                isNestedScrollingEnabled = false
+                overScrollMode = View.OVER_SCROLL_NEVER
+                adapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+                    override fun getItemCount() = entries.size
+                    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+                        val image = ImageView(parent.context).apply {
+                            scaleType = ImageView.ScaleType.CENTER_CROP
+                            background = box(p.cBg, p.cDim)
+                            layoutParams = RecyclerView.LayoutParams(-1, dp(92)).apply {
+                                setMargins(dp(3), dp(3), dp(3), dp(3))
+                            }
+                        }
+                        return object : RecyclerView.ViewHolder(image) {}
+                    }
+                    override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+                        val image = holder.itemView as ImageView
+                        val entry = entries[position]
+                        loadWallpaperThumbnail(entry, image, dp(180))
+                        image.setOnClickListener { applyWallpaper(entry.id) }
+                        image.setOnLongClickListener {
+                            showSorairoConfirmDialog(
+                                "Remove this wallpaper?",
+                                "This removes the saved copy from your wallpaper library.",
+                                "Remove"
+                            ) { removeWallpaper(entry) }
+                            true
+                        }
+                    }
+                }
+            }
+            grid.post {
+                val cell = dp(112)
+                val columns = (grid.width / cell).coerceIn(1, 6)
+                (grid.layoutManager as? GridLayoutManager)?.spanCount = columns
+                val rows = (entries.size + columns - 1) / columns
+                grid.layoutParams = grid.layoutParams.apply { height = rows * dp(98) }
+            }
+            setBox.addView(grid, LinearLayout.LayoutParams(-1, -2))
+        }
+
+        setBox.addView(txt(14f, p.cAccent, "+ add from device").apply {
+            setPadding(dp(2), dp(14), dp(2), dp(12))
+            setOnClickListener { pickWall.launch(arrayOf("image/*")) }
+        })
     }
 
     private fun fmtSpeed(b: Long): String = when {
