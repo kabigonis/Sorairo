@@ -1519,7 +1519,13 @@ class MainActivity : AppCompatActivity() {
         val dm = resources.displayMetrics
 
         val root = FrameLayout(this).apply { setBackgroundColor(p.cBg) }
-        wall = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+        wall = ImageView(this).apply {
+            scaleType = if (prefs.getBoolean("wallpaper_parallax", true))
+                ImageView.ScaleType.CENTER_CROP else ImageView.ScaleType.FIT_CENTER
+            addOnLayoutChangeListener { _, left, _, right, _, _, _, _, _ ->
+                if (right > left) updateWallpaperParallaxScale()
+            }
+        }
         root.addView(wall, FrameLayout.LayoutParams(-1, -1))
         root.addView(
             View(this).apply { setBackgroundColor(wallpaperScrim(p)) },
@@ -1584,8 +1590,9 @@ class MainActivity : AppCompatActivity() {
             adapter = PageAdapter()
             offscreenPageLimit = 1
             setCurrentItem(curWs, false)
-            // Trial: subtle wallpaper parallax, inspired by Omalauncher's workspace background.
-            wall.scaleX = 1.08f
+            // Keep the wallpaper aspect ratio intact while reserving only the width
+            // needed for the workspace parallax travel.
+            updateWallpaperParallaxScale()
             updateWallpaperParallax(curWs.toFloat())
             registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
                 override fun onPageScrolled(position: Int, positionOffset: Float, positionOffsetPixels: Int) {
@@ -4849,8 +4856,32 @@ class MainActivity : AppCompatActivity() {
      * Moves the wallpaper slightly behind workspace swipes instead of making it feel
      * completely fixed. The 8% horizontal overscan keeps edges covered while shifting.
      */
+    private fun updateWallpaperParallaxScale() {
+        if (!::wall.isInitialized) return
+        if (!prefs.getBoolean("wallpaper_parallax", true)) {
+            wall.scaleX = 1f
+            wall.scaleY = 1f
+            wall.translationX = 0f
+            wall.scaleType = ImageView.ScaleType.FIT_CENTER
+            return
+        }
+        wall.scaleType = ImageView.ScaleType.CENTER_CROP
+        val width = wall.width
+        if (width > 0) {
+            // 36dp total horizontal overscan covers the full +/-18dp parallax travel.
+            // Uniform X/Y scaling preserves the artwork's original proportions.
+            val scale = (width + dp(36)).toFloat() / width.toFloat()
+            wall.scaleX = scale
+            wall.scaleY = scale
+        }
+    }
+
     private fun updateWallpaperParallax(progress: Float) {
         if (!::wall.isInitialized) return
+        if (!prefs.getBoolean("wallpaper_parallax", true)) {
+            wall.translationX = 0f
+            return
+        }
         val fraction = (progress / 4f).coerceIn(0f, 1f)
         wall.translationX = ((0.5f - fraction) * dp(36)).coerceIn(-dp(18).toFloat(), dp(18).toFloat())
     }
@@ -5215,12 +5246,18 @@ class MainActivity : AppCompatActivity() {
             prefs.edit().putBoolean("wallpaper_follows_theme", !prefs.getBoolean("wallpaper_follows_theme", true)).apply()
             fillWallpaperSettings()
         }
+        option("wallpaper parallax", if (prefs.getBoolean("wallpaper_parallax", true)) "on" else "off") {
+            prefs.edit().putBoolean("wallpaper_parallax", !prefs.getBoolean("wallpaper_parallax", true)).apply()
+            updateWallpaperParallaxScale()
+            updateWallpaperParallax(curWs.toFloat())
+            fillWallpaperSettings()
+        }
         option("home & lock sync", if (prefs.getBoolean("wallpaper_home_lock_sync", true)) "on" else "off") {
             prefs.edit().putBoolean("wallpaper_home_lock_sync", !prefs.getBoolean("wallpaper_home_lock_sync", true)).apply()
             fillWallpaperSettings()
         }
         target.addView(txt(10f, p.cDim,
-            "When sync is off, selecting a wallpaper asks which screen to update. Theme auto-follow only changes Sorairo."),
+            "Parallax preserves image proportions and adds only the space needed for workspace movement. When sync is off, selecting a wallpaper asks which screen to update. Theme auto-follow only changes Sorairo."),
             LinearLayout.LayoutParams(-1, -2))
     }
 
