@@ -473,10 +473,10 @@ data class WidgetSpec(
                     when {
                         ch == '"' -> return
                         ch.code < 0x20 -> throw IllegalArgumentException("unescaped control")
-                        ch == '\\\\' -> {
+                        ch == '\\' -> {
                             require(index < source.length) { "unfinished escape" }
                             when (source[index++]) {
-                                '"', '\\\\', '/' , 'b', 'f', 'n', 'r', 't' -> Unit
+                                '"', '\\', '/', 'b', 'f', 'n', 'r', 't' -> Unit
                                 'u' -> repeat(4) {
                                     require(index < source.length && source[index].digitToIntOrNull(16) != null) { "bad unicode escape" }
                                     index++
@@ -516,7 +516,7 @@ data class WidgetSpec(
             }
 
             private fun whitespace() {
-                while (index < source.length && source[index] in charArrayOf(' ', '\\t', '\\n', '\\r')) index++
+                while (index < source.length && source[index] in charArrayOf(' ', '\t', '\n', '\r')) index++
             }
 
             private fun consume(ch: Char): Boolean {
