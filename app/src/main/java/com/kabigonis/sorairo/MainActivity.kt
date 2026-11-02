@@ -5247,6 +5247,8 @@ class MainActivity : AppCompatActivity() {
     private fun buildThemeWallpaperSection(): View {
         val p = pal
         val source = currentThemeWallpaperSource()
+        val sourceKey = source?.let { "${it.owner}/${it.repo}/${it.path}" }
+        if (sourceKey != themeWallpaperLoadedFor) themeWallpaperShown = 8
         val section = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(4), 0, dp(14))
