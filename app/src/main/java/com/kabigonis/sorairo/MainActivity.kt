@@ -5264,7 +5264,7 @@ class MainActivity : AppCompatActivity() {
         val currentInfo = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(10), 0, dp(8), 0)
-            addView(txt(12f, p.cFg, "current"))
+            addView(txt(12f, p.cFg, if (current == null) "no wallpaper selected" else "current"))
             if (current != null && !current.credit.isNullOrBlank()) {
                 addView(txt(10f, p.cDim, current.credit.orEmpty()).apply {
                     maxLines = 1
