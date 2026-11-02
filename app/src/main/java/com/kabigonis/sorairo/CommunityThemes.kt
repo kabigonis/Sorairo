@@ -306,8 +306,9 @@ object CommunityThemes {
 
     /** Lists one exact GitHub directory. Null/empty means the folder is absent or empty. */
     fun fetchGithubDirectory(owner: String, repo: String, path: String): List<GithubWallpaperFile> {
-        require(PART.matches(owner) && PART.matches(repo)) { "invalid GitHub repository" }
-        require(path.split('/').all { PART.matches(it) }) { "invalid GitHub path" }
+        val safePart = Regex("^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+        require(safePart.matches(owner) && safePart.matches(repo)) { "invalid GitHub repository" }
+        require(path.split('/').all { safePart.matches(it) }) { "invalid GitHub path" }
         val encodedPath = path.split('/').joinToString("/") {
             java.net.URLEncoder.encode(it, "UTF-8").replace("+", "%20")
         }
@@ -395,14 +396,16 @@ object CommunityThemes {
 
     private fun isAllowedUrl(value: String, hosts: Set<String>): Boolean = runCatching {
         val uri = java.net.URI(value)
-        uri.scheme == "https" && uri.host in hosts && uri.userInfo == null
+        uri.scheme == "https" && uri.host in hosts && uri.userInfo == null &&
+            (uri.port == -1 || uri.port == 443)
     }.getOrDefault(false)
 
     private fun openGithubConnection(initial: String, hosts: Set<String>): HttpURLConnection {
         var current = URL(initial)
         var redirects = 0
         while (true) {
-            require(current.protocol == "https" && current.host in hosts && current.userInfo == null) {
+            require(current.protocol == "https" && current.host in hosts && current.userInfo == null &&
+                (current.port == -1 || current.port == 443)) {
                 "blocked GitHub URL"
             }
             val connection = current.openConnection() as HttpURLConnection
