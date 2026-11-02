@@ -5546,7 +5546,7 @@ class MainActivity : AppCompatActivity() {
         if (prefs.getBoolean("wallpaper_any_network", false)) return true
         return try {
             val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
-            !cm.isActiveNetworkMetered
+            !cm.isActiveNetworkMetered()
         } catch (_: Exception) { false }
     }
 
