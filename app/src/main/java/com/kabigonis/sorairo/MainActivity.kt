@@ -5539,7 +5539,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun findThemeWallpaperEntry(source: ThemeWallpaperSource, item: ThemeWallpaperRemoteFile): WallpaperEntry? =
         readWallpaperIndex().firstOrNull {
-            it.autoDownloaded && it.themeId == source.id && it.remoteName == item.name && it.remoteSize == item.size
+            it.remoteName == item.name && it.remoteSize == item.size
         }
 
     private fun isWallpaperDownloadAllowed(): Boolean {
