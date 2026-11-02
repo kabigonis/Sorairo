@@ -296,6 +296,137 @@ object CommunityThemes {
         }
     }
 
+
+    data class GithubWallpaperFile(
+        val name: String,
+        val size: Long,
+        val downloadUrl: String,
+        val htmlUrl: String
+    )
+
+    /** Lists one exact GitHub directory. Null/empty means the folder is absent or empty. */
+    fun fetchGithubDirectory(owner: String, repo: String, path: String): List<GithubWallpaperFile> {
+        val safePart = Regex("^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+        require(safePart.matches(owner) && safePart.matches(repo)) { "invalid GitHub repository" }
+        require(path.split('/').all { safePart.matches(it) }) { "invalid GitHub path" }
+        val encodedPath = path.split('/').joinToString("/") {
+            java.net.URLEncoder.encode(it, "UTF-8").replace("+", "%20")
+        }
+        val url = "https://api.github.com/repos/$owner/$repo/contents/$encodedPath"
+        val bytes = httpGetBinary(url, 2 * 1024 * 1024) ?: return emptyList()
+        val json = org.json.JSONArray(String(bytes, Charsets.UTF_8))
+        val extensions = setOf("jpg", "jpeg", "png", "webp")
+        return (0 until json.length()).mapNotNull { i ->
+            val item = json.optJSONObject(i) ?: return@mapNotNull null
+            val name = item.optString("name")
+            val size = item.optLong("size", Long.MAX_VALUE)
+            val download = item.optString("download_url")
+            val html = item.optString("html_url")
+            val ext = name.substringAfterLast('.', "").lowercase()
+            if (item.optString("type") != "file" ||
+                !SAFE_FILE.matches(name) || name.startsWith(".") ||
+                ext !in extensions || size <= 0L || size > 15L * 1024L * 1024L ||
+                !isAllowedUrl(download, setOf("raw.githubusercontent.com")) ||
+                !isAllowedUrl(html, setOf("github.com"))) return@mapNotNull null
+            GithubWallpaperFile(name, size, download, html)
+        }
+    }
+
+    /** Stream a binary GitHub asset to disk, enforcing HTTPS, host and redirect limits. */
+    fun downloadGithubBinary(url: String, destination: File, maxBytes: Long): Long {
+        val connection = openGithubConnection(url, setOf("raw.githubusercontent.com"))
+        try {
+            val code = connection.responseCode
+            if (code == 403) throw IOException("GitHub rate limit reached (HTTP 403)")
+            if (code == 404) throw IOException("wallpaper not found (HTTP 404)")
+            if (code != 200) throw IOException("GitHub download failed (HTTP $code)")
+            val declared = connection.getHeaderFieldLong("Content-Length", -1L)
+            if (declared > maxBytes) throw IOException("file too large")
+            destination.parentFile?.mkdirs()
+            var total = 0L
+            connection.inputStream.use { input ->
+                destination.outputStream().use { output ->
+                    val buffer = ByteArray(16 * 1024)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        total += count
+                        if (total > maxBytes) throw IOException("file too large")
+                        output.write(buffer, 0, count)
+                    }
+                    output.flush()
+                }
+            }
+            return total
+        } catch (e: Exception) {
+            destination.delete()
+            throw e
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    /** Small binary response for GitHub's contents API; 404 is a missing directory. */
+    private fun httpGetBinary(url: String, maxBytes: Int): ByteArray? {
+        val connection = openGithubConnection(url, setOf("api.github.com"))
+        try {
+            val code = connection.responseCode
+            if (code == 404) return null
+            if (code == 403) throw IOException("GitHub rate limit reached (HTTP 403)")
+            if (code != 200) throw IOException("GitHub request failed (HTTP $code)")
+            val declared = connection.getHeaderFieldLong("Content-Length", -1L)
+            if (declared > maxBytes) throw IOException("response too large")
+            val output = ByteArrayOutputStream()
+            connection.inputStream.use { input ->
+                val buffer = ByteArray(8192)
+                var total = 0
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    total += count
+                    if (total > maxBytes) throw IOException("response too large")
+                    output.write(buffer, 0, count)
+                }
+            }
+            return output.toByteArray()
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun isAllowedUrl(value: String, hosts: Set<String>): Boolean = runCatching {
+        val uri = java.net.URI(value)
+        uri.scheme == "https" && uri.host in hosts && uri.userInfo == null &&
+            (uri.port == -1 || uri.port == 443)
+    }.getOrDefault(false)
+
+    private fun openGithubConnection(initial: String, hosts: Set<String>): HttpURLConnection {
+        var current = URL(initial)
+        var redirects = 0
+        while (true) {
+            require(current.protocol == "https" && current.host in hosts && current.userInfo == null &&
+                (current.port == -1 || current.port == 443)) {
+                "blocked GitHub URL"
+            }
+            val connection = current.openConnection() as HttpURLConnection
+            connection.instanceFollowRedirects = false
+            connection.connectTimeout = 10_000
+            connection.readTimeout = 20_000
+            connection.setRequestProperty("User-Agent", "Sorairo")
+            connection.setRequestProperty("Accept", "application/vnd.github+json")
+            val code = connection.responseCode
+            if (code in 300..399) {
+                val location = connection.getHeaderField("Location")
+                connection.disconnect()
+                if (location.isNullOrBlank() || redirects >= 3) throw IOException("too many or invalid GitHub redirects")
+                current = URL(current, location)
+                redirects++
+                continue
+            }
+            return connection
+        }
+    }
+
     private fun writeAtomically(file: File, bytes: ByteArray) {
         file.parentFile?.mkdirs()
         val tmp = File(file.parentFile, file.name + ".tmp")

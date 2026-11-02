@@ -55,6 +55,10 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+## Wallpapers
+
+Wallpaper images from community and Omarchy themes are downloaded only when the user requests them. Downloaded images are stored on the device and are not bundled with or committed to the app; they remain the property of their authors.
+
 ## Community themes
 
 The browser reads the theme list and screenshots from https://omarchy.org/themes when opened, and downloads only a theme's palette file (`colors.toml`, or `alacritty.toml` for older themes) from its GitHub repo when the user taps install. Nothing is bundled and nothing from a theme is executed. Themes and screenshots belong to their authors. The approach follows Omalauncher (see above).
