@@ -676,6 +676,7 @@ class MainActivity : AppCompatActivity() {
         override fun sizeOf(key: String, value: android.graphics.Bitmap): Int = value.byteCount
     }
     private var wallpaperPageOpen = false
+    private var wallpaperMigrationStarted = false
     private lateinit var clock: TextView
     private lateinit var status: TextView
     private lateinit var pager: ViewPager2
@@ -4838,22 +4839,24 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun importWallpaper(uri: Uri, source: String): WallpaperEntry {
-        val orientation = contentResolver.openInputStream(uri)?.use { input ->
-            ExifInterface(input).getAttributeInt(
+        val sourceFile = File(cacheDir, "wallpaper-import-${UUID.randomUUID()}.tmp")
+        try {
+            contentResolver.openInputStream(uri)?.use { input ->
+                sourceFile.outputStream().use { output -> input.copyTo(output) }
+            } ?: throw IllegalArgumentException("Unable to read image")
+            val orientation = ExifInterface(sourceFile.absolutePath).getAttributeInt(
                 ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL
             )
-        } ?: ExifInterface.ORIENTATION_NORMAL
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(sourceFile.absolutePath, bounds)
+            require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Invalid image" }
 
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-            ?: throw IllegalArgumentException("Unable to read image")
-        require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Invalid image" }
-
-        var sample = 1
-        while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 2560) sample *= 2
-        val decoded = contentResolver.openInputStream(uri)?.use {
-            BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
-        } ?: throw IllegalArgumentException("Unable to decode image")
+            var sample = 1
+            while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 2560) sample *= 2
+            val decoded = BitmapFactory.decodeFile(
+                sourceFile.absolutePath,
+                BitmapFactory.Options().apply { inSampleSize = sample }
+            ) ?: throw IllegalArgumentException("Unable to decode image")
 
         val matrix = Matrix()
         when (orientation) {
@@ -4883,14 +4886,17 @@ class MainActivity : AppCompatActivity() {
         destination.outputStream().use { out ->
             check(finalBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, out))
         }
-        finalBitmap.recycle()
-        val entry = WallpaperEntry(id, filename, source)
-        synchronized(this) {
-            val items = readWallpaperIndex()
-            items.add(0, entry)
-            writeWallpaperIndex(items)
+            finalBitmap.recycle()
+            val entry = WallpaperEntry(id, filename, source)
+            synchronized(this) {
+                val items = readWallpaperIndex()
+                items.add(0, entry)
+                writeWallpaperIndex(items)
+            }
+            return entry
+        } finally {
+            sourceFile.delete()
         }
-        return entry
     }
 
     private fun clearCurrentWallpaper() {
@@ -4919,7 +4925,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadWallpaper() {
         if (!::wall.isInitialized) return
-        if (!prefs.getBoolean("wall_library_migrated_v1", false)) {
+        if (!prefs.getBoolean("wall_library_migrated_v1", false) && !wallpaperMigrationStarted) {
+            wallpaperMigrationStarted = true
             wallpaperExecutor.execute {
                 val legacy = prefs.getString("wall", null)
                 try {
@@ -4933,7 +4940,7 @@ class MainActivity : AppCompatActivity() {
                     handler.post { loadWallpaperFromLibrary() }
                 }
             }
-        } else {
+        } else if (prefs.getBoolean("wall_library_migrated_v1", false)) {
             loadWallpaperFromLibrary()
         }
     }
