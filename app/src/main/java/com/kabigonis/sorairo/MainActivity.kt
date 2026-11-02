@@ -80,6 +80,7 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
+import android.widget.ProgressBar
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -669,7 +670,12 @@ class MainActivity : AppCompatActivity() {
         val file: String,
         val source: String,
         val credit: String? = null,
-        val link: String? = null
+        val link: String? = null,
+        val remoteName: String? = null,
+        val remoteSize: Long = 0L,
+        val themeId: String? = null,
+        val autoDownloaded: Boolean = false,
+        val lastUsed: Long = 0L
     )
     private val wallpaperExecutor = Executors.newFixedThreadPool(2)
     private val wallpaperThumbCache = object : LruCache<String, android.graphics.Bitmap>(24 * 1024 * 1024) {
@@ -677,9 +683,14 @@ class MainActivity : AppCompatActivity() {
     }
     private var wallpaperPageOpen = false
     private var wallpaperMigrationStarted = false
+    private val screenWallpaperCache = object : LruCache<String, android.graphics.Bitmap>(3) {
+        override fun sizeOf(key: String, value: android.graphics.Bitmap): Int = 1
+    }
+    private val themeWallpaperBusy = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val themeWallpaperCardBusy = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     private data class ThemeWallpaperSource(
-        val theme: String, val owner: String, val repo: String, val path: String,
+        val id: String, val theme: String, val owner: String, val repo: String, val path: String,
         val omarchy: Boolean = false
     )
     private data class ThemeWallpaperRemoteFile(
@@ -4831,7 +4842,12 @@ class MainActivity : AppCompatActivity() {
                     item.getString("id"), item.getString("file"),
                     item.optString("source", "unknown"),
                     item.optString("credit").takeIf { it.isNotBlank() },
-                    item.optString("link").takeIf { it.isNotBlank() }
+                    item.optString("link").takeIf { it.isNotBlank() },
+                    item.optString("remoteName").takeIf { it.isNotBlank() },
+                    item.optLong("remoteSize", 0L),
+                    item.optString("themeId").takeIf { it.isNotBlank() },
+                    item.optBoolean("autoDownloaded", false),
+                    item.optLong("lastUsed", 0L)
                 )
             }.filter { File(wallpaperDir(), it.file).isFile }.toMutableList()
         } catch (_: Exception) { mutableListOf() }
@@ -4846,6 +4862,11 @@ class MainActivity : AppCompatActivity() {
                 .put("source", entry.source)
             entry.credit?.let { item.put("credit", it) }
             entry.link?.let { item.put("link", it) }
+            entry.remoteName?.let { item.put("remoteName", it) }
+            item.put("remoteSize", entry.remoteSize)
+            entry.themeId?.let { item.put("themeId", it) }
+            item.put("autoDownloaded", entry.autoDownloaded)
+            item.put("lastUsed", entry.lastUsed)
             array.put(item)
         }
         val temp = File(wallpaperDir(), "index.json.tmp")
@@ -4918,7 +4939,9 @@ class MainActivity : AppCompatActivity() {
 
 
     private fun importWallpaperFile(
-        sourceFile: File, source: String, credit: String, link: String
+        sourceFile: File, source: String, credit: String, link: String,
+        remoteName: String? = null, remoteSize: Long = 0L, themeId: String? = null,
+        autoDownloaded: Boolean = false
     ): WallpaperEntry {
         val orientation = ExifInterface(sourceFile.absolutePath).getAttributeInt(
             ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL
@@ -4959,7 +4982,8 @@ class MainActivity : AppCompatActivity() {
                 check(finalBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, out))
             }
         } finally { finalBitmap.recycle() }
-        val entry = WallpaperEntry(id, filename, source, credit, link)
+        val entry = WallpaperEntry(id, filename, source, credit, link, remoteName, remoteSize,
+            themeId, autoDownloaded, System.currentTimeMillis())
         synchronized(this) {
             val items = readWallpaperIndex()
             items.add(0, entry)
@@ -5201,7 +5225,7 @@ class MainActivity : AppCompatActivity() {
         if (index >= builtInCount) {
             val installed = CommunityThemes.installedCatalog(this, communityCatalog)
             val theme = installed.getOrNull(index - builtInCount) ?: return null
-            return ThemeWallpaperSource(theme.title, theme.owner, theme.repo, "backgrounds")
+            return ThemeWallpaperSource(theme.id, theme.title, theme.owner, theme.repo, "backgrounds")
         }
         if (index >= basePals.size) {
             val have = basePals.map { it.name.lowercase().replace(" ", "") }.toSet()
@@ -5209,7 +5233,7 @@ class MainActivity : AppCompatActivity() {
                 !it.isLight && it.name.lowercase().replace(" ", "") !in have
             }
             val theme = bundled.getOrNull(index - basePals.size) ?: return null
-            return ThemeWallpaperSource(themeName, "basecamp", "omarchy", "themes/${theme.id}/backgrounds", true)
+            return ThemeWallpaperSource(theme.id, themeName, "basecamp", "omarchy", "themes/${theme.id}/backgrounds", true)
         }
         return null
     }
@@ -5394,7 +5418,7 @@ class MainActivity : AppCompatActivity() {
                 val image = card.getChildAt(0) as ImageView
                 (card.getChildAt(1) as TextView).text = item.name
                 loadThemeWallpaperPreview(item, image, source, generation, allowDownloads)
-                card.setOnClickListener { showThemeWallpaperConfirm(source, item) }
+                card.setOnClickListener { applyThemeWallpaperFromCard(source, item, card) }
             }
         }
         grid.visibility = if (shown.isEmpty()) View.GONE else View.VISIBLE
