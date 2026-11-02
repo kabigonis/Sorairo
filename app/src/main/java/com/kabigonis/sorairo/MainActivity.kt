@@ -5304,7 +5304,7 @@ class MainActivity : AppCompatActivity() {
                     item.getString("name"), item.getLong("size"),
                     item.getString("download"), item.getString("html")
                 )
-            }
+            }.sortedBy { it.name.lowercase() }.take(12)
         }.getOrNull()
     }
 
@@ -5497,7 +5497,7 @@ class MainActivity : AppCompatActivity() {
                 if (!thumb.isFile) {
                     val temp = File(cacheDir, "theme-wallpaper-preview-${UUID.randomUUID()}.tmp")
                     try {
-                        CommunityThemes.downloadGithubBinary(item.downloadUrl, temp, 15L * 1024L * 1024L)
+                        CommunityThemes.downloadGithubBinary(item.downloadUrl, temp, 20L * 1024L * 1024L)
                         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                         BitmapFactory.decodeFile(temp.absolutePath, bounds)
                         require(bounds.outWidth > 0 && bounds.outHeight > 0) { "invalid image" }
