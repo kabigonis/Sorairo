@@ -5513,73 +5513,176 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showThemeWallpaperConfirm(source: ThemeWallpaperSource, item: ThemeWallpaperRemoteFile) {
-        val actualOwner = Uri.parse(item.downloadUrl).pathSegments.firstOrNull()?.takeIf { it.isNotBlank() }
-            ?: source.owner
-        val creditedSource = source.copy(owner = actualOwner)
-        val p = pal
-        val dialog = Dialog(this)
-        val shell = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = box(solidColor(), p.cAccent)
-            setPadding(dp(18), dp(16), dp(18), dp(12))
+    private fun findThemeWallpaperEntry(source: ThemeWallpaperSource, item: ThemeWallpaperRemoteFile): WallpaperEntry? =
+        readWallpaperIndex().firstOrNull {
+            it.autoDownloaded && it.themeId == source.id && it.remoteName == item.name && it.remoteSize == item.size
         }
-        shell.addView(txt(16f, p.cBlue, item.name))
-        shell.addView(txt(12f, p.cFg,
-            "${creditedSource.theme} by ${creditedSource.owner}\n${"%.2f".format(item.size / 1048576.0)} MB").apply {
-            setPadding(0, dp(8), 0, dp(4))
-        })
-        shell.addView(txt(10f, p.cDim, item.htmlUrl).apply {
-            maxLines = 2
-            ellipsize = TextUtils.TruncateAt.END
-            setOnClickListener {
-                runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(item.htmlUrl))) }
-            }
-            setPadding(0, 0, 0, dp(12))
-        })
-        val actions = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.END or Gravity.CENTER_VERTICAL
-        }
-        fun action(label: String, color: Int, callback: () -> Unit) {
-            actions.addView(txt(11f, color, label.uppercase()).apply {
-                setPadding(dp(8), dp(10), dp(8), dp(8))
-                setOnClickListener { dialog.dismiss(); callback() }
-            })
-        }
-        action("cancel", p.cDim) {}
-        action("add", p.cAccent) { addThemeWallpaper(creditedSource, item, false) }
-        action("add + apply", p.cAccent) { addThemeWallpaper(creditedSource, item, true) }
-        shell.addView(actions)
-        dialog.setContentView(shell)
-        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
-        dialog.show()
-        dialog.window?.setLayout(min(dp(520), resources.displayMetrics.widthPixels - dp(40)),
-            WindowManager.LayoutParams.WRAP_CONTENT)
+
+    private fun isWallpaperDownloadAllowed(): Boolean {
+        if (prefs.getBoolean("wallpaper_any_network", false)) return true
+        return try {
+            val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+            !cm.isActiveNetworkMetered
+        } catch (_: Exception) { false }
     }
 
-    private fun addThemeWallpaper(
-        source: ThemeWallpaperSource, item: ThemeWallpaperRemoteFile, apply: Boolean
-    ) {
-        Toast.makeText(this, "adding wallpaper...", Toast.LENGTH_SHORT).show()
-        themeWallpaperExecutor.execute {
-            val temp = File(cacheDir, "theme-wallpaper-add-${UUID.randomUUID()}.tmp")
-            val result = runCatching {
-                CommunityThemes.downloadGithubBinary(item.downloadUrl, temp, 20L * 1024L * 1024L)
-                val credit = "${source.theme} by ${source.owner} · github.com/${source.owner}/${source.repo}"
-                importWallpaperFile(temp, "theme", credit, item.htmlUrl)
+    private fun fetchThemeWallpaperFiles(source: ThemeWallpaperSource): List<ThemeWallpaperRemoteFile> {
+        readThemeWallpaperCache(source)?.let { return it.sortedBy { file -> file.name.lowercase() }.take(12) }
+        var files = CommunityThemes.fetchGithubDirectory(source.owner, source.repo, source.path)
+        if (files.isEmpty() && source.omarchy && source.owner == "basecamp") {
+            files = CommunityThemes.fetchGithubDirectory("37signals", source.repo, source.path)
+        }
+        val safe = files.filter { it.size in 1..(20L * 1024L * 1024L) }
+            .sortedBy { it.name.lowercase() }.take(12)
+            .map { ThemeWallpaperRemoteFile(it.name, it.size, it.downloadUrl, it.htmlUrl) }
+        writeThemeWallpaperCache(source, safe)
+        return safe
+    }
+
+    private fun enforceAutoWallpaperCap(incoming: Long) {
+        val cap = 300L * 1024L * 1024L
+        synchronized(this) {
+            val items = readWallpaperIndex().toMutableList()
+            var used = items.filter { it.autoDownloaded }.sumOf { File(wallpaperDir(), it.file).length() }
+            for (entry in items.filter { it.autoDownloaded }.sortedBy { it.lastUsed }) {
+                if (used + incoming <= cap) break
+                if (prefs.getString("wall_current_id", null) == entry.id) continue
+                used -= File(wallpaperDir(), entry.file).length()
+                File(wallpaperDir(), entry.file).delete()
+                items.removeAll { it.id == entry.id }
+                wallpaperThumbCache.remove(entry.id)
+                screenWallpaperCache.remove(entry.id)
             }
-            temp.delete()
+            writeWallpaperIndex(items)
+            require(used + incoming <= cap) { "automatic wallpaper storage is full" }
+        }
+    }
+
+    private fun downloadThemeWallpaper(source: ThemeWallpaperSource, item: ThemeWallpaperRemoteFile): WallpaperEntry {
+        findThemeWallpaperEntry(source, item)?.let { return it }
+        require(item.size in 1..(20L * 1024L * 1024L)) { "wallpaper exceeds 20 MB" }
+        val existing = readWallpaperIndex().filter { it.autoDownloaded && it.themeId == source.id }
+            .sumOf { File(wallpaperDir(), it.file).length() }
+        require(existing + item.size <= 80L * 1024L * 1024L) { "theme wallpaper limit reached" }
+        require(readWallpaperIndex().count { it.autoDownloaded && it.themeId == source.id } < 12) {
+            "theme wallpaper limit reached"
+        }
+        enforceAutoWallpaperCap(item.size)
+        val temp = File(cacheDir, "theme-wallpaper-\${UUID.randomUUID()}.tmp")
+        try {
+            CommunityThemes.downloadGithubBinary(item.downloadUrl, temp, 20L * 1024L * 1024L)
+            val credit = "\${source.theme} by \${source.owner} · github.com/\${source.owner}/\${source.repo}"
+            return importWallpaperFile(temp, "theme", credit, item.htmlUrl, item.name, item.size, source.id, true)
+        } finally { temp.delete() }
+    }
+
+    private fun applyThemeWallpaperFromCard(source: ThemeWallpaperSource, item: ThemeWallpaperRemoteFile, card: LinearLayout) {
+        val existing = findThemeWallpaperEntry(source, item)
+        if (existing != null) {
+            applyWallpaper(existing.id)
+            return
+        }
+        val key = "\${source.id}/\${item.name}"
+        if (!themeWallpaperCardBusy.add(key)) return
+        val progress = ProgressBar(this).apply { isIndeterminate = true }
+        card.addView(progress, LinearLayout.LayoutParams(dp(20), dp(20)).apply { gravity = Gravity.CENTER })
+        themeWallpaperExecutor.execute {
+            val result = runCatching {
+                if (!isWallpaperDownloadAllowed()) throw IllegalStateException("wallpapers not downloaded (mobile data)")
+                downloadThemeWallpaper(source, item)
+            }
             ui {
-                result.onSuccess { entry ->
-                    if (apply) applyWallpaper(entry.id) else if (wallpaperPageOpen) fillWallpaperSettings()
-                    Toast.makeText(this, if (apply) "wallpaper added and applied" else "wallpaper added · tap it to apply",
-                        Toast.LENGTH_SHORT).show()
-                }.onFailure { error ->
-                    Toast.makeText(this, "couldn't add wallpaper: ${error.message}", Toast.LENGTH_LONG).show()
-                }
+                themeWallpaperCardBusy.remove(key)
+                card.removeView(progress)
+                result.onSuccess { applyWallpaper(it.id) }
+                    .onFailure { Toast.makeText(this, it.message ?: "couldn't download wallpaper", Toast.LENGTH_SHORT).show() }
             }
         }
+    }
+
+    private fun beginThemeWallpaperDownloads(source: ThemeWallpaperSource, firstImmediately: Boolean) {
+        if (!themeWallpaperBusy.add(source.id)) return
+        themeWallpaperExecutor.execute {
+            try {
+                val files = runCatching { fetchThemeWallpaperFiles(source) }.getOrElse { emptyList() }
+                if (files.isEmpty()) return@execute
+                if (!isWallpaperDownloadAllowed()) {
+                    ui {
+                        themeWallpaperStatus = "wallpapers not downloaded (mobile data)"
+                        if (wallpaperPageOpen && settings.visibility == View.VISIBLE) fillWallpaperSettings()
+                    }
+                    return@execute
+                }
+                val remembered = prefs.getString("theme_wall_\${source.id}", null)
+                val rememberedEntry = readWallpaperIndex().firstOrNull { it.id == remembered }
+                if (firstImmediately && rememberedEntry != null && prefs.getBoolean("wallpaper_follows_theme", true)) {
+                    ui { applyWallpaper(rememberedEntry.id, rememberForTheme = false) }
+                }
+                var used = readWallpaperIndex().filter { it.autoDownloaded && it.themeId == source.id }
+                    .sumOf { File(wallpaperDir(), it.file).length() }
+                var appliedFirst = rememberedEntry != null
+                for (item in files) {
+                    val existing = findThemeWallpaperEntry(source, item)
+                    if (existing != null) {
+                        if (firstImmediately && !appliedFirst && prefs.getBoolean("wallpaper_follows_theme", true)) {
+                            appliedFirst = true
+                            ui { applyWallpaper(existing.id, rememberForTheme = false) }
+                        }
+                        continue
+                    }
+                    if (used + item.size > 80L * 1024L * 1024L) continue
+                    val result = runCatching { downloadThemeWallpaper(source, item) }
+                    result.onSuccess { entry ->
+                        used += item.size
+                        if (firstImmediately && !appliedFirst && prefs.getBoolean("wallpaper_follows_theme", true)) {
+                            appliedFirst = true
+                            ui { applyWallpaper(entry.id, rememberForTheme = false) }
+                        }
+                    }
+                }
+            } finally {
+                themeWallpaperBusy.remove(source.id)
+                ui { if (wallpaperPageOpen && settings.visibility == View.VISIBLE) fillWallpaperSettings() }
+            }
+        }
+    }
+
+    private fun themeWallpaperSourceFor(index: Int): ThemeWallpaperSource? {
+        val previous = prefs.getInt("theme", 0)
+        if (previous != index) prefs.edit().putInt("theme", index).apply()
+        return try { currentThemeWallpaperSource() } finally {
+            if (previous != index) prefs.edit().putInt("theme", previous).apply()
+        }
+    }
+
+    private fun onThemeApplied(index: Int, communityInstalled: Boolean = false) {
+        val source = themeWallpaperSourceFor(index) ?: return
+        if (prefs.getBoolean("wallpaper_follows_theme", true)) {
+            val remembered = prefs.getString("theme_wall_\${source.id}", null)
+            if (remembered != null && readWallpaperIndex().any { it.id == remembered }) {
+                applyWallpaper(remembered, rememberForTheme = false)
+            }
+        }
+        beginThemeWallpaperDownloads(source, firstImmediately = !communityInstalled)
+    }
+
+    private fun clearDownloadedThemeWallpapers() {
+        synchronized(this) {
+            val items = readWallpaperIndex()
+            val removed = items.filter { it.autoDownloaded }
+            removed.forEach {
+                File(wallpaperDir(), it.file).delete()
+                wallpaperThumbCache.remove(it.id)
+                screenWallpaperCache.remove(it.id)
+            }
+            val current = prefs.getString("wall_current_id", null)
+            if (removed.any { it.id == current }) {
+                prefs.edit().remove("wall_current_id").apply()
+                if (::wall.isInitialized) wall.setImageDrawable(null)
+            }
+            writeWallpaperIndex(items.filterNot { it.autoDownloaded })
+        }
+        if (wallpaperPageOpen) fillWallpaperSettings()
     }
 
     private fun fmtSpeed(b: Long): String = when {
