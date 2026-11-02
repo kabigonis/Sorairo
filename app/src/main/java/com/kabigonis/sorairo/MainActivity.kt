@@ -5586,16 +5586,17 @@ class MainActivity : AppCompatActivity() {
         findThemeWallpaperEntry(source, item)?.let { return it }
         require(item.size in 1..(20L * 1024L * 1024L)) { "wallpaper exceeds 20 MB" }
         val existing = readWallpaperIndex().filter { it.autoDownloaded && it.themeId == source.id }
-            .sumOf { File(wallpaperDir(), it.file).length() }
+            .sumOf { it.remoteSize }
         require(existing + item.size <= 80L * 1024L * 1024L) { "theme wallpaper limit reached" }
         require(readWallpaperIndex().count { it.autoDownloaded && it.themeId == source.id } < 12) {
             "theme wallpaper limit reached"
         }
-        enforceAutoWallpaperCap(item.size)
         val temp = File(cacheDir, "theme-wallpaper-${UUID.randomUUID()}.tmp")
         try {
             CommunityThemes.downloadGithubBinary(item.downloadUrl, temp, 20L * 1024L * 1024L)
-            val credit = "${source.theme} by ${source.owner} · github.com/${source.owner}/${source.repo}"
+            enforceAutoWallpaperCap(item.size)
+            val actualOwner = Uri.parse(item.downloadUrl).pathSegments.firstOrNull()?.takeIf { it.isNotBlank() } ?: source.owner
+            val credit = "${source.theme} by ${actualOwner} · github.com/${actualOwner}/${source.repo}"
             return importWallpaperFile(temp, "theme", credit, item.htmlUrl, item.name, item.size, source.id, true)
         } finally { temp.delete() }
     }
@@ -5645,7 +5646,7 @@ class MainActivity : AppCompatActivity() {
                     ui { applyWallpaper(rememberedEntry.id, rememberForTheme = false) }
                 }
                 var used = readWallpaperIndex().filter { it.autoDownloaded && it.themeId == source.id }
-                    .sumOf { File(wallpaperDir(), it.file).length() }
+                    .sumOf { it.remoteSize }
                 var appliedFirst = rememberedEntry != null
                 for (item in files) {
                     val existing = findThemeWallpaperEntry(source, item)
