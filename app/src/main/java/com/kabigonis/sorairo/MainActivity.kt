@@ -5405,13 +5405,7 @@ class MainActivity : AppCompatActivity() {
         status.text = "loading theme wallpapers..."
         themeWallpaperExecutor.execute {
             val result = runCatching {
-                var files = CommunityThemes.fetchGithubDirectory(source.owner, source.repo, source.path)
-                if (files.isEmpty() && source.omarchy && source.owner == "basecamp") {
-                    files = CommunityThemes.fetchGithubDirectory("37signals", source.repo, source.path)
-                }
-                files.map {
-                    ThemeWallpaperRemoteFile(it.name, it.size, it.downloadUrl, it.htmlUrl)
-                }
+                fetchThemeWallpaperFiles(source)
             }
             ui {
                 if (wallpaperPageOpen && settings.visibility == View.VISIBLE) {
