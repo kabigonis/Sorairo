@@ -1311,6 +1311,11 @@ class MainActivity : AppCompatActivity() {
     private fun onFill(preferred: Int, fill: Int): Int =
         Contrast.readable(preferred, fill, pal.cFg, pal.cBg)
 
+    private fun isLightTheme(p: Pal): Boolean = Contrast.luminance(p.cBg) > 0.4
+
+    private fun wallpaperScrim(p: Pal): Int =
+        if (isLightTheme(p)) (p.cBg and 0x00FFFFFF) or (0x99 shl 24) else Color.parseColor("#55000000")
+
     private fun txt(size: Float, color: Int, s: CharSequence = ""): TextView = TextView(this).apply {
         text = s
         textSize = size
@@ -1447,7 +1452,7 @@ class MainActivity : AppCompatActivity() {
         wall = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
         root.addView(wall, FrameLayout.LayoutParams(-1, -1))
         root.addView(
-            View(this).apply { setBackgroundColor(Color.parseColor("#55000000")) },
+            View(this).apply { setBackgroundColor(wallpaperScrim(p)) },
             FrameLayout.LayoutParams(-1, -1)
         )
         loadWallpaper()
@@ -1456,6 +1461,7 @@ class MainActivity : AppCompatActivity() {
 
         // ---- top bar ----
         val bar = FrameLayout(this)
+        if (isLightTheme(p)) bar.setBackgroundColor((p.cBg and 0x00FFFFFF) or (0xCC shl 24))
         moveHint = txt(11f, p.cAccent, "move: tap another window").apply { visibility = View.GONE; gravity = Gravity.CENTER; setOnClickListener { endMove() } }
         val left = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
