@@ -91,7 +91,22 @@ object OmarchyThemes {
             "dark" -> false
             else -> luminance(bg) > 0.5
         }
-        return Palette(id, titleOf(id), bg, fg, dim, blue, green, accent, sel, light, ansiColors)
+        val bgInt = Contrast.parse(bg)
+        fun readable(color: String, min: Double) =
+            Contrast.hex(Contrast.ensure(Contrast.parse(color), bgInt, min))
+        val readableAnsi = ansiColors.mapIndexed { index, color ->
+            when (index) {
+                0 -> color
+                7, 15 -> readable(color, 4.5)
+                else -> readable(color, 3.0)
+            }
+        }
+        return Palette(
+            id, titleOf(id), bg,
+            readable(fg, 4.5), readable(dim, 3.0),
+            readable(blue, 4.0), readable(green, 4.0), readable(accent, 4.0),
+            sel, light, readableAnsi
+        )
     }
 
     /** Fills in what a theme leaves out, falling back to the older ANSI colorN names. */

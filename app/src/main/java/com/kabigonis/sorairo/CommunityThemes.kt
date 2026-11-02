@@ -246,10 +246,10 @@ object CommunityThemes {
         val foreground = all["colors.primary.foreground"] ?: normal[7]
         val out = linkedMapOf(
             "accent" to normal[4],
-            "selection" to (all["colors.selection.background"] ?: foreground),
             "background" to background,
             "foreground" to foreground
         )
+        all["colors.selection.background"]?.let { out["selection"] = it }
         val colors = listOf(background) + normal.subList(1, 7) + foreground + bright
         colors.forEachIndexed { i, c -> out["color$i"] = c }
         return out
