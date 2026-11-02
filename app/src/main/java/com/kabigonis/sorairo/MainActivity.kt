@@ -4932,7 +4932,9 @@ class MainActivity : AppCompatActivity() {
                 try {
                     if (!legacy.isNullOrBlank()) {
                         val imported = importWallpaper(Uri.parse(legacy), "legacy")
-                        prefs.edit().putString("wall_current_id", imported.id).apply()
+                        if (prefs.getString("wall_current_id", null) == null) {
+                            prefs.edit().putString("wall_current_id", imported.id).apply()
+                        }
                     }
                 } catch (_: Exception) {
                 } finally {
