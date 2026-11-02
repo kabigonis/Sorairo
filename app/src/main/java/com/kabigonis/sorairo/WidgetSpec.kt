@@ -268,7 +268,7 @@ data class WidgetSpec(
                     val size = int(obj, "size", path, errors)?.also {
                         if (it !in 0..32) errors += "$path.size must be 0..32"
                     }
-                    size?.takeIf { it in 0..32 }?.let(WidgetNode::Spacer)
+                    size?.takeIf { it in 0..32 }?.let { WidgetNode.Spacer(it) }
                 }
                 else -> {
                     errors += "$path.type '$typeValue' is not an allowed node type"
