@@ -5486,7 +5486,7 @@ class MainActivity : AppCompatActivity() {
                 card.background = if (isCurrent) box(pal.cBg, pal.cAccent) else null
                 card.setOnClickListener { applyWallpaper(entry.id, applyToSystem = true) }
                 card.setOnLongClickListener {
-                    AlertDialog.Builder(this)
+                    AlertDialog.Builder(this@MainActivity)
                         .setItems(arrayOf("Set as lock screen", "Remove from library")) { _, choice ->
                             when (choice) {
                                 0 -> applySystemWallpaper(
