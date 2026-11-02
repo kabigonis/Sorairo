@@ -3684,14 +3684,6 @@ class MainActivity : AppCompatActivity() {
                 setScroll.scrollTo(0, 0)
             }
         }
-        row("wallpaper downloads", if (prefs.getBoolean("wallpaper_any_network", false)) "any network" else "wifi only") {
-            prefs.edit().putBoolean("wallpaper_any_network", !prefs.getBoolean("wallpaper_any_network", false)).apply()
-            fillStyleSettings(); showOverlay()
-        }
-        row("wallpaper follows theme", if (prefs.getBoolean("wallpaper_follows_theme", true)) "on" else "off") {
-            prefs.edit().putBoolean("wallpaper_follows_theme", !prefs.getBoolean("wallpaper_follows_theme", true)).apply()
-            fillStyleSettings(); showOverlay()
-        }
         row("theme", pal.name) { showThemePicker() }
         row("community themes", "browse ›") {
             communityTab = "browse"
@@ -5137,8 +5129,70 @@ class MainActivity : AppCompatActivity() {
         }
         edit.apply()
         showWallpaperBitmap(entry, true)
-        if (applyToSystem) applySystemWallpaper(entry, android.app.WallpaperManager.FLAG_SYSTEM, "Home screen wallpaper updated")
+        if (applyToSystem) {
+            if (prefs.getBoolean("wallpaper_home_lock_sync", true)) {
+                applySystemWallpaper(
+                    entry,
+                    android.app.WallpaperManager.FLAG_SYSTEM or android.app.WallpaperManager.FLAG_LOCK,
+                    "Home and lock screen wallpapers updated"
+                )
+            } else {
+                showWallpaperApplyDialog(entry)
+            }
+        }
         if (wallpaperPageOpen && settings.visibility == View.VISIBLE) fillWallpaperSettings()
+    }
+
+    private fun showWallpaperApplyDialog(entry: WallpaperEntry) {
+        AlertDialog.Builder(this@MainActivity)
+            .setTitle("Apply wallpaper")
+            .setMessage("Where would you like to apply this wallpaper?")
+            .setItems(arrayOf("Home screen", "Lock screen", "Both screens")) { _, choice ->
+                when (choice) {
+                    0 -> applySystemWallpaper(entry, android.app.WallpaperManager.FLAG_SYSTEM, "Home screen wallpaper updated")
+                    1 -> applySystemWallpaper(entry, android.app.WallpaperManager.FLAG_LOCK, "Lock screen wallpaper updated")
+                    2 -> applySystemWallpaper(
+                        entry,
+                        android.app.WallpaperManager.FLAG_SYSTEM or android.app.WallpaperManager.FLAG_LOCK,
+                        "Home and lock screen wallpapers updated"
+                    )
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun buildWallpaperOptionsSection(target: LinearLayout) {
+        val p = pal
+        fun option(label: String, value: String, action: () -> Unit) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(2), dp(13), dp(2), dp(13))
+                isClickable = true
+                setOnClickListener { action() }
+            }
+            row.addView(txt(13f, p.cFg, label), LinearLayout.LayoutParams(0, -2, 1f))
+            row.addView(txt(12f, p.cAccent, value))
+            target.addView(row, LinearLayout.LayoutParams(-1, -2))
+            target.addView(View(this).apply { setBackgroundColor(p.cDim) },
+                LinearLayout.LayoutParams(-1, dp(1)))
+        }
+        option("wallpaper downloads", if (prefs.getBoolean("wallpaper_any_network", false)) "any network" else "wifi only") {
+            prefs.edit().putBoolean("wallpaper_any_network", !prefs.getBoolean("wallpaper_any_network", false)).apply()
+            fillWallpaperSettings()
+        }
+        option("wallpaper follows theme", if (prefs.getBoolean("wallpaper_follows_theme", true)) "on" else "off") {
+            prefs.edit().putBoolean("wallpaper_follows_theme", !prefs.getBoolean("wallpaper_follows_theme", true)).apply()
+            fillWallpaperSettings()
+        }
+        option("home & lock sync", if (prefs.getBoolean("wallpaper_home_lock_sync", true)) "on" else "off") {
+            prefs.edit().putBoolean("wallpaper_home_lock_sync", !prefs.getBoolean("wallpaper_home_lock_sync", true)).apply()
+            fillWallpaperSettings()
+        }
+        target.addView(txt(10f, p.cDim,
+            "When sync is off, selecting a wallpaper asks which screen to update. Theme auto-follow only changes Sorairo."),
+            LinearLayout.LayoutParams(-1, -2))
     }
 
     private fun applySystemWallpaper(entry: WallpaperEntry, which: Int, successMessage: String) {
@@ -5344,6 +5398,7 @@ class MainActivity : AppCompatActivity() {
         addTab("theme", "theme")
         addTab("library", "library")
         addTab("online", "online")
+        addTab("settings", "settings")
         tabRow.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         tabRow.addView(txt(11f, p.cAccent, "+ add from device").apply {
             setPadding(dp(8), dp(8), dp(2), dp(8))
@@ -5366,6 +5421,7 @@ class MainActivity : AppCompatActivity() {
         when (wallpaperTab) {
             "theme" -> innerContent.addView(buildThemeWallpaperSection())
             "online" -> innerContent.addView(buildWallhavenSection())
+            "settings" -> buildWallpaperOptionsSection(innerContent)
             else -> buildWallpaperLibrary(innerContent)
         }
 
@@ -5486,26 +5542,14 @@ class MainActivity : AppCompatActivity() {
                 card.background = if (isCurrent) box(pal.cBg, pal.cAccent) else null
                 card.setOnClickListener { applyWallpaper(entry.id, applyToSystem = true) }
                 card.setOnLongClickListener {
-                    AlertDialog.Builder(this@MainActivity)
-                        .setItems(arrayOf("Set as lock screen", "Remove from library")) { _, choice ->
-                            when (choice) {
-                                0 -> applySystemWallpaper(
-                                    entry,
-                                    android.app.WallpaperManager.FLAG_LOCK,
-                                    "Lock screen wallpaper updated"
-                                )
-                                1 -> showSorairoConfirmDialog(
-                                    "Remove this wallpaper?",
-                                    "This removes the saved copy from your wallpaper library.",
-                                    "Remove"
-                                ) {
-                                    removeWallpaper(entry)
-                                    fillWallpaperSettings()
-                                }
-                            }
-                        }
-                        .setNegativeButton("Cancel", null)
-                        .show()
+                    showSorairoConfirmDialog(
+                        "Remove this wallpaper?",
+                        "This removes the saved copy from your wallpaper library.",
+                        "Remove"
+                    ) {
+                        removeWallpaper(entry)
+                        fillWallpaperSettings()
+                    }
                     true
                 }
             }
