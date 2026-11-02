@@ -43,7 +43,8 @@ object Contrast {
      */
     fun ensure(color: Int, against: Int, min: Double): Int {
         if (ratio(color, against) >= min) return color
-        val target = if (luminance(against) > 0.5) BLACK else WHITE
+        // Whichever extreme reads better here (mid-tone backgrounds favor black).
+        val target = if (ratio(BLACK, against) >= ratio(WHITE, against)) BLACK else WHITE
         var t = 0.05f
         while (t < 1f) {
             val shade = mix(color, target, t)
