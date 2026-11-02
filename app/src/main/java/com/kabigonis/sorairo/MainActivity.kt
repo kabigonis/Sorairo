@@ -5182,6 +5182,20 @@ class MainActivity : AppCompatActivity() {
         })
 
         setBox.addView(buildThemeWallpaperSection())
+        val wallpaperBytes = readWallpaperIndex().sumOf { File(wallpaperDir(), it.file).length() }
+        setBox.addView(txt(11f, p.cDim, "wallpapers use %.1f MB".format(wallpaperBytes / 1048576.0)).apply {
+            setPadding(0, dp(4), 0, dp(5))
+        })
+        setBox.addView(txt(11f, p.cAccent, "[ clear downloaded theme wallpapers ]").apply {
+            setPadding(0, dp(4), 0, dp(12))
+            setOnClickListener {
+                showSorairoConfirmDialog(
+                    "Clear downloaded theme wallpapers?",
+                    "Only automatically downloaded theme wallpapers will be removed. Wallpapers added from your device stay untouched.",
+                    "Clear"
+                ) { clearDownloadedThemeWallpapers() }
+            }
+        })
         
         setBox.addView(txt(13f, p.cBlue, "your wallpapers").apply {
             setPadding(0, 0, 0, dp(8))
