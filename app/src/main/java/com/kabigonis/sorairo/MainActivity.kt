@@ -5695,7 +5695,7 @@ class MainActivity : AppCompatActivity() {
                 applyWallpaper(remembered, rememberForTheme = false)
             }
         }
-        beginThemeWallpaperDownloads(source, firstImmediately = !communityInstalled)
+        beginThemeWallpaperDownloads(source, firstImmediately = true)
     }
 
     private fun clearDownloadedThemeWallpapers() {
