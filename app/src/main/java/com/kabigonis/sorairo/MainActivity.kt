@@ -5344,7 +5344,9 @@ class MainActivity : AppCompatActivity() {
                         status.text = when {
                             message.contains("403") || message.contains("rate limit", true) -> "GitHub rate limit reached (HTTP 403). Try again later."
                             message.contains("UnknownHost") || message.contains("Unable to resolve") ||
-                                message.contains("failed to connect", true) || message.contains("offline", true) ->
+                                message.contains("failed to connect", true) || message.contains("offline", true) ||
+                                message.contains("timeout", true) || error is java.net.UnknownHostException ||
+                                error is java.net.ConnectException || error is java.net.SocketTimeoutException ->
                                 "offline — connect to the internet and try again"
                             else -> "couldn't load theme wallpapers: ${message}"
                         }
