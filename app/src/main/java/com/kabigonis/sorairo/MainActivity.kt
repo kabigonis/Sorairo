@@ -5203,11 +5203,9 @@ class MainActivity : AppCompatActivity() {
             return ThemeWallpaperSource(theme.title, theme.owner, theme.repo, "backgrounds")
         }
         if (index >= basePals.size) {
+            val have = basePals.map { it.name.lowercase().replace(" ", "") }.toSet()
             val bundled = OmarchyThemes.loadBundled(this).filter {
-                !it.isLight || true
-            }.filter { candidate ->
-                val have = basePals.map { it.name.lowercase().replace(" ", "") }.toSet()
-                candidate.name.lowercase().replace(" ", "") !in have
+                !it.isLight && it.name.lowercase().replace(" ", "") !in have
             }
             val theme = bundled.getOrNull(index - basePals.size) ?: return null
             return ThemeWallpaperSource(themeName, "basecamp", "omarchy", "themes/${theme.id}/backgrounds", true)
@@ -5294,12 +5292,11 @@ class MainActivity : AppCompatActivity() {
                 themeWallpaperFiles = cached
                 themeWallpaperLoadedFor = "${source.owner}/${source.repo}/${source.path}"
                 status.text = if (cached.isEmpty()) "no wallpapers listed for this theme" else "${cached.size} wallpapers"
-                renderThemeWallpaperCards(cached, grid, more, source)
-                load.text = "[ refresh theme wallpapers ]"
+                renderThemeWallpaperCards(cached, grid, more, source, allowDownloads = false)
             } else if (themeWallpaperLoadedFor == "${source.owner}/${source.repo}/${source.path}" &&
                 themeWallpaperFiles.isNotEmpty()) {
                 status.text = "${themeWallpaperFiles.size} wallpapers"
-                renderThemeWallpaperCards(themeWallpaperFiles, grid, more, source)
+                renderThemeWallpaperCards(themeWallpaperFiles, grid, more, source, allowDownloads = false)
             }
         }
         section.addView(grid)
@@ -5357,7 +5354,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderThemeWallpaperCards(
         files: List<ThemeWallpaperRemoteFile>, grid: RecyclerView, more: TextView,
-        source: ThemeWallpaperSource
+        source: ThemeWallpaperSource, allowDownloads: Boolean = true
     ) {
         val shown = files.take(themeWallpaperShown)
         val generation = ++themeWallpaperGeneration
@@ -5388,7 +5385,7 @@ class MainActivity : AppCompatActivity() {
                 val card = holder.itemView as LinearLayout
                 val image = card.getChildAt(0) as ImageView
                 (card.getChildAt(1) as TextView).text = item.name
-                loadThemeWallpaperPreview(item, image, source, generation)
+                loadThemeWallpaperPreview(item, image, source, generation, allowDownloads)
                 card.setOnClickListener { showThemeWallpaperConfirm(source, item) }
             }
         }
@@ -5408,9 +5405,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadThemeWallpaperPreview(
-        item: ThemeWallpaperRemoteFile, target: ImageView, source: ThemeWallpaperSource, generation: Int
+        item: ThemeWallpaperRemoteFile, target: ImageView, source: ThemeWallpaperSource,
+        generation: Int, allowDownloads: Boolean
     ) {
         val thumb = themeWallpaperPreviewFile(source, item)
+        if (!allowDownloads && !thumb.isFile) return
         target.tag = item.downloadUrl
         themeWallpaperExecutor.execute {
             val bitmap = runCatching {
@@ -5427,10 +5426,14 @@ class MainActivity : AppCompatActivity() {
                             temp.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample }
                         ) ?: error("couldn't decode preview")
                         val scale = minOf(1f, 480f / maxOf(decoded.width, decoded.height))
-                        if (scale < 1f) decoded = android.graphics.Bitmap.createScaledBitmap(
-                            decoded, (decoded.width * scale).toInt().coerceAtLeast(1),
-                            (decoded.height * scale).toInt().coerceAtLeast(1), true
-                        ).also { if (it.width != 0) Unit }
+                        if (scale < 1f) {
+                            val scaled = android.graphics.Bitmap.createScaledBitmap(
+                                decoded, (decoded.width * scale).toInt().coerceAtLeast(1),
+                                (decoded.height * scale).toInt().coerceAtLeast(1), true
+                            )
+                            if (scaled !== decoded) decoded.recycle()
+                            decoded = scaled
+                        }
                         thumb.parentFile?.mkdirs()
                         thumb.outputStream().use { out ->
                             check(decoded.compress(android.graphics.Bitmap.CompressFormat.JPEG, 82, out))
