@@ -3684,14 +3684,6 @@ class MainActivity : AppCompatActivity() {
                 setScroll.scrollTo(0, 0)
             }
         }
-        row("wallpaper downloads", if (prefs.getBoolean("wallpaper_any_network", false)) "any network" else "wifi only") {
-            prefs.edit().putBoolean("wallpaper_any_network", !prefs.getBoolean("wallpaper_any_network", false)).apply()
-            fillStyleSettings(); showOverlay()
-        }
-        row("wallpaper follows theme", if (prefs.getBoolean("wallpaper_follows_theme", true)) "on" else "off") {
-            prefs.edit().putBoolean("wallpaper_follows_theme", !prefs.getBoolean("wallpaper_follows_theme", true)).apply()
-            fillStyleSettings(); showOverlay()
-        }
         row("theme", pal.name) { showThemePicker() }
         row("community themes", "browse ›") {
             communityTab = "browse"
@@ -5121,7 +5113,11 @@ class MainActivity : AppCompatActivity() {
         if (wallpaperPageOpen && settings.visibility == View.VISIBLE) fillWallpaperSettings()
     }
 
-    private fun applyWallpaper(id: String, rememberForTheme: Boolean = true) {
+    private fun applyWallpaper(
+        id: String,
+        rememberForTheme: Boolean = true,
+        applyToSystem: Boolean = false
+    ) {
         val entry = readWallpaperIndex().firstOrNull { it.id == id } ?: return
         val now = System.currentTimeMillis()
         synchronized(this) {
@@ -5133,7 +5129,120 @@ class MainActivity : AppCompatActivity() {
         }
         edit.apply()
         showWallpaperBitmap(entry, true)
+        if (applyToSystem) {
+            if (prefs.getBoolean("wallpaper_home_lock_sync", true)) {
+                applySystemWallpaper(
+                    entry,
+                    android.app.WallpaperManager.FLAG_SYSTEM or android.app.WallpaperManager.FLAG_LOCK,
+                    "Home and lock screen wallpapers updated"
+                )
+            } else {
+                showWallpaperApplyDialog(entry)
+            }
+        }
         if (wallpaperPageOpen && settings.visibility == View.VISIBLE) fillWallpaperSettings()
+    }
+
+    private fun showWallpaperApplyDialog(entry: WallpaperEntry) {
+        val p = pal
+        val dialog = Dialog(this)
+        val shell = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = box(solidColor(), p.cAccent)
+            setPadding(dp(18), dp(16), dp(18), dp(12))
+        }
+        shell.addView(txt(16f, p.cBlue, "Apply wallpaper"))
+        shell.addView(txt(13f, p.cFg, "Where would you like to apply this wallpaper?").apply {
+            setPadding(0, dp(8), 0, dp(12))
+        })
+        fun choice(label: String, flags: Int, confirmation: String) {
+            shell.addView(txt(13f, p.cFg, label).apply {
+                setPadding(dp(4), dp(13), dp(4), dp(13))
+                setOnClickListener {
+                    dialog.dismiss()
+                    applySystemWallpaper(entry, flags, confirmation)
+                }
+            })
+            shell.addView(View(this).apply { setBackgroundColor(p.cDim) },
+                LinearLayout.LayoutParams(-1, dp(1)))
+        }
+        choice("Home screen", android.app.WallpaperManager.FLAG_SYSTEM, "Home screen wallpaper updated")
+        choice("Lock screen", android.app.WallpaperManager.FLAG_LOCK, "Lock screen wallpaper updated")
+        choice(
+            "Both screens",
+            android.app.WallpaperManager.FLAG_SYSTEM or android.app.WallpaperManager.FLAG_LOCK,
+            "Home and lock screen wallpapers updated"
+        )
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END
+        }
+        actions.addView(txt(12f, p.cDim, "CANCEL").apply {
+            setPadding(dp(12), dp(12), dp(4), dp(6))
+            setOnClickListener { dialog.dismiss() }
+        })
+        shell.addView(actions)
+        dialog.setContentView(shell)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.show()
+        dialog.window?.setLayout(
+            min(dp(520), resources.displayMetrics.widthPixels - dp(40)),
+            WindowManager.LayoutParams.WRAP_CONTENT
+        )
+    }
+
+    private fun buildWallpaperOptionsSection(target: LinearLayout) {
+        val p = pal
+        fun option(label: String, value: String, action: () -> Unit) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(2), dp(13), dp(2), dp(13))
+                isClickable = true
+                setOnClickListener { action() }
+            }
+            row.addView(txt(13f, p.cFg, label), LinearLayout.LayoutParams(0, -2, 1f))
+            row.addView(txt(12f, p.cAccent, value))
+            target.addView(row, LinearLayout.LayoutParams(-1, -2))
+            target.addView(View(this).apply { setBackgroundColor(p.cDim) },
+                LinearLayout.LayoutParams(-1, dp(1)))
+        }
+        option("wallpaper downloads", if (prefs.getBoolean("wallpaper_any_network", false)) "any network" else "wifi only") {
+            prefs.edit().putBoolean("wallpaper_any_network", !prefs.getBoolean("wallpaper_any_network", false)).apply()
+            fillWallpaperSettings()
+        }
+        option("wallpaper follows theme", if (prefs.getBoolean("wallpaper_follows_theme", true)) "on" else "off") {
+            prefs.edit().putBoolean("wallpaper_follows_theme", !prefs.getBoolean("wallpaper_follows_theme", true)).apply()
+            fillWallpaperSettings()
+        }
+        option("home & lock sync", if (prefs.getBoolean("wallpaper_home_lock_sync", true)) "on" else "off") {
+            prefs.edit().putBoolean("wallpaper_home_lock_sync", !prefs.getBoolean("wallpaper_home_lock_sync", true)).apply()
+            fillWallpaperSettings()
+        }
+        target.addView(txt(10f, p.cDim,
+            "When sync is off, selecting a wallpaper asks which screen to update. Theme auto-follow only changes Sorairo."),
+            LinearLayout.LayoutParams(-1, -2))
+    }
+
+    private fun applySystemWallpaper(entry: WallpaperEntry, which: Int, successMessage: String) {
+        wallpaperExecutor.execute {
+            val result = runCatching {
+                val file = File(wallpaperDir(), entry.file)
+                val bitmap = BitmapFactory.decodeFile(file.absolutePath)
+                    ?: error("couldn't decode wallpaper image")
+                try {
+                    android.app.WallpaperManager.getInstance(applicationContext)
+                        .setBitmap(bitmap, null, true, which)
+                } finally {
+                    bitmap.recycle()
+                }
+            }
+            handler.post {
+                result.onFailure {
+                    Toast.makeText(this, it.message ?: "couldn't apply system wallpaper", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 
     private fun removeWallpaper(entry: WallpaperEntry) {
@@ -5253,10 +5362,14 @@ class MainActivity : AppCompatActivity() {
         wallpaperPageOpen = true
         val p = pal
         setScroll.visibility = View.GONE
-        wallpaperPageShell?.let { settings.removeView(it) }
+        wallpaperPageShell?.let { oldShell ->
+            oldShell.animate().cancel()
+            settings.removeView(oldShell)
+        }
 
         val shell = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            alpha = 0f
             background = box(solidColor(), p.cAccent)
             setPadding(dp(14), dp(12), dp(14), dp(12))
             isClickable = true
@@ -5316,6 +5429,7 @@ class MainActivity : AppCompatActivity() {
         addTab("theme", "theme")
         addTab("library", "library")
         addTab("online", "online")
+        addTab("settings", "settings")
         tabRow.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         tabRow.addView(txt(11f, p.cAccent, "+ add from device").apply {
             setPadding(dp(8), dp(8), dp(2), dp(8))
@@ -5338,6 +5452,7 @@ class MainActivity : AppCompatActivity() {
         when (wallpaperTab) {
             "theme" -> innerContent.addView(buildThemeWallpaperSection())
             "online" -> innerContent.addView(buildWallhavenSection())
+            "settings" -> buildWallpaperOptionsSection(innerContent)
             else -> buildWallpaperLibrary(innerContent)
         }
 
@@ -5352,6 +5467,7 @@ class MainActivity : AppCompatActivity() {
             min(dp(520), dm.widthPixels - dp(32))
         }
         settings.addView(shell, FrameLayout.LayoutParams(width, maxHeight, Gravity.CENTER))
+        shell.animate().alpha(1f).setDuration(150).start()
     }
 
     private fun buildWallpaperLibrary(target: LinearLayout) {
@@ -5456,7 +5572,7 @@ class MainActivity : AppCompatActivity() {
                 (card.getChildAt(2) as TextView).text = entry.credit.orEmpty()
                 val isCurrent = prefs.getString("wall_current_id", null) == entry.id
                 card.background = if (isCurrent) box(pal.cBg, pal.cAccent) else null
-                card.setOnClickListener { applyWallpaper(entry.id) }
+                card.setOnClickListener { applyWallpaper(entry.id, applyToSystem = true) }
                 card.setOnLongClickListener {
                     showSorairoConfirmDialog(
                         "Remove this wallpaper?",
@@ -5614,7 +5730,13 @@ class MainActivity : AppCompatActivity() {
         val options = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(4), 0, dp(8)) }
         options.addView(txt(11f, if (wallhavenMatchTheme) p.cAccent else p.cDim, if (wallhavenMatchTheme) "[ match theme ✓ ]" else "[ match theme ]").apply {
             setPadding(dp(4), dp(8), dp(12), dp(8))
-            setOnClickListener { wallhavenMatchTheme = !wallhavenMatchTheme; wallhavenPage = 1; wallhavenResults = emptyList(); fillWallpaperSettings() }
+            setOnClickListener {
+                wallhavenMatchTheme = !wallhavenMatchTheme
+                wallhavenPage = 1
+                wallhavenResults = emptyList()
+                wallhavenStatus = ""
+                fillWallpaperSettings()
+            }
         })
         options.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         options.addView(txt(11f, p.cBlue, "[ " + wallhavenSort + " ]").apply {
@@ -5623,6 +5745,7 @@ class MainActivity : AppCompatActivity() {
                 wallhavenSort = when (wallhavenSort) { "toplist" -> "date_added"; "date_added" -> "relevance"; else -> "toplist" }
                 wallhavenPage = 1
                 wallhavenResults = emptyList()
+                wallhavenStatus = ""
                 fillWallpaperSettings()
             }
         })
@@ -5719,7 +5842,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun applyWallhavenFromCard(item: WallhavenWallpaper, card: LinearLayout, apply: Boolean) {
         val existing = readWallpaperIndex().firstOrNull { it.source == "wallhaven" && it.remoteName == item.id }
-        if (existing != null) { if (apply) applyWallpaper(existing.id); return }
+        if (existing != null) { if (apply) applyWallpaper(existing.id, applyToSystem = true); return }
         if (!wallhavenBusy.add(item.id)) return
         val progress = ProgressBar(this).apply { isIndeterminate = true }
         card.addView(progress, LinearLayout.LayoutParams(dp(20), dp(20)).apply { gravity = Gravity.CENTER })
@@ -5741,7 +5864,7 @@ class MainActivity : AppCompatActivity() {
             ui {
                 wallhavenBusy.remove(item.id)
                 card.removeView(progress)
-                result.onSuccess { entry -> if (apply) applyWallpaper(entry.id) }
+                result.onSuccess { entry -> if (apply) applyWallpaper(entry.id, applyToSystem = true) }
                     .onFailure { error -> Toast.makeText(this, error.message ?: "couldn't download wallpaper", Toast.LENGTH_LONG).show() }
             }
         }
@@ -6086,7 +6209,7 @@ class MainActivity : AppCompatActivity() {
     private fun applyThemeWallpaperFromCard(source: ThemeWallpaperSource, item: ThemeWallpaperRemoteFile, card: LinearLayout) {
         val existing = findThemeWallpaperEntry(source, item)
         if (existing != null) {
-            applyWallpaper(existing.id)
+            applyWallpaper(existing.id, applyToSystem = true)
             return
         }
         val key = "${source.id}/${item.name}"
@@ -6101,7 +6224,7 @@ class MainActivity : AppCompatActivity() {
             ui {
                 themeWallpaperCardBusy.remove(key)
                 card.removeView(progress)
-                result.onSuccess { applyWallpaper(it.id) }
+                result.onSuccess { applyWallpaper(it.id, applyToSystem = true) }
                     .onFailure { Toast.makeText(this, it.message ?: "couldn't download wallpaper", Toast.LENGTH_SHORT).show() }
             }
         }
