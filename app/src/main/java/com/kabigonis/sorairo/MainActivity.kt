@@ -2711,6 +2711,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showSettings() {
+        wallpaperPageOpen = false
         closeDrawer()
         closeQs()
         fillSettings()
@@ -3202,6 +3203,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun closeSettings() {
+        wallpaperPageOpen = false
         val closingSettings = settings
         if (closingSettings.visibility != View.VISIBLE) return
         closingSettings.animate().cancel()
