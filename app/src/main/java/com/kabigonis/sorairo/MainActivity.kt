@@ -98,6 +98,7 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
 import java.io.File
+import java.security.MessageDigest
 import java.text.Normalizer
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -675,7 +676,8 @@ class MainActivity : AppCompatActivity() {
         val remoteSize: Long = 0L,
         val themeId: String? = null,
         val autoDownloaded: Boolean = false,
-        val lastUsed: Long = 0L
+        val lastUsed: Long = 0L,
+        val sha256: String? = null
     )
     private val wallpaperExecutor = Executors.newFixedThreadPool(2)
     private val wallpaperThumbCache = object : LruCache<String, android.graphics.Bitmap>(24 * 1024 * 1024) {
@@ -4858,7 +4860,8 @@ class MainActivity : AppCompatActivity() {
                     item.optLong("remoteSize", 0L),
                     item.optString("themeId").takeIf { it.isNotBlank() },
                     item.optBoolean("autoDownloaded", false),
-                    item.optLong("lastUsed", 0L)
+                    item.optLong("lastUsed", 0L),
+                    item.optString("sha256").takeIf { it.isNotBlank() }
                 )
             }.filter { File(wallpaperDir(), it.file).isFile }.toMutableList()
         } catch (_: Exception) { mutableListOf() }
@@ -4878,6 +4881,7 @@ class MainActivity : AppCompatActivity() {
             entry.themeId?.let { item.put("themeId", it) }
             item.put("autoDownloaded", entry.autoDownloaded)
             item.put("lastUsed", entry.lastUsed)
+            entry.sha256?.let { item.put("sha256", it) }
             array.put(item)
         }
         val temp = File(wallpaperDir(), "index.json.tmp")
@@ -4887,12 +4891,93 @@ class MainActivity : AppCompatActivity() {
         check(temp.renameTo(target)) { "couldn't save wallpaper index" }
     }
 
+    private fun sha256File(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().buffered().use { input ->
+            val buffer = ByteArray(32 * 1024)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                digest.update(buffer, 0, count)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    private data class WallpaperMergePlan(
+        val kept: List<WallpaperEntry>,
+        val removed: List<WallpaperEntry>,
+        val replacements: Map<String, String>
+    )
+
+    // Pure planner. The index is newest-first, so the last duplicate is oldest.
+    private fun buildWallpaperMergePlan(
+        index: List<WallpaperEntry>, hashes: Map<String, String>
+    ): WallpaperMergePlan {
+        val replacements = linkedMapOf<String, String>()
+        val removedIds = linkedSetOf<String>()
+        index.indices.groupBy { hashes[index[it].id] ?: index[it].sha256.orEmpty() }
+            .filterKeys { it.isNotBlank() }.values.filter { it.size > 1 }.forEach { positions ->
+                val kept = index[positions.maxOrNull()!!]
+                positions.filter { index[it].id != kept.id }.forEach { position ->
+                    val duplicate = index[position]
+                    replacements[duplicate.id] = kept.id
+                    removedIds.add(duplicate.id)
+                }
+            }
+        val kept = index.filterNot { it.id in removedIds }.map { entry ->
+            val hash = hashes[entry.id] ?: entry.sha256
+            if (entry.sha256 == hash) entry else entry.copy(sha256 = hash)
+        }
+        return WallpaperMergePlan(kept, index.filter { it.id in removedIds }, replacements)
+    }
+
+    private fun migrateWallpaperLibraryDuplicates() {
+        if (prefs.getBoolean("wallpaper_sha256_migrated_v1", false)) return
+        synchronized(this) {
+            if (prefs.getBoolean("wallpaper_sha256_migrated_v1", false)) return
+            val index = readWallpaperIndex()
+            val hashes = index.associate { entry ->
+                entry.id to sha256File(File(wallpaperDir(), entry.file))
+            }
+            val plan = buildWallpaperMergePlan(index, hashes)
+            val editor = prefs.edit()
+            prefs.getString("wall_current_id", null)?.let { id ->
+                editor.putString("wall_current_id", plan.replacements[id] ?: id)
+            }
+            prefs.all.keys.filter { it.startsWith("theme_wall_") }.forEach { key ->
+                val id = prefs.getString(key, null) ?: return@forEach
+                plan.replacements[id]?.let { editor.putString(key, it) }
+            }
+            plan.removed.forEach { entry ->
+                File(wallpaperDir(), entry.file).delete()
+                wallpaperThumbCache.remove(entry.id)
+                screenWallpaperCache.remove(entry.id)
+            }
+            writeWallpaperIndex(plan.kept)
+            editor.putBoolean("wallpaper_sha256_migrated_v1", true).apply()
+        }
+    }
+
+    private fun findWallpaperByHash(hash: String): WallpaperEntry? =
+        readWallpaperIndex().firstOrNull { it.sha256 == hash }
+
+    private fun protectedWallpaperIds(): Set<String> = buildSet {
+        prefs.getString("wall_current_id", null)?.let(::add)
+        prefs.all.keys.filter { it.startsWith("theme_wall_") }.forEach { key ->
+            prefs.getString(key, null)?.let(::add)
+        }
+    }
+
     private fun importWallpaper(uri: Uri, source: String): WallpaperEntry {
         val sourceFile = File(cacheDir, "wallpaper-import-${UUID.randomUUID()}.tmp")
         try {
             contentResolver.openInputStream(uri)?.use { input ->
                 sourceFile.outputStream().use { output -> input.copyTo(output) }
             } ?: throw IllegalArgumentException("Unable to read image")
+            migrateWallpaperLibraryDuplicates()
+            val contentHash = sha256File(sourceFile)
+            findWallpaperByHash(contentHash)?.let { return it }
             val orientation = ExifInterface(sourceFile.absolutePath).getAttributeInt(
                 ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL
             )
@@ -4936,8 +5021,9 @@ class MainActivity : AppCompatActivity() {
             check(finalBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, out))
         }
             finalBitmap.recycle()
-            val entry = WallpaperEntry(id, filename, source)
+            val entry = WallpaperEntry(id, filename, source, sha256 = contentHash)
             synchronized(this) {
+                readWallpaperIndex().firstOrNull { it.sha256 == contentHash }?.let { destination.delete(); return it }
                 val items = readWallpaperIndex()
                 items.add(0, entry)
                 writeWallpaperIndex(items)
@@ -4954,6 +5040,9 @@ class MainActivity : AppCompatActivity() {
         remoteName: String? = null, remoteSize: Long = 0L, themeId: String? = null,
         autoDownloaded: Boolean = false
     ): WallpaperEntry {
+        migrateWallpaperLibraryDuplicates()
+        val contentHash = sha256File(sourceFile)
+        findWallpaperByHash(contentHash)?.let { return it }
         val orientation = ExifInterface(sourceFile.absolutePath).getAttributeInt(
             ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL
         )
@@ -4994,8 +5083,9 @@ class MainActivity : AppCompatActivity() {
             }
         } finally { finalBitmap.recycle() }
         val entry = WallpaperEntry(id, filename, source, credit, link, remoteName, remoteSize,
-            themeId, autoDownloaded, System.currentTimeMillis())
+            themeId, autoDownloaded, System.currentTimeMillis(), contentHash)
         synchronized(this) {
+            readWallpaperIndex().firstOrNull { it.sha256 == contentHash }?.let { File(wallpaperDir(), filename).delete(); return it }
             val items = readWallpaperIndex()
             items.add(0, entry)
             writeWallpaperIndex(items)
@@ -5052,11 +5142,15 @@ class MainActivity : AppCompatActivity() {
                 } catch (_: Exception) {
                 } finally {
                     prefs.edit().remove("wall").putBoolean("wall_library_migrated_v1", true).apply()
+                    migrateWallpaperLibraryDuplicates()
                     handler.post { loadWallpaperFromLibrary() }
                 }
             }
         } else if (prefs.getBoolean("wall_library_migrated_v1", false)) {
-            loadWallpaperFromLibrary()
+            wallpaperExecutor.execute {
+                migrateWallpaperLibraryDuplicates()
+                handler.post { loadWallpaperFromLibrary() }
+            }
         }
     }
 
@@ -5182,7 +5276,8 @@ class MainActivity : AppCompatActivity() {
         })
 
         setBox.addView(buildThemeWallpaperSection())
-        val wallpaperBytes = readWallpaperIndex().sumOf { File(wallpaperDir(), it.file).length() }
+        val wallpaperBytes = wallpaperDir().listFiles()?.filter { it.isFile && it.extension.equals("jpg", true) }
+            ?.sumOf { it.length() } ?: 0L
         setBox.addView(txt(11f, p.cDim, "wallpapers use %.1f MB".format(wallpaperBytes / 1048576.0)).apply {
             setPadding(0, dp(4), 0, dp(5))
         })
@@ -5539,7 +5634,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun findThemeWallpaperEntry(source: ThemeWallpaperSource, item: ThemeWallpaperRemoteFile): WallpaperEntry? =
         readWallpaperIndex().firstOrNull {
-            it.remoteName == item.name && it.remoteSize == item.size
+            it.themeId == source.id && it.remoteName == item.name && it.remoteSize == item.size
         }
 
     private fun isWallpaperDownloadAllowed(): Boolean {
@@ -5568,9 +5663,9 @@ class MainActivity : AppCompatActivity() {
         synchronized(this) {
             val items = readWallpaperIndex().toMutableList()
             var used = items.filter { it.autoDownloaded }.sumOf { File(wallpaperDir(), it.file).length() }
-            for (entry in items.filter { it.autoDownloaded }.sortedBy { it.lastUsed }) {
+            val protected = protectedWallpaperIds()
+            for (entry in items.filter { it.autoDownloaded && it.id !in protected }.sortedBy { it.lastUsed }) {
                 if (used + incoming <= cap) break
-                if (prefs.getString("wall_current_id", null) == entry.id) continue
                 used -= File(wallpaperDir(), entry.file).length()
                 File(wallpaperDir(), entry.file).delete()
                 items.removeAll { it.id == entry.id }
@@ -5696,18 +5791,14 @@ class MainActivity : AppCompatActivity() {
     private fun clearDownloadedThemeWallpapers() {
         synchronized(this) {
             val items = readWallpaperIndex()
-            val removed = items.filter { it.autoDownloaded }
+            val protected = protectedWallpaperIds()
+            val removed = items.filter { it.autoDownloaded && it.id !in protected }
             removed.forEach {
                 File(wallpaperDir(), it.file).delete()
                 wallpaperThumbCache.remove(it.id)
                 screenWallpaperCache.remove(it.id)
             }
-            val current = prefs.getString("wall_current_id", null)
-            if (removed.any { it.id == current }) {
-                prefs.edit().remove("wall_current_id").apply()
-                if (::wall.isInitialized) wall.setImageDrawable(null)
-            }
-            writeWallpaperIndex(items.filterNot { it.autoDownloaded })
+            writeWallpaperIndex(items.filterNot { it in removed })
         }
         if (wallpaperPageOpen) fillWallpaperSettings()
     }
