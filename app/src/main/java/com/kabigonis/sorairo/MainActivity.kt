@@ -691,6 +691,7 @@ class MainActivity : AppCompatActivity() {
     private var themeWallpaperStatus = ""
     private var themeWallpaperFiles: List<ThemeWallpaperRemoteFile> = emptyList()
     private var themeWallpaperLoadedFor: String? = null
+    private var themeWallpaperAllowPreviewLoad = false
     private lateinit var clock: TextView
     private lateinit var status: TextView
     private lateinit var pager: ViewPager2
@@ -5268,6 +5269,7 @@ class MainActivity : AppCompatActivity() {
             visibility = View.GONE
             setOnClickListener {
                 themeWallpaperShown += 8
+                themeWallpaperAllowPreviewLoad = true
                 fillWallpaperSettings()
             }
         }
@@ -5294,11 +5296,13 @@ class MainActivity : AppCompatActivity() {
                 themeWallpaperFiles = cached
                 themeWallpaperLoadedFor = "${source.owner}/${source.repo}/${source.path}"
                 status.text = if (cached.isEmpty()) "no wallpapers listed for this theme" else "${cached.size} wallpapers"
-                renderThemeWallpaperCards(cached, grid, more, source, allowDownloads = false)
+                renderThemeWallpaperCards(cached, grid, more, source, allowDownloads = themeWallpaperAllowPreviewLoad)
+                themeWallpaperAllowPreviewLoad = false
             } else if (themeWallpaperLoadedFor == "${source.owner}/${source.repo}/${source.path}" &&
                 themeWallpaperFiles.isNotEmpty()) {
                 status.text = "${themeWallpaperFiles.size} wallpapers"
-                renderThemeWallpaperCards(themeWallpaperFiles, grid, more, source, allowDownloads = false)
+                renderThemeWallpaperCards(themeWallpaperFiles, grid, more, source, allowDownloads = themeWallpaperAllowPreviewLoad)
+                themeWallpaperAllowPreviewLoad = false
             }
         }
         section.addView(grid)
@@ -5461,6 +5465,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showThemeWallpaperConfirm(source: ThemeWallpaperSource, item: ThemeWallpaperRemoteFile) {
+        val actualOwner = Uri.parse(item.downloadUrl).pathSegments.firstOrNull()?.takeIf { it.isNotBlank() }
+            ?: source.owner
+        val creditedSource = source.copy(owner = actualOwner)
         val p = pal
         val dialog = Dialog(this)
         val shell = LinearLayout(this).apply {
@@ -5470,7 +5477,7 @@ class MainActivity : AppCompatActivity() {
         }
         shell.addView(txt(16f, p.cBlue, item.name))
         shell.addView(txt(12f, p.cFg,
-            "${source.theme} by ${source.owner}\n${"%.2f".format(item.size / 1048576.0)} MB").apply {
+            "${creditedSource.theme} by ${creditedSource.owner}\n${"%.2f".format(item.size / 1048576.0)} MB").apply {
             setPadding(0, dp(8), 0, dp(4))
         })
         shell.addView(txt(10f, p.cDim, item.htmlUrl).apply {
@@ -5492,8 +5499,8 @@ class MainActivity : AppCompatActivity() {
             })
         }
         action("cancel", p.cDim) {}
-        action("add", p.cAccent) { addThemeWallpaper(source, item, false) }
-        action("add + apply", p.cAccent) { addThemeWallpaper(source, item, true) }
+        action("add", p.cAccent) { addThemeWallpaper(creditedSource, item, false) }
+        action("add + apply", p.cAccent) { addThemeWallpaper(creditedSource, item, true) }
         shell.addView(actions)
         dialog.setContentView(shell)
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
