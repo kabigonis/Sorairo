@@ -325,7 +325,8 @@ object CommunityThemes {
             if (item.optString("type") != "file" ||
                 !SAFE_FILE.matches(name) || name.startsWith(".") ||
                 ext !in extensions || size !in 1..(15L * 1024L * 1024L) ||
-                !isAllowedUrl(download, setOf("raw.githubusercontent.com"))) return@mapNotNull null
+                !isAllowedUrl(download, setOf("raw.githubusercontent.com")) ||
+                !isAllowedUrl(html, setOf("github.com"))) return@mapNotNull null
             GithubWallpaperFile(name, size, download, html)
         }
     }
