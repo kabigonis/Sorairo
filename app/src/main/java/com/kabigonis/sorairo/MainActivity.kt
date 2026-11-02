@@ -5144,22 +5144,51 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showWallpaperApplyDialog(entry: WallpaperEntry) {
-        AlertDialog.Builder(this@MainActivity)
-            .setTitle("Apply wallpaper")
-            .setMessage("Where would you like to apply this wallpaper?")
-            .setItems(arrayOf("Home screen", "Lock screen", "Both screens")) { _, choice ->
-                when (choice) {
-                    0 -> applySystemWallpaper(entry, android.app.WallpaperManager.FLAG_SYSTEM, "Home screen wallpaper updated")
-                    1 -> applySystemWallpaper(entry, android.app.WallpaperManager.FLAG_LOCK, "Lock screen wallpaper updated")
-                    2 -> applySystemWallpaper(
-                        entry,
-                        android.app.WallpaperManager.FLAG_SYSTEM or android.app.WallpaperManager.FLAG_LOCK,
-                        "Home and lock screen wallpapers updated"
-                    )
+        val p = pal
+        val dialog = Dialog(this)
+        val shell = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = box(solidColor(), p.cAccent)
+            setPadding(dp(18), dp(16), dp(18), dp(12))
+        }
+        shell.addView(txt(16f, p.cBlue, "Apply wallpaper"))
+        shell.addView(txt(13f, p.cFg, "Where would you like to apply this wallpaper?").apply {
+            setPadding(0, dp(8), 0, dp(12))
+        })
+        fun choice(label: String, flags: Int, confirmation: String) {
+            shell.addView(txt(13f, p.cFg, label).apply {
+                setPadding(dp(4), dp(13), dp(4), dp(13))
+                setOnClickListener {
+                    dialog.dismiss()
+                    applySystemWallpaper(entry, flags, confirmation)
                 }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+            })
+            shell.addView(View(this).apply { setBackgroundColor(p.cDim) },
+                LinearLayout.LayoutParams(-1, dp(1)))
+        }
+        choice("Home screen", android.app.WallpaperManager.FLAG_SYSTEM, "Home screen wallpaper updated")
+        choice("Lock screen", android.app.WallpaperManager.FLAG_LOCK, "Lock screen wallpaper updated")
+        choice(
+            "Both screens",
+            android.app.WallpaperManager.FLAG_SYSTEM or android.app.WallpaperManager.FLAG_LOCK,
+            "Home and lock screen wallpapers updated"
+        )
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END
+        }
+        actions.addView(txt(12f, p.cDim, "CANCEL").apply {
+            setPadding(dp(12), dp(12), dp(4), dp(6))
+            setOnClickListener { dialog.dismiss() }
+        })
+        shell.addView(actions)
+        dialog.setContentView(shell)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.show()
+        dialog.window?.setLayout(
+            min(dp(520), resources.displayMetrics.widthPixels - dp(40)),
+            WindowManager.LayoutParams.WRAP_CONTENT
+        )
     }
 
     private fun buildWallpaperOptionsSection(target: LinearLayout) {
@@ -5209,9 +5238,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             handler.post {
-                result.onSuccess {
-                    Toast.makeText(this, successMessage, Toast.LENGTH_SHORT).show()
-                }.onFailure {
+                result.onFailure {
                     Toast.makeText(this, it.message ?: "couldn't apply system wallpaper", Toast.LENGTH_LONG).show()
                 }
             }
@@ -5335,10 +5362,14 @@ class MainActivity : AppCompatActivity() {
         wallpaperPageOpen = true
         val p = pal
         setScroll.visibility = View.GONE
-        wallpaperPageShell?.let { settings.removeView(it) }
+        wallpaperPageShell?.let { oldShell ->
+            oldShell.animate().cancel()
+            settings.removeView(oldShell)
+        }
 
         val shell = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            alpha = 0f
             background = box(solidColor(), p.cAccent)
             setPadding(dp(14), dp(12), dp(14), dp(12))
             isClickable = true
@@ -5436,6 +5467,7 @@ class MainActivity : AppCompatActivity() {
             min(dp(520), dm.widthPixels - dp(32))
         }
         settings.addView(shell, FrameLayout.LayoutParams(width, maxHeight, Gravity.CENTER))
+        shell.animate().alpha(1f).setDuration(150).start()
     }
 
     private fun buildWallpaperLibrary(target: LinearLayout) {
@@ -5698,7 +5730,13 @@ class MainActivity : AppCompatActivity() {
         val options = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(4), 0, dp(8)) }
         options.addView(txt(11f, if (wallhavenMatchTheme) p.cAccent else p.cDim, if (wallhavenMatchTheme) "[ match theme ✓ ]" else "[ match theme ]").apply {
             setPadding(dp(4), dp(8), dp(12), dp(8))
-            setOnClickListener { wallhavenMatchTheme = !wallhavenMatchTheme; wallhavenPage = 1; wallhavenResults = emptyList(); fillWallpaperSettings() }
+            setOnClickListener {
+                wallhavenMatchTheme = !wallhavenMatchTheme
+                wallhavenPage = 1
+                wallhavenResults = emptyList()
+                wallhavenStatus = ""
+                fillWallpaperSettings()
+            }
         })
         options.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         options.addView(txt(11f, p.cBlue, "[ " + wallhavenSort + " ]").apply {
@@ -5707,6 +5745,7 @@ class MainActivity : AppCompatActivity() {
                 wallhavenSort = when (wallhavenSort) { "toplist" -> "date_added"; "date_added" -> "relevance"; else -> "toplist" }
                 wallhavenPage = 1
                 wallhavenResults = emptyList()
+                wallhavenStatus = ""
                 fillWallpaperSettings()
             }
         })
