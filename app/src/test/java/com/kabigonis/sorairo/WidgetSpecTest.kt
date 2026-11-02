@@ -35,6 +35,12 @@ class WidgetSpecTest {
         assertEquals(WidgetSpec.ContainerType.COLUMN, (spec.root as WidgetSpec.WidgetNode.Container).type)
     }
 
+    @Test fun rejectsNonStandardLenientJsonSyntax() {
+        assertTrue(errors(valid().replace("\\\"schema\\\":1", "'schema':1")).any { it.contains("strict JSON") })
+        assertTrue(errors(valid().replace("\\\"schema\\\":1", "schema:1")).any { it.contains("strict JSON") })
+        assertTrue(errors(valid().replace("\\\"version\\\":1", "\\\"version\\\":01")).any { it.contains("strict JSON") })
+    }
+
     @Test fun rejectsMalformedJsonAndTrailingData() {
         assertTrue(errors("{").any { it.startsWith("Invalid JSON") })
         assertTrue(errors(valid() + " false").any { it.contains("trailing data") })
