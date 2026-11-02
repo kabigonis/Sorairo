@@ -59,6 +59,10 @@ SOFTWARE.
 
 Wallpaper images from community and Omarchy themes are downloaded when a theme is installed or applied, subject to the wallpaper download network setting. Downloaded images stay on the device and are not bundled with or committed to the app. The images remain the property of their respective authors, and credits are shown in the wallpaper page.
 
+## Wallhaven
+
+Wallhaven images remain the property of their respective uploaders. Sorairo downloads an image only when the user requests it, for personal use, and displays a Wallhaven credit in the wallpaper library.
+
 ## Community themes
 
 The browser reads the theme list and screenshots from https://omarchy.org/themes when opened, and downloads only a theme's palette file (`colors.toml`, or `alacritty.toml` for older themes) from its GitHub repo when the user taps install. Nothing is bundled and nothing from a theme is executed. Themes and screenshots belong to their authors. The approach follows Omalauncher (see above).
