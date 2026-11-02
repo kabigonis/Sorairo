@@ -5567,7 +5567,7 @@ class MainActivity : AppCompatActivity() {
             setRequestProperty("Accept", "application/json")
             setRequestProperty("User-Agent", "Sorairo/1.0")
         }
-        try {
+        return try {
             val code = connection.responseCode
             if (code == 429) throw IllegalStateException("slow down, try again in a minute")
             require(code == 200) { "Wallhaven search failed (HTTP " + code + ")" }
