@@ -5523,6 +5523,17 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun decodeWallhavenImage(file: File, maxDimension: Int): android.graphics.Bitmap {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        require(bounds.outWidth > 0 && bounds.outHeight > 0) { "invalid image dimensions" }
+        require(bounds.outWidth.toLong() * bounds.outHeight.toLong() <= 40_000_000L) { "image exceeds 40 megapixels" }
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / sample > maxDimension) sample *= 2
+        return BitmapFactory.decodeFile(file.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample })
+            ?: throw IllegalArgumentException("couldn't decode image")
+    }
+
     private fun wallhavenAccentColor(): String {
         val accent = pal.cAccent
         return wallhavenColors.minBy { hex ->
@@ -5571,8 +5582,10 @@ class MainActivity : AppCompatActivity() {
                 val thumbs = item.optJSONObject("thumbs") ?: JSONObject()
                 if (id.isBlank() || pageUrl.isBlank() || path.isBlank() || resolution.isBlank()) null
                 else runCatching {
-                    wallhavenAllowedUrl(path)
-                    WallhavenWallpaper(id, pageUrl, resolution, item.optLong("file_size", 0L), thumbs, path)
+                    val safePath = wallhavenAllowedUrl(path)
+                    val safePage = wallhavenAllowedUrl(pageUrl)
+                    require(safePage.host.equals("wallhaven.cc", true)) { "invalid Wallhaven page URL" }
+                    WallhavenWallpaper(id, safePage.toString(), resolution, item.optLong("file_size", 0L), thumbs, safePath.toString())
                 }.getOrNull()
             }
             val meta = json.optJSONObject("meta")
@@ -5595,15 +5608,6 @@ class MainActivity : AppCompatActivity() {
             setText(wallhavenQuery)
             imeOptions = EditorInfo.IME_ACTION_SEARCH
             inputType = InputType.TYPE_CLASS_TEXT
-            setOnEditorActionListener { _, actionId, event ->
-                if (actionId == EditorInfo.IME_ACTION_SEARCH || (event?.keyCode == android.view.KeyEvent.KEYCODE_ENTER && event.action == android.view.KeyEvent.ACTION_UP)) {
-                    wallhavenQuery = text.toString().trim()
-                    wallhavenPage = 1
-                    wallhavenResults = emptyList()
-                    loadWallhavenPage(1, false, status, grid, more)
-                    true
-                } else false
-            }
         }
         searchRow.addView(query, LinearLayout.LayoutParams(0, dp(44), 1f))
         section.addView(searchRow)
@@ -5633,6 +5637,18 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(8), dp(10), dp(8), dp(10))
             visibility = if (wallhavenPage < wallhavenLastPage && wallhavenResults.isNotEmpty()) View.VISIBLE else View.GONE
             setOnClickListener { if (wallhavenPage < wallhavenLastPage) { wallhavenPage++; loadWallhavenPage(wallhavenPage, true, status, grid, this) } }
+        }
+        query.setOnEditorActionListener { view, actionId, event ->
+            if (actionId == EditorInfo.IME_ACTION_SEARCH ||
+                (event?.keyCode == android.view.KeyEvent.KEYCODE_ENTER && event.action == android.view.KeyEvent.ACTION_UP)) {
+                wallhavenQuery = view.text.toString().trim()
+                wallhavenPage = 1
+                wallhavenResults = emptyList()
+                loadWallhavenPage(1, false, status, grid, more)
+                val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+                imm.hideSoftInputFromWindow(view.windowToken, 0)
+                true
+            } else false
         }
         section.addView(more)
         if (wallhavenResults.isEmpty() && wallhavenStatus.isBlank()) section.post { if (wallpaperPageOpen) loadWallhavenPage(1, false, status, grid, more) }
@@ -5676,11 +5692,17 @@ class MainActivity : AppCompatActivity() {
                 val card = holder.itemView as LinearLayout
                 val image = card.getChildAt(0) as ImageView
                 (card.getChildAt(1) as TextView).text = item.resolution + " · " + item.id
-                val thumbUrl = item.thumbs.optString("small").ifBlank { item.thumbs.optString("large") }
+                val thumbUrl = runCatching {
+                    wallhavenAllowedUrl(item.thumbs.optString("small").ifBlank { item.thumbs.optString("large") }).toString()
+                }.getOrNull().orEmpty()
                 image.tag = thumbUrl
                 val cached = File(File(cacheDir, "wallhaven-thumbs"), item.id + ".img")
                 wallpaperExecutor.execute {
-                    val bitmap = runCatching { if (!cached.isFile) downloadWallhavenBytes(thumbUrl, cached); decodeWallhavenImage(cached, 480) }.getOrNull()
+                    val bitmap = runCatching {
+                        require(thumbUrl.isNotBlank()) { "invalid thumbnail URL" }
+                        if (!cached.isFile) downloadWallhavenBytes(thumbUrl, cached)
+                        decodeWallhavenImage(cached, 480)
+                    }.getOrNull()
                     ui { if (image.tag == thumbUrl && bitmap != null) image.setImageBitmap(bitmap) }
                 }
                 card.setOnClickListener { applyWallhavenFromCard(item, card, true) }
