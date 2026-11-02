@@ -4999,10 +4999,18 @@ class MainActivity : AppCompatActivity() {
         if (wallpaperPageOpen && settings.visibility == View.VISIBLE) fillWallpaperSettings()
     }
 
-    private fun applyWallpaper(id: String) {
+    private fun applyWallpaper(id: String, rememberForTheme: Boolean = true) {
         val entry = readWallpaperIndex().firstOrNull { it.id == id } ?: return
-        prefs.edit().putString("wall_current_id", id).remove("wall").apply()
-        loadWallpaper()
+        val now = System.currentTimeMillis()
+        synchronized(this) {
+            writeWallpaperIndex(readWallpaperIndex().map { if (it.id == id) it.copy(lastUsed = now) else it })
+        }
+        val edit = prefs.edit().putString("wall_current_id", id).remove("wall")
+        if (rememberForTheme && prefs.getBoolean("wallpaper_follows_theme", true)) {
+            currentThemeWallpaperSource()?.let { edit.putString("theme_wall_${it.id}", id) }
+        }
+        edit.apply()
+        showWallpaperBitmap(entry, true)
         if (wallpaperPageOpen && settings.visibility == View.VISIBLE) fillWallpaperSettings()
     }
 
@@ -5012,6 +5020,7 @@ class MainActivity : AppCompatActivity() {
             writeWallpaperIndex(readWallpaperIndex().filterNot { it.id == entry.id })
         }
         wallpaperThumbCache.remove(entry.id)
+        screenWallpaperCache.remove(entry.id)
         if (prefs.getString("wall_current_id", null) == entry.id) clearCurrentWallpaper()
         else if (wallpaperPageOpen && settings.visibility == View.VISIBLE) fillWallpaperSettings()
     }
@@ -5047,20 +5056,36 @@ class MainActivity : AppCompatActivity() {
             wall.setImageDrawable(null)
             return
         }
+        showWallpaperBitmap(entry, false)
+    }
+
+    private fun showWallpaperBitmap(entry: WallpaperEntry, crossfade: Boolean) {
+        if (!::wall.isInitialized) return
+        fun display(bitmap: android.graphics.Bitmap) {
+            val next = BitmapDrawable(resources, bitmap)
+            if (crossfade && wall.drawable != null) {
+                wall.setImageDrawable(android.graphics.drawable.TransitionDrawable(arrayOf(wall.drawable, next)).apply {
+                    isCrossFadeEnabled = true
+                    startTransition(250)
+                })
+            } else wall.setImageDrawable(next)
+        }
+        screenWallpaperCache.get(entry.id)?.let { if (prefs.getString("wall_current_id", null) == entry.id) display(it); return }
         wallpaperExecutor.execute {
-            val bitmap = try {
+            val bitmap = runCatching {
+                val file = File(wallpaperDir(), entry.file)
                 val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                BitmapFactory.decodeFile(File(wallpaperDir(), entry.file).absolutePath, bounds)
+                BitmapFactory.decodeFile(file.absolutePath, bounds)
+                require(bounds.outWidth > 0 && bounds.outHeight > 0)
+                val maxDimension = maxOf(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels).coerceAtLeast(1)
                 var sample = 1
-                while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 2560) sample *= 2
-                BitmapFactory.decodeFile(
-                    File(wallpaperDir(), entry.file).absolutePath,
-                    BitmapFactory.Options().apply { inSampleSize = sample }
-                )
-            } catch (_: Exception) { null }
+                while (maxOf(bounds.outWidth, bounds.outHeight) / sample > maxDimension * 1.15f) sample *= 2
+                BitmapFactory.decodeFile(file.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample })
+            }.getOrNull()
             handler.post {
-                if (prefs.getString("wall_current_id", null) == entry.id && bitmap != null) {
-                    wall.setImageBitmap(bitmap)
+                if (bitmap != null) {
+                    screenWallpaperCache.put(entry.id, bitmap)
+                    if (prefs.getString("wall_current_id", null) == entry.id) display(bitmap)
                 }
             }
         }
