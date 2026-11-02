@@ -701,6 +701,8 @@ class MainActivity : AppCompatActivity() {
         val name: String, val size: Long, val downloadUrl: String, val htmlUrl: String
     )
     private val themeWallpaperExecutor = Executors.newSingleThreadExecutor()
+    // Preview work is independent from metadata/API requests so thumbnails load concurrently.
+    private val wallpaperPreviewExecutor = Executors.newFixedThreadPool(4)
     private var themeWallpaperShown = 8
     private var themeWallpaperGeneration = 0
     private var themeWallpaperStatus = ""
@@ -722,6 +724,7 @@ class MainActivity : AppCompatActivity() {
     private var wallhavenStatus = ""
     private val wallhavenBusy = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val wallhavenExecutor = Executors.newSingleThreadExecutor()
+    private val wallhavenThumbExecutor = Executors.newFixedThreadPool(4)
     private val wallhavenColors = listOf("660000", "990000", "cc0000", "cc3333", "ea4c88", "993399", "663399", "333399", "0066cc", "0099cc", "66cccc", "77cc33", "669900", "336600", "666600", "999900", "cccc33", "ffff00", "ffcc33", "ff9900", "ff6600", "cc6633", "996633", "663300", "000000", "999999", "cccccc", "ffffff", "424153")
     private lateinit var clock: TextView
     private lateinit var status: TextView
@@ -5661,16 +5664,32 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun wallhavenThemeSearchQuery(): String {
+        if (!wallhavenMatchTheme) return ""
+        val source = currentThemeWallpaperSource()
+        val identity = listOf(source?.id.orEmpty(), source?.theme.orEmpty(), pal.name)
+            .joinToString(" ").lowercase(Locale.ROOT)
+        return when {
+            Regex("eva[-_ ]?0?1|evangelion").containsMatchIn(identity) -> "evangelion EVA-01"
+            else -> (source?.theme?.takeIf { it.isNotBlank() } ?: pal.name)
+                .replace(Regex("([a-z])([A-Z])"), "$1 $2")
+                .replace(Regex("[^A-Za-z0-9 ]"), " ")
+                .trim()
+        }
+    }
+
     private fun fetchWallhavenPage(query: String, sorting: String, matchTheme: Boolean, page: Int): WallhavenPage {
         val color = if (matchTheme) wallhavenAccentColor() else null
-        val key = listOf(query, sorting, color.orEmpty(), page.toString()).joinToString("|")
+        val themeQuery = if (matchTheme) wallhavenThemeSearchQuery() else ""
+        val effectiveQuery = listOf(query.trim(), themeQuery).filter { it.isNotBlank() }.distinct().joinToString(" ")
+        val key = listOf(effectiveQuery, sorting, color.orEmpty(), page.toString()).joinToString("|")
         synchronized(wallhavenPageCache) {
             wallhavenPageCache[key]?.takeIf { System.currentTimeMillis() - it.fetchedAt < 30L * 60L * 1000L }?.let { return it }
         }
         val wait = 700L - (SystemClock.elapsedRealtime() - wallhavenLastApiCall)
         if (wait > 0L) Thread.sleep(wait)
         wallhavenLastApiCall = SystemClock.elapsedRealtime()
-        val params = linkedMapOf("q" to query, "categories" to "111", "purity" to "100", "sorting" to sorting, "atleast" to "1920x1080", "ratios" to "16x9,16x10", "page" to page.toString())
+        val params = linkedMapOf("q" to effectiveQuery, "categories" to "111", "purity" to "100", "sorting" to sorting, "atleast" to "1920x1080", "ratios" to "16x9,16x10", "page" to page.toString())
         if (sorting == "toplist") params["topRange"] = "1M"
         if (color != null) params["colors"] = color
         val queryString = params.entries.joinToString("&") { java.net.URLEncoder.encode(it.key, "UTF-8") + "=" + java.net.URLEncoder.encode(it.value, "UTF-8") }
@@ -5820,12 +5839,14 @@ class MainActivity : AppCompatActivity() {
                 }.getOrNull().orEmpty()
                 image.tag = thumbUrl
                 val cached = File(File(cacheDir, "wallhaven-thumbs"), item.id + ".img")
-                wallpaperExecutor.execute {
+                wallpaperThumbCache.get("wallhaven:" + item.id)?.let(image::setImageBitmap)
+                wallhavenThumbExecutor.execute {
                     val bitmap = runCatching {
                         require(thumbUrl.isNotBlank()) { "invalid thumbnail URL" }
                         if (!cached.isFile) downloadWallhavenBytes(thumbUrl, cached)
                         decodeWallhavenImage(cached, 480)
                     }.getOrNull()
+                    if (bitmap != null) wallpaperThumbCache.put("wallhaven:" + item.id, bitmap)
                     ui { if (image.tag == thumbUrl && bitmap != null) image.setImageBitmap(bitmap) }
                 }
                 card.setOnClickListener { applyWallhavenFromCard(item, card, true) }
@@ -6097,7 +6118,7 @@ class MainActivity : AppCompatActivity() {
         val thumb = themeWallpaperPreviewFile(source, item)
         if (!allowDownloads && !thumb.isFile) return
         target.tag = item.downloadUrl
-        themeWallpaperExecutor.execute {
+        wallpaperPreviewExecutor.execute {
             val bitmap = runCatching {
                 if (!thumb.isFile) {
                     val temp = File(cacheDir, "theme-wallpaper-preview-${UUID.randomUUID()}.tmp")
