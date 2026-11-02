@@ -67,6 +67,9 @@ data class WidgetSpec(
             if (json.toByteArray(Charsets.UTF_8).size > MAX_INPUT_BYTES) {
                 return ParseResult.Failure(listOf("Input exceeds 16 KB"))
             }
+            if (!StrictJsonSyntax(json).isValid()) {
+                return ParseResult.Failure(listOf("Invalid JSON: expected strict JSON syntax"))
+            }
             val errors = mutableListOf<String>()
             val obj = try {
                 val tokener = JSONTokener(json)
@@ -403,6 +406,126 @@ data class WidgetSpec(
                 return null
             }
             return value
+        }
+
+        /** RFC 8259 syntax check; JSONTokener itself also accepts several non-JSON extensions. */
+        private class StrictJsonSyntax(private val source: String) {
+            private var index = 0
+
+            fun isValid(): Boolean = try {
+                whitespace()
+                value(0)
+                whitespace()
+                index == source.length
+            } catch (_: IllegalArgumentException) {
+                false
+            }
+
+            private fun value(depth: Int) {
+                require(depth <= 64) { "JSON nesting too deep" }
+                whitespace()
+                require(index < source.length) { "missing value" }
+                when (source[index]) {
+                    '{' -> obj(depth + 1)
+                    '[' -> array(depth + 1)
+                    '"' -> string()
+                    't' -> literal("true")
+                    'f' -> literal("false")
+                    'n' -> literal("null")
+                    '-', in '0'..'9' -> number()
+                    else -> throw IllegalArgumentException("invalid value")
+                }
+            }
+
+            private fun obj(depth: Int) {
+                index++
+                whitespace()
+                if (consume('}')) return
+                while (true) {
+                    whitespace()
+                    require(index < source.length && source[index] == '"') { "object key must be quoted" }
+                    string()
+                    whitespace()
+                    require(consume(':')) { "missing colon" }
+                    value(depth)
+                    whitespace()
+                    if (consume('}')) return
+                    require(consume(',')) { "missing object comma" }
+                }
+            }
+
+            private fun array(depth: Int) {
+                index++
+                whitespace()
+                if (consume(']')) return
+                while (true) {
+                    value(depth)
+                    whitespace()
+                    if (consume(']')) return
+                    require(consume(',')) { "missing array comma" }
+                }
+            }
+
+            private fun string() {
+                require(consume('"')) { "missing quote" }
+                while (index < source.length) {
+                    val ch = source[index++]
+                    when {
+                        ch == '"' -> return
+                        ch.code < 0x20 -> throw IllegalArgumentException("unescaped control")
+                        ch == '\\\\' -> {
+                            require(index < source.length) { "unfinished escape" }
+                            when (source[index++]) {
+                                '"', '\\\\', '/' , 'b', 'f', 'n', 'r', 't' -> Unit
+                                'u' -> repeat(4) {
+                                    require(index < source.length && source[index].digitToIntOrNull(16) != null) { "bad unicode escape" }
+                                    index++
+                                }
+                                else -> throw IllegalArgumentException("bad escape")
+                            }
+                        }
+                    }
+                }
+                throw IllegalArgumentException("unterminated string")
+            }
+
+            private fun number() {
+                consume('-')
+                require(index < source.length) { "incomplete number" }
+                if (consume('0')) {
+                    require(index >= source.length || source[index] !in '0'..'9') { "leading zero" }
+                } else {
+                    require(index < source.length && source[index] in '1'..'9') { "invalid integer" }
+                    while (index < source.length && source[index] in '0'..'9') index++
+                }
+                if (consume('.')) {
+                    require(index < source.length && source[index] in '0'..'9') { "invalid fraction" }
+                    while (index < source.length && source[index] in '0'..'9') index++
+                }
+                if (index < source.length && source[index] in "eE") {
+                    index++
+                    if (index < source.length && source[index] in "+-") index++
+                    require(index < source.length && source[index] in '0'..'9') { "invalid exponent" }
+                    while (index < source.length && source[index] in '0'..'9') index++
+                }
+            }
+
+            private fun literal(expected: String) {
+                require(source.regionMatches(index, expected, 0, expected.length)) { "invalid literal" }
+                index += expected.length
+            }
+
+            private fun whitespace() {
+                while (index < source.length && source[index] in charArrayOf(' ', '\\t', '\\n', '\\r')) index++
+            }
+
+            private fun consume(ch: Char): Boolean {
+                if (index < source.length && source[index] == ch) {
+                    index++
+                    return true
+                }
+                return false
+            }
         }
     }
 }
