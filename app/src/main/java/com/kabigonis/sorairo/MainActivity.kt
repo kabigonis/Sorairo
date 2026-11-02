@@ -5592,10 +5592,10 @@ class MainActivity : AppCompatActivity() {
             "theme wallpaper limit reached"
         }
         enforceAutoWallpaperCap(item.size)
-        val temp = File(cacheDir, "theme-wallpaper-\${UUID.randomUUID()}.tmp")
+        val temp = File(cacheDir, "theme-wallpaper-${UUID.randomUUID()}.tmp")
         try {
             CommunityThemes.downloadGithubBinary(item.downloadUrl, temp, 20L * 1024L * 1024L)
-            val credit = "\${source.theme} by \${source.owner} · github.com/\${source.owner}/\${source.repo}"
+            val credit = "${source.theme} by ${source.owner} · github.com/${source.owner}/${source.repo}"
             return importWallpaperFile(temp, "theme", credit, item.htmlUrl, item.name, item.size, source.id, true)
         } finally { temp.delete() }
     }
@@ -5606,7 +5606,7 @@ class MainActivity : AppCompatActivity() {
             applyWallpaper(existing.id)
             return
         }
-        val key = "\${source.id}/\${item.name}"
+        val key = "${source.id}/${item.name}"
         if (!themeWallpaperCardBusy.add(key)) return
         val progress = ProgressBar(this).apply { isIndeterminate = true }
         card.addView(progress, LinearLayout.LayoutParams(dp(20), dp(20)).apply { gravity = Gravity.CENTER })
@@ -5639,7 +5639,7 @@ class MainActivity : AppCompatActivity() {
                     }
                     return@execute
                 }
-                val remembered = prefs.getString("theme_wall_\${source.id}", null)
+                val remembered = prefs.getString("theme_wall_${source.id}", null)
                 val rememberedEntry = readWallpaperIndex().firstOrNull { it.id == remembered }
                 if (firstImmediately && rememberedEntry != null && prefs.getBoolean("wallpaper_follows_theme", true)) {
                     ui { applyWallpaper(rememberedEntry.id, rememberForTheme = false) }
@@ -5684,7 +5684,7 @@ class MainActivity : AppCompatActivity() {
     private fun onThemeApplied(index: Int, communityInstalled: Boolean = false) {
         val source = themeWallpaperSourceFor(index) ?: return
         if (prefs.getBoolean("wallpaper_follows_theme", true)) {
-            val remembered = prefs.getString("theme_wall_\${source.id}", null)
+            val remembered = prefs.getString("theme_wall_${source.id}", null)
             if (remembered != null && readWallpaperIndex().any { it.id == remembered }) {
                 applyWallpaper(remembered, rememberForTheme = false)
             }
