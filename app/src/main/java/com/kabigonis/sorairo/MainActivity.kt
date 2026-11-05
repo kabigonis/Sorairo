@@ -1403,15 +1403,23 @@ class MainActivity : AppCompatActivity() {
     private inner class HomeLayer(c: Context) : FrameLayout(c) {
         // Workspace switching needs a three-finger horizontal swipe; one-finger
         // swipes no longer change workspace (ViewPager2 user input is disabled).
+        // The pager follows the three fingers live (fake drag) so it feels instant.
         private var threeFingerActive = false
-        private var threeFingerTriggered = false
-        private var threeFingerStartX = 0f
-        private val threeFingerThreshold = dp(70)
+        private var fakeDragging = false
+        private var lastAvgX = 0f
+        private val dragGain = 1.5f
 
         private fun avgX(ev: MotionEvent): Float {
             var sum = 0f
             for (i in 0 until ev.pointerCount) sum += ev.getX(i)
             return sum / ev.pointerCount
+        }
+
+        private fun stopFakeDrag() {
+            if (fakeDragging) {
+                fakeDragging = false
+                try { pager.endFakeDrag() } catch (_: Exception) {}
+            }
         }
 
         override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
@@ -1420,44 +1428,47 @@ class MainActivity : AppCompatActivity() {
                     touchDownScreenX = ev.rawX
                     touchDownScreenY = ev.rawY
                     threeFingerActive = false
-                    threeFingerTriggered = false
+                    stopFakeDrag()
                 }
                 MotionEvent.ACTION_POINTER_DOWN -> {
-                    if (ev.pointerCount == 3 && !threeFingerActive) {
-                        threeFingerActive = true
-                        threeFingerTriggered = false
-                        threeFingerStartX = avgX(ev)
-                        // Cancel whatever the first fingers were doing in the children.
-                        val cancel = MotionEvent.obtain(ev)
-                        cancel.action = MotionEvent.ACTION_CANCEL
-                        super.dispatchTouchEvent(cancel)
-                        cancel.recycle()
+                    if (ev.pointerCount == 3) {
+                        if (!threeFingerActive) {
+                            threeFingerActive = true
+                            // Cancel whatever the first fingers were doing in the children.
+                            val cancel = MotionEvent.obtain(ev)
+                            cancel.action = MotionEvent.ACTION_CANCEL
+                            super.dispatchTouchEvent(cancel)
+                            cancel.recycle()
+                        }
+                        lastAvgX = avgX(ev)
+                        if (!fakeDragging && moveSource[curWs] < 0) {
+                            fakeDragging = try { pager.beginFakeDrag() } catch (_: Exception) { false }
+                        }
                         return true
                     }
                 }
                 MotionEvent.ACTION_MOVE -> {
                     if (threeFingerActive) {
-                        if (ev.pointerCount >= 3 && !threeFingerTriggered &&
-                            moveSource[curWs] < 0
-                        ) {
-                            val dx = avgX(ev) - threeFingerStartX
-                            if (abs(dx) > threeFingerThreshold) {
-                                threeFingerTriggered = true
-                                val target = if (dx < 0) curWs + 1 else curWs - 1
-                                val count = pager.adapter?.itemCount ?: 0
-                                if (target in 0 until count) pager.setCurrentItem(target, true)
-                            }
+                        if (fakeDragging && ev.pointerCount >= 3) {
+                            val x = avgX(ev)
+                            val dx = x - lastAvgX
+                            lastAvgX = x
+                            try { pager.fakeDragBy(dx * dragGain) } catch (_: Exception) {}
                         }
                         return true
                     }
                 }
                 MotionEvent.ACTION_POINTER_UP -> {
-                    if (threeFingerActive) return true
+                    if (threeFingerActive) {
+                        // A finger lifted: settle the pager on the nearest workspace.
+                        stopFakeDrag()
+                        return true
+                    }
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     if (threeFingerActive) {
                         threeFingerActive = false
-                        threeFingerTriggered = false
+                        stopFakeDrag()
                         return true
                     }
                 }
