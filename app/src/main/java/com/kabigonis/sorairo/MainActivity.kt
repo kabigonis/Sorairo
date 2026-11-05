@@ -1401,10 +1401,55 @@ class MainActivity : AppCompatActivity() {
     }
 
     private inner class HomeLayer(c: Context) : FrameLayout(c) {
+        private var threeFingerSwipeTracking = false
+        private var threeFingerSwipeHandled = false
+        private var threeFingerStartX = 0f
+
+        private fun averagePointerX(ev: MotionEvent): Float {
+            var total = 0f
+            for (i in 0 until ev.pointerCount) total += ev.getX(i)
+            return total / ev.pointerCount.coerceAtLeast(1)
+        }
+
         override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
-            if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
-                touchDownScreenX = ev.rawX
-                touchDownScreenY = ev.rawY
+            when (ev.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    touchDownScreenX = ev.rawX
+                    touchDownScreenY = ev.rawY
+                    threeFingerSwipeTracking = false
+                    threeFingerSwipeHandled = false
+                }
+                MotionEvent.ACTION_POINTER_DOWN -> {
+                    if (ev.pointerCount >= 3 && !threeFingerSwipeHandled) {
+                        threeFingerSwipeTracking = true
+                        threeFingerStartX = averagePointerX(ev)
+                        // Take ownership of this gesture so child views don't interpret it.
+                        return true
+                    }
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (threeFingerSwipeTracking && ev.pointerCount >= 3) {
+                        val delta = averagePointerX(ev) - threeFingerStartX
+                        if (abs(delta) >= dp(64)) {
+                            val direction = if (delta < 0f) 1 else -1
+                            val next = (pager.currentItem + direction).coerceIn(0, (pager.adapter?.itemCount ?: 1) - 1)
+                            if (next != pager.currentItem) pager.setCurrentItem(next, true)
+                            threeFingerSwipeHandled = true
+                            threeFingerSwipeTracking = false
+                        }
+                        return true
+                    }
+                    if (threeFingerSwipeHandled) return true
+                }
+                MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    if (threeFingerSwipeTracking || threeFingerSwipeHandled) {
+                        if (ev.pointerCount <= 3 || ev.actionMasked != MotionEvent.ACTION_POINTER_UP) {
+                            threeFingerSwipeTracking = false
+                            threeFingerSwipeHandled = false
+                        }
+                        return true
+                    }
+                }
             }
             detector.onTouchEvent(ev)
             return super.dispatchTouchEvent(ev)
@@ -1589,6 +1634,7 @@ class MainActivity : AppCompatActivity() {
         pager = ViewPager2(this).apply {
             adapter = PageAdapter()
             offscreenPageLimit = 1
+            isUserInputEnabled = false // Workspace changes are handled by HomeLayer's three-finger gesture.
             setCurrentItem(curWs, false)
             // Keep the wallpaper aspect ratio intact while reserving only the width
             // needed for the workspace parallax travel.
