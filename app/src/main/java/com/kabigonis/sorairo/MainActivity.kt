@@ -1401,12 +1401,68 @@ class MainActivity : AppCompatActivity() {
     }
 
     private inner class HomeLayer(c: Context) : FrameLayout(c) {
+        // Workspace switching needs a three-finger horizontal swipe; one-finger
+        // swipes no longer change workspace (ViewPager2 user input is disabled).
+        private var threeFingerActive = false
+        private var threeFingerTriggered = false
+        private var threeFingerStartX = 0f
+        private val threeFingerThreshold = dp(70)
+
+        private fun avgX(ev: MotionEvent): Float {
+            var sum = 0f
+            for (i in 0 until ev.pointerCount) sum += ev.getX(i)
+            return sum / ev.pointerCount
+        }
+
         override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
-            if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
-                touchDownScreenX = ev.rawX
-                touchDownScreenY = ev.rawY
+            when (ev.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    touchDownScreenX = ev.rawX
+                    touchDownScreenY = ev.rawY
+                    threeFingerActive = false
+                    threeFingerTriggered = false
+                }
+                MotionEvent.ACTION_POINTER_DOWN -> {
+                    if (ev.pointerCount == 3 && !threeFingerActive) {
+                        threeFingerActive = true
+                        threeFingerTriggered = false
+                        threeFingerStartX = avgX(ev)
+                        // Cancel whatever the first fingers were doing in the children.
+                        val cancel = MotionEvent.obtain(ev)
+                        cancel.action = MotionEvent.ACTION_CANCEL
+                        super.dispatchTouchEvent(cancel)
+                        cancel.recycle()
+                        return true
+                    }
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (threeFingerActive) {
+                        if (ev.pointerCount >= 3 && !threeFingerTriggered &&
+                            moveSource[curWs] < 0
+                        ) {
+                            val dx = avgX(ev) - threeFingerStartX
+                            if (abs(dx) > threeFingerThreshold) {
+                                threeFingerTriggered = true
+                                val target = if (dx < 0) curWs + 1 else curWs - 1
+                                val count = pager.adapter?.itemCount ?: 0
+                                if (target in 0 until count) pager.setCurrentItem(target, true)
+                            }
+                        }
+                        return true
+                    }
+                }
+                MotionEvent.ACTION_POINTER_UP -> {
+                    if (threeFingerActive) return true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    if (threeFingerActive) {
+                        threeFingerActive = false
+                        threeFingerTriggered = false
+                        return true
+                    }
+                }
             }
-            detector.onTouchEvent(ev)
+            if (!threeFingerActive) detector.onTouchEvent(ev)
             return super.dispatchTouchEvent(ev)
         }
     }
@@ -1588,6 +1644,8 @@ class MainActivity : AppCompatActivity() {
         // ---- workspaces ----
         pager = ViewPager2(this).apply {
             adapter = PageAdapter()
+            // One-finger swipes are ignored; workspaces switch with a three-finger swipe.
+            isUserInputEnabled = false
             offscreenPageLimit = 1
             setCurrentItem(curWs, false)
             // Keep the wallpaper aspect ratio intact while reserving only the width
