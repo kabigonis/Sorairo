@@ -1411,7 +1411,7 @@ class MainActivity : AppCompatActivity() {
             return total / ev.pointerCount.coerceAtLeast(1)
         }
 
-        override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
             when (ev.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     touchDownScreenX = ev.rawX
@@ -1423,36 +1423,47 @@ class MainActivity : AppCompatActivity() {
                     if (ev.pointerCount >= 3 && !threeFingerSwipeHandled) {
                         threeFingerSwipeTracking = true
                         threeFingerStartX = averagePointerX(ev)
-                        // Take ownership of this gesture so child views don't interpret it.
+                        // Intercept here so the active child receives ACTION_CANCEL
+                        // and the parent owns the rest of the three-finger gesture.
                         return true
                     }
                 }
+            }
+            return super.onInterceptTouchEvent(ev)
+        }
+
+        override fun onTouchEvent(ev: MotionEvent): Boolean {
+            when (ev.actionMasked) {
                 MotionEvent.ACTION_MOVE -> {
                     if (threeFingerSwipeTracking && ev.pointerCount >= 3) {
                         val delta = averagePointerX(ev) - threeFingerStartX
                         if (abs(delta) >= dp(64)) {
                             val direction = if (delta < 0f) 1 else -1
-                            val next = (pager.currentItem + direction).coerceIn(0, (pager.adapter?.itemCount ?: 1) - 1)
+                            val last = (pager.adapter?.itemCount ?: 1) - 1
+                            val next = (pager.currentItem + direction).coerceIn(0, last.coerceAtLeast(0))
                             if (next != pager.currentItem) pager.setCurrentItem(next, true)
                             threeFingerSwipeHandled = true
                             threeFingerSwipeTracking = false
                         }
-                        return true
                     }
-                    if (threeFingerSwipeHandled) return true
+                    return true
                 }
-                MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    if (threeFingerSwipeTracking || threeFingerSwipeHandled) {
-                        if (ev.pointerCount <= 3 || ev.actionMasked != MotionEvent.ACTION_POINTER_UP) {
-                            threeFingerSwipeTracking = false
-                            threeFingerSwipeHandled = false
-                        }
-                        return true
+                MotionEvent.ACTION_POINTER_UP -> {
+                    // pointerCount includes the pointer going up, so three means
+                    // only two fingers remain after this event.
+                    if (ev.pointerCount <= 3) {
+                        threeFingerSwipeTracking = false
+                        threeFingerSwipeHandled = false
                     }
+                    return true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    threeFingerSwipeTracking = false
+                    threeFingerSwipeHandled = false
+                    return true
                 }
             }
-            detector.onTouchEvent(ev)
-            return super.dispatchTouchEvent(ev)
+            return true
         }
     }
 
