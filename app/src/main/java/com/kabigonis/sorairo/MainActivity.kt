@@ -738,7 +738,7 @@ class MainActivity : AppCompatActivity() {
     private fun pointerAverage(ev: MotionEvent, xAxis: Boolean): Float {
         var total = 0f
         for (i in 0 until ev.pointerCount) {
-            total += if (xAxis) ev.getRawX(i) else ev.getRawY(i)
+            total += if (xAxis) ev.getX(i) else ev.getY(i)
         }
         return total / ev.pointerCount.coerceAtLeast(1)
     }
