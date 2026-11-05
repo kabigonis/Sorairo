@@ -94,3 +94,4 @@ Development is ongoing, so updates may be slower during busy periods.
 ## License
 
 MIT
+
