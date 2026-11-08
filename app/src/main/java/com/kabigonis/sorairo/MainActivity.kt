@@ -679,7 +679,7 @@ class MainActivity : AppCompatActivity() {
         val lastUsed: Long = 0L,
         val sha256: String? = null
     )
-    private val wallpaperExecutor = Executors.newFixedThreadPool(2)
+    private val wallpaperExecutor = Executors.newFixedThreadPool(4)
     private val wallpaperThumbCache = object : LruCache<String, android.graphics.Bitmap>(24 * 1024 * 1024) {
         override fun sizeOf(key: String, value: android.graphics.Bitmap): Int = value.byteCount
     }
@@ -724,7 +724,13 @@ class MainActivity : AppCompatActivity() {
     private var wallhavenLastApiCall = 0L
     private var wallhavenQuery = ""
     private var wallhavenMatchTheme = true
+    private var wallhavenColorsEnabled = true
+    private var wallhavenPeopleEnabled = false
     private var wallhavenSort = "toplist"
+    private var wallhavenGeneration = 0L
+    private val wallhavenThumbJobs = java.util.concurrent.CopyOnWriteArrayList<java.util.concurrent.Future<*>>()
+    private val wallhavenApiExecutor = Executors.newFixedThreadPool(2)
+    private val wallhavenThrottleLock = Any()
     private var wallhavenPage = 1
     private var wallhavenLastPage = 1
     private var wallhavenResults: List<WallhavenWallpaper> = emptyList()
@@ -5711,27 +5717,21 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun fetchWallhavenPage(query: String, sorting: String, matchTheme: Boolean, page: Int): WallhavenPage {
-        val color = if (matchTheme) wallhavenAccentColor() else null
-        val key = listOf(query, sorting, color.orEmpty(), page.toString()).joinToString("|")
-        synchronized(wallhavenPageCache) {
-            wallhavenPageCache[key]?.takeIf { System.currentTimeMillis() - it.fetchedAt < 30L * 60L * 1000L }?.let { return it }
+    private fun fetchWallhavenPage(query: String, sorting: String, color: String?, categories: String, page: Int): WallhavenPage {
+        val key = listOf(query, sorting, color.orEmpty(), categories, page.toString()).joinToString("|")
+        synchronized(wallhavenPageCache) { wallhavenPageCache[key]?.takeIf { System.currentTimeMillis() - it.fetchedAt < 30L * 60L * 1000L }?.let { return it } }
+        synchronized(wallhavenThrottleLock) {
+            val wait = 700L - (SystemClock.elapsedRealtime() - wallhavenLastApiCall)
+            if (wait > 0L) Thread.sleep(wait)
+            wallhavenLastApiCall = SystemClock.elapsedRealtime()
         }
-        val wait = 700L - (SystemClock.elapsedRealtime() - wallhavenLastApiCall)
-        if (wait > 0L) Thread.sleep(wait)
-        wallhavenLastApiCall = SystemClock.elapsedRealtime()
-        val params = linkedMapOf("q" to query, "categories" to "111", "purity" to "100", "sorting" to sorting, "atleast" to "1920x1080", "ratios" to "16x9,16x10", "page" to page.toString())
+        val params = linkedMapOf("q" to query, "categories" to categories, "purity" to "100", "sorting" to sorting, "atleast" to "1920x1080", "ratios" to "16x9,16x10", "page" to page.toString())
         if (sorting == "toplist") params["topRange"] = "1M"
-        if (color != null) params["colors"] = color
+        if (!color.isNullOrBlank()) params["colors"] = color
         val queryString = params.entries.joinToString("&") { java.net.URLEncoder.encode(it.key, "UTF-8") + "=" + java.net.URLEncoder.encode(it.value, "UTF-8") }
-        val url = java.net.URL("https://wallhaven.cc/api/v1/search?" + queryString)
-        val connection = (url.openConnection() as java.net.HttpURLConnection).apply {
-            instanceFollowRedirects = false
-            connectTimeout = 15000
-            readTimeout = 20000
-            requestMethod = "GET"
-            setRequestProperty("Accept", "application/json")
-            setRequestProperty("User-Agent", "Sorairo/1.0")
+        val connection = (java.net.URL("https://wallhaven.cc/api/v1/search?" + queryString).openConnection() as java.net.HttpURLConnection).apply {
+            instanceFollowRedirects = false; connectTimeout = 15000; readTimeout = 20000
+            requestMethod = "GET"; setRequestProperty("Accept", "application/json"); setRequestProperty("User-Agent", "Sorairo/1.0")
         }
         return try {
             val code = connection.responseCode
@@ -5741,86 +5741,84 @@ class MainActivity : AppCompatActivity() {
             val data = json.optJSONArray("data") ?: JSONArray()
             val items = (0 until data.length()).mapNotNull { index ->
                 val item = data.optJSONObject(index) ?: return@mapNotNull null
-                val id = item.optString("id")
-                val pageUrl = item.optString("url")
-                val path = item.optString("path")
-                val resolution = item.optString("resolution")
-                val thumbs = item.optJSONObject("thumbs") ?: JSONObject()
-                if (id.isBlank() || pageUrl.isBlank() || path.isBlank() || resolution.isBlank()) null
-                else runCatching {
-                    val safePath = wallhavenAllowedUrl(path)
-                    val safePage = wallhavenAllowedUrl(pageUrl)
+                val id = item.optString("id"); val pageUrl = item.optString("url"); val path = item.optString("path")
+                val resolution = item.optString("resolution"); val thumbs = item.optJSONObject("thumbs") ?: JSONObject()
+                if (id.isBlank() || pageUrl.isBlank() || path.isBlank() || resolution.isBlank()) null else runCatching {
+                    val safePath = wallhavenAllowedUrl(path); val safePage = wallhavenAllowedUrl(pageUrl)
                     require(safePage.host.equals("wallhaven.cc", true)) { "invalid Wallhaven page URL" }
                     WallhavenWallpaper(id, safePage.toString(), resolution, item.optLong("file_size", 0L), thumbs, safePath.toString())
                 }.getOrNull()
             }
             val meta = json.optJSONObject("meta")
-            val result = WallhavenPage(items, (meta?.optInt("last_page", page) ?: page).coerceAtLeast(page), System.currentTimeMillis())
-            synchronized(wallhavenPageCache) { wallhavenPageCache[key] = result }
-            result
+            WallhavenPage(items, (meta?.optInt("last_page", page) ?: page).coerceAtLeast(page), System.currentTimeMillis()).also {
+                synchronized(wallhavenPageCache) { wallhavenPageCache[key] = it }
+            }
         } finally { connection.disconnect() }
+    }
+
+    private fun wallhavenThemeQuery(): String {
+        val index = prefs.getInt("theme", 0).coerceIn(0, pals.size - 1)
+        val name = pal.name
+        val id = when {
+            index < basePals.size -> ""
+            index < builtInCount -> {
+                val plain = basePals.map { it.name.lowercase().replace(" ", "") }.toSet()
+                OmarchyThemes.loadBundled(this).filter { !it.isLight && it.name.lowercase().replace(" ", "") !in plain }
+                    .getOrNull(index - basePals.size)?.id.orEmpty()
+            }
+            else -> CommunityThemes.installedCatalog(this, communityCatalog).getOrNull(index - builtInCount)?.id.orEmpty()
+        }
+        val ignored = setOf("theme", "dark", "light", "night", "the", "of")
+        val words = (name + " " + id).lowercase(Locale.ROOT).split(Regex("[^a-z0-9]+")).filter { it.isNotBlank() && it !in ignored }
+        return (ThemeKeywords.forId(id) + " " + words.joinToString(" ")).trim().split(Regex("\\s+")).distinct().joinToString(" ")
+    }
+
+    private fun effectiveWallhavenQuery(): String {
+        val typed = wallhavenQuery.trim()
+        return if (typed.isNotBlank()) typed else if (wallhavenMatchTheme) wallhavenThemeQuery() else ""
+    }
+
+    private fun cancelWallhavenThumbs() {
+        wallhavenThumbJobs.forEach { it.cancel(true) }
+        wallhavenThumbJobs.clear()
     }
 
     private fun buildWallhavenSection(): View {
         val p = pal
         val section = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, dp(4), 0, dp(12)) }
-        val searchRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val query = EditText(this).apply {
-            setSingleLine(true)
-            textSize = 13f
-            setTextColor(p.cFg)
-            setHintTextColor(p.cDim)
-            hint = "search Wallhaven"
-            setText(wallhavenQuery)
-            imeOptions = EditorInfo.IME_ACTION_SEARCH
-            inputType = InputType.TYPE_CLASS_TEXT
+            setSingleLine(true); textSize = 13f; setTextColor(p.cFg); setHintTextColor(p.cDim)
+            hint = "search Wallhaven"; setText(wallhavenQuery); imeOptions = EditorInfo.IME_ACTION_SEARCH; inputType = InputType.TYPE_CLASS_TEXT
         }
-        searchRow.addView(query, LinearLayout.LayoutParams(0, dp(44), 1f))
-        section.addView(searchRow)
-        val options = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(4), 0, dp(8)) }
-        options.addView(txt(11f, if (wallhavenMatchTheme) p.cAccent else p.cDim, if (wallhavenMatchTheme) "[ match theme ✓ ]" else "[ match theme ]").apply {
-            setPadding(dp(4), dp(8), dp(12), dp(8))
-            setOnClickListener {
-                wallhavenMatchTheme = !wallhavenMatchTheme
-                wallhavenPage = 1
-                wallhavenResults = emptyList()
-                wallhavenStatus = ""
-                fillWallpaperSettings()
-            }
-        })
+        section.addView(query, LinearLayout.LayoutParams(-1, dp(44)))
+        val options = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(4), 0, dp(4)) }
+        fun toggle(label: String, enabled: Boolean, action: () -> Unit) = txt(11f, if (enabled) p.cAccent else p.cDim, "[ " + label + if (enabled) " ✓ ]" else " ]").apply {
+            setPadding(dp(4), dp(8), dp(9), dp(8)); setOnClickListener { action(); wallhavenPage = 1; wallhavenResults = emptyList(); wallhavenStatus = ""; fillWallpaperSettings() }
+        }
+        options.addView(toggle("match theme", wallhavenMatchTheme) { wallhavenMatchTheme = !wallhavenMatchTheme })
+        options.addView(toggle("colors", wallhavenColorsEnabled) { wallhavenColorsEnabled = !wallhavenColorsEnabled })
+        options.addView(toggle("people", wallhavenPeopleEnabled) { wallhavenPeopleEnabled = !wallhavenPeopleEnabled })
         options.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         options.addView(txt(11f, p.cBlue, "[ " + wallhavenSort + " ]").apply {
             setPadding(dp(8), dp(8), dp(4), dp(8))
-            setOnClickListener {
-                wallhavenSort = when (wallhavenSort) { "toplist" -> "date_added"; "date_added" -> "relevance"; else -> "toplist" }
-                wallhavenPage = 1
-                wallhavenResults = emptyList()
-                wallhavenStatus = ""
-                fillWallpaperSettings()
-            }
+            setOnClickListener { wallhavenSort = when (wallhavenSort) { "toplist" -> "date_added"; "date_added" -> "relevance"; else -> "toplist" }; wallhavenPage = 1; wallhavenResults = emptyList(); wallhavenStatus = ""; fillWallpaperSettings() }
         })
         section.addView(options)
-        val status = txt(10f, p.cDim, wallhavenStatus.ifBlank { "search SFW wallpapers from Wallhaven" }).apply { setPadding(dp(2), 0, 0, dp(6)) }
+        section.addView(txt(10f, p.cDim, "searching: " + effectiveWallhavenQuery().ifBlank { "all wallpapers" } + " · colors " + if (wallhavenColorsEnabled) "on" else "off").apply { setPadding(dp(2), 0, 0, dp(4)) })
+        val status = txt(10f, p.cDim, wallhavenStatus.ifBlank { "SFW wallpapers from Wallhaven" }).apply { setPadding(dp(2), 0, 0, dp(6)) }
         section.addView(status)
         val grid = RecyclerView(this).apply { layoutManager = GridLayoutManager(this@MainActivity, 3); isNestedScrollingEnabled = false; overScrollMode = View.OVER_SCROLL_NEVER }
-        section.addView(grid)
-        renderWallhavenCards(wallhavenResults, grid)
+        section.addView(grid); renderWallhavenCards(wallhavenResults, grid)
         val more = txt(12f, p.cAccent, "[ more ]").apply {
-            gravity = Gravity.CENTER
-            setPadding(dp(8), dp(10), dp(8), dp(10))
+            gravity = Gravity.CENTER; setPadding(dp(8), dp(10), dp(8), dp(10))
             visibility = if (wallhavenPage < wallhavenLastPage && wallhavenResults.isNotEmpty()) View.VISIBLE else View.GONE
             setOnClickListener { if (wallhavenPage < wallhavenLastPage) { wallhavenPage++; loadWallhavenPage(wallhavenPage, true, status, grid, this) } }
         }
         query.setOnEditorActionListener { view, actionId, event ->
-            if (actionId == EditorInfo.IME_ACTION_SEARCH ||
-                (event?.keyCode == android.view.KeyEvent.KEYCODE_ENTER && event.action == android.view.KeyEvent.ACTION_UP)) {
-                wallhavenQuery = view.text.toString().trim()
-                wallhavenPage = 1
-                wallhavenResults = emptyList()
+            if (actionId == EditorInfo.IME_ACTION_SEARCH || (event?.keyCode == android.view.KeyEvent.KEYCODE_ENTER && event.action == android.view.KeyEvent.ACTION_UP)) {
+                wallhavenQuery = view.text.toString().trim(); wallhavenPage = 1; wallhavenResults = emptyList()
                 loadWallhavenPage(1, false, status, grid, more)
-                val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
-                imm.hideSoftInputFromWindow(view.windowToken, 0)
-                true
+                (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(view.windowToken, 0); true
             } else false
         }
         section.addView(more)
@@ -5829,24 +5827,31 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadWallhavenPage(page: Int, append: Boolean, status: TextView, grid: RecyclerView, more: TextView) {
+        if (!append) { wallhavenGeneration++; cancelWallhavenThumbs() }
+        val generation = wallhavenGeneration
+        val query = effectiveWallhavenQuery()
+        val color = if (wallhavenColorsEnabled) wallhavenAccentColor() else null
+        val categories = if (wallhavenPeopleEnabled) "111" else "110"
         status.text = "searching Wallhaven..."
-        wallhavenExecutor.execute {
-            val result = runCatching { fetchWallhavenPage(wallhavenQuery, wallhavenSort, wallhavenMatchTheme, page) }
+        wallhavenApiExecutor.execute {
+            val result = runCatching {
+                val first = fetchWallhavenPage(query, wallhavenSort, color, categories, page)
+                if (!append && first.items.size < 8 && !color.isNullOrBlank()) {
+                    val qOnly = fetchWallhavenPage(query, wallhavenSort, null, categories, page)
+                    if (qOnly.items.size >= 8) qOnly else {
+                        val cOnly = fetchWallhavenPage("", wallhavenSort, color, categories, page)
+                        if (cOnly.items.size > qOnly.items.size) cOnly else qOnly
+                    }
+                } else first
+            }
             ui {
-                if (!wallpaperPageOpen || wallpaperTab != "online") return@ui
+                if (generation != wallhavenGeneration || !wallpaperPageOpen || wallpaperTab != "online") return@ui
                 result.onSuccess { data ->
-                    wallhavenLastPage = data.lastPage
-                    wallhavenResults = if (append) wallhavenResults + data.items else data.items
-                    wallhavenPage = page
-                    wallhavenStatus = wallhavenResults.size.toString() + " results · page " + page + " of " + data.lastPage
-                    status.text = wallhavenStatus
-                    renderWallhavenCards(wallhavenResults, grid)
+                    wallhavenLastPage = data.lastPage; wallhavenResults = if (append) wallhavenResults + data.items else data.items
+                    wallhavenPage = page; wallhavenStatus = wallhavenResults.size.toString() + " results · page " + page + " of " + data.lastPage
+                    status.text = wallhavenStatus; renderWallhavenCards(wallhavenResults, grid)
                     more.visibility = if (page < data.lastPage) View.VISIBLE else View.GONE
-                }.onFailure { error ->
-                    wallhavenStatus = error.message ?: "couldn't search Wallhaven"
-                    status.text = wallhavenStatus
-                    more.visibility = View.GONE
-                }
+                }.onFailure { error -> wallhavenStatus = error.message ?: "couldn't search Wallhaven"; status.text = wallhavenStatus; more.visibility = View.GONE }
             }
         }
     }
@@ -5869,14 +5874,27 @@ class MainActivity : AppCompatActivity() {
                     wallhavenAllowedUrl(item.thumbs.optString("small").ifBlank { item.thumbs.optString("large") }).toString()
                 }.getOrNull().orEmpty()
                 image.tag = thumbUrl
-                val cached = File(File(cacheDir, "wallhaven-thumbs"), item.id + ".img")
-                wallpaperExecutor.execute {
-                    val bitmap = runCatching {
-                        require(thumbUrl.isNotBlank()) { "invalid thumbnail URL" }
-                        if (!cached.isFile) downloadWallhavenBytes(thumbUrl, cached)
-                        decodeWallhavenImage(cached, 480)
-                    }.getOrNull()
-                    ui { if (image.tag == thumbUrl && bitmap != null) image.setImageBitmap(bitmap) }
+                val cacheKey = "wallhaven:" + item.id
+                val memory = synchronized(wallpaperThumbCache) { wallpaperThumbCache.get(cacheKey) }
+                if (memory != null) image.setImageBitmap(memory) else {
+                    val cached = File(File(cacheDir, "wallhaven-thumbs"), item.id + ".img")
+                    val job = wallpaperExecutor.submit {
+                        val bitmap = runCatching {
+                            require(thumbUrl.isNotBlank()) { "invalid thumbnail URL" }
+                            if (!cached.isFile) downloadWallhavenBytes(thumbUrl, cached) else cached.setLastModified(System.currentTimeMillis())
+                            decodeWallhavenImage(cached, 480)
+                        }.getOrNull()
+                        if (bitmap != null && !Thread.currentThread().isInterrupted) {
+                            synchronized(wallpaperThumbCache) { wallpaperThumbCache.put(cacheKey, bitmap) }
+                            ui { if (image.tag == thumbUrl) image.setImageBitmap(bitmap) }
+                        }
+                        runCatching {
+                            val files = cached.parentFile?.listFiles()?.filter { it.isFile }?.sortedBy { it.lastModified() }.orEmpty()
+                            var bytes = files.sumOf { it.length() }
+                            for (file in files) { if (bytes <= 40L * 1024L * 1024L) break; bytes -= file.length(); file.delete() }
+                        }
+                    }
+                    wallhavenThumbJobs.add(job)
                 }
                 card.setOnClickListener { applyWallhavenFromCard(item, card, true) }
                 card.setOnLongClickListener { applyWallhavenFromCard(item, card, false); true }
