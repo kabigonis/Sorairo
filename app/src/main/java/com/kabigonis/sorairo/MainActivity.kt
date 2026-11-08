@@ -703,7 +703,10 @@ class MainActivity : AppCompatActivity() {
     private val previewExecutor = Executors.newFixedThreadPool(4)
     private val applyExecutor = Executors.newFixedThreadPool(2)
     private val bulkExecutor = Executors.newSingleThreadExecutor { task ->
-        Thread(task, "theme-wallpaper-bulk").apply { isDaemon = true }
+        Thread(task, "theme-wallpaper-bulk").apply {
+            priority = Thread.MIN_PRIORITY
+            isDaemon = true
+        }
     }
     private val themeWallpaperJobs = java.util.concurrent.ConcurrentHashMap<Int, java.util.concurrent.CopyOnWriteArrayList<java.util.concurrent.Future<*>>>()
     private val themeWallpaperOriginalLocks = java.util.concurrent.ConcurrentHashMap<String, Any>()
