@@ -6059,7 +6059,8 @@ class MainActivity : AppCompatActivity() {
                 fetchThemeWallpaperFiles(source)
             }
             ui {
-                if (wallpaperPageOpen && settings.visibility == View.VISIBLE) {
+                if (generation == themeWallpaperGeneration &&
+                    wallpaperPageOpen && settings.visibility == View.VISIBLE) {
                     result.onSuccess { files ->
                         themeWallpaperFiles = files
                         themeWallpaperLoadedFor = key
@@ -6221,7 +6222,7 @@ class MainActivity : AppCompatActivity() {
                 return original
             }
             original.delete()
-            val temp = File(original.parentFile, "${original.name}.${UUID.randomUUID()}.tmp")
+            val temp = File(cacheDir, "theme-wallpaper-original-${UUID.randomUUID()}.tmp")
             try {
                 CommunityThemes.downloadGithubBinary(item.downloadUrl, temp, 20L * 1024L * 1024L)
                 check(generation == null || isThemeWallpaperGenerationCurrent(generation)) { "stale wallpaper preview" }
