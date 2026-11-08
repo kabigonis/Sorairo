@@ -700,7 +700,13 @@ class MainActivity : AppCompatActivity() {
     private data class ThemeWallpaperRemoteFile(
         val name: String, val size: Long, val downloadUrl: String, val htmlUrl: String
     )
-    private val themeWallpaperExecutor = Executors.newSingleThreadExecutor()
+    private val previewExecutor = Executors.newFixedThreadPool(4)
+    private val applyExecutor = Executors.newFixedThreadPool(2)
+    private val bulkExecutor = Executors.newSingleThreadExecutor { task ->
+        Thread(task, "theme-wallpaper-bulk").apply { isDaemon = true }
+    }
+    private val themeWallpaperJobs = java.util.concurrent.ConcurrentHashMap<Int, java.util.concurrent.CopyOnWriteArrayList<java.util.concurrent.Future<*>>>()
+    private val themeWallpaperOriginalLocks = java.util.concurrent.ConcurrentHashMap<String, Any>()
     private var themeWallpaperShown = 8
     private var themeWallpaperGeneration = 0
     private var themeWallpaperStatus = ""
@@ -2765,6 +2771,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showSettings() {
         wallpaperPageOpen = false
+        cancelThemeWallpaperJobs()
         closeDrawer()
         closeQs()
         fillSettings()
@@ -3257,6 +3264,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun closeSettings() {
         wallpaperPageOpen = false
+        cancelThemeWallpaperJobs()
         wallpaperPageShell?.let { settings.removeView(it) }
         wallpaperPageShell = null
         setScroll.visibility = View.VISIBLE
@@ -5397,6 +5405,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun fillWallpaperSettings() {
         wallpaperPageOpen = true
+        cancelThemeWallpaperJobs()
+        themeWallpaperGeneration++
         val p = pal
         setScroll.visibility = View.GONE
         wallpaperPageShell?.let { oldShell ->
@@ -6039,7 +6049,9 @@ class MainActivity : AppCompatActivity() {
             return
         }
         status.text = "loading theme wallpapers..."
-        themeWallpaperExecutor.execute {
+        val generation = themeWallpaperGeneration
+        submitThemeWallpaperPreview(generation) {
+            if (!isThemeWallpaperGenerationCurrent(generation)) return@submitThemeWallpaperPreview
             val result = runCatching {
                 fetchThemeWallpaperFiles(source)
             }
@@ -6075,6 +6087,7 @@ class MainActivity : AppCompatActivity() {
     ) {
         val shown = files.take(themeWallpaperShown)
         val generation = ++themeWallpaperGeneration
+        cancelThemeWallpaperJobs(keepGeneration = generation)
         grid.adapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
             override fun getItemCount() = shown.size
             override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
@@ -6085,11 +6098,21 @@ class MainActivity : AppCompatActivity() {
                         setMargins(dp(2), dp(2), dp(2), dp(2))
                     }
                 }
+                val previewFrame = FrameLayout(parent.context)
                 val image = ImageView(parent.context).apply {
                     scaleType = ImageView.ScaleType.CENTER_CROP
                     background = box(pal.cBg, pal.cDim)
                 }
-                card.addView(image, LinearLayout.LayoutParams(-1, dp(92)))
+                val placeholder = txt(10f, pal.cDim, "").apply {
+                    gravity = Gravity.CENTER
+                    maxLines = 2
+                    ellipsize = TextUtils.TruncateAt.MIDDLE
+                    setPadding(dp(6), dp(4), dp(6), dp(4))
+                    isClickable = false
+                }
+                previewFrame.addView(image, FrameLayout.LayoutParams(-1, -1))
+                previewFrame.addView(placeholder, FrameLayout.LayoutParams(-1, -1))
+                card.addView(previewFrame, LinearLayout.LayoutParams(-1, dp(92)))
                 card.addView(txt(9f, pal.cDim, "").apply {
                     maxLines = 1
                     ellipsize = TextUtils.TruncateAt.END
@@ -6100,10 +6123,12 @@ class MainActivity : AppCompatActivity() {
             override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
                 val item = shown[position]
                 val card = holder.itemView as LinearLayout
-                val image = card.getChildAt(0) as ImageView
+                val previewFrame = card.getChildAt(0) as FrameLayout
+                val image = previewFrame.getChildAt(0) as ImageView
+                val placeholder = previewFrame.getChildAt(1) as TextView
                 val downloaded = findThemeWallpaperEntry(source, item)
                 (card.getChildAt(1) as TextView).text = (if (downloaded != null) "✓ " else "") + item.name
-                loadThemeWallpaperPreview(item, image, source, generation, allowDownloads)
+                loadThemeWallpaperPreview(item, image, placeholder, source, generation, allowDownloads)
                 val isCurrent = downloaded != null &&
                     prefs.getString("wall_current_id", null) == downloaded.id
                 card.background = if (isCurrent) box(pal.cBg, pal.cAccent) else null
@@ -6127,53 +6152,153 @@ class MainActivity : AppCompatActivity() {
         return File(File(cacheDir, "theme-wallpaper-thumbs"), "$key.jpg")
     }
 
+    private fun themeWallpaperOriginalFile(source: ThemeWallpaperSource, item: ThemeWallpaperRemoteFile): File {
+        val key = "${source.owner}/${source.repo}/${source.path}/${item.name}"
+        val digest = MessageDigest.getInstance("SHA-256").digest(key.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+        return File(File(cacheDir, "theme-wallpaper-originals"), "$digest.original")
+    }
+
+    private fun isThemeWallpaperGenerationCurrent(generation: Int): Boolean =
+        generation == themeWallpaperGeneration && wallpaperPageOpen &&
+            !Thread.currentThread().isInterrupted
+
+    private fun cancelThemeWallpaperJobs(keepGeneration: Int? = null) {
+        val stale = themeWallpaperJobs.keys.filter { keepGeneration == null || it != keepGeneration }
+        stale.forEach { generation ->
+            themeWallpaperJobs.remove(generation)?.forEach { it.cancel(true) }
+        }
+    }
+
+    private fun submitThemeWallpaperPreview(generation: Int, block: () -> Unit) {
+        val task = java.util.concurrent.FutureTask<Unit> {
+            try {
+                if (isThemeWallpaperGenerationCurrent(generation)) block()
+            } finally {
+                themeWallpaperJobs[generation]?.removeIf { it.isDone || it.isCancelled }
+            }
+        }
+        themeWallpaperJobs.computeIfAbsent(generation) {
+            java.util.concurrent.CopyOnWriteArrayList()
+        }.add(task)
+        if (!isThemeWallpaperGenerationCurrent(generation)) {
+            task.cancel(true)
+            return
+        }
+        previewExecutor.execute(task)
+    }
+
+    private fun trimThemeWallpaperOriginalCache(incoming: Long) {
+        val directory = File(cacheDir, "theme-wallpaper-originals")
+        directory.mkdirs()
+        val cap = 150L * 1024L * 1024L
+        require(incoming in 0..cap) { "wallpaper exceeds original cache limit" }
+        val files = directory.listFiles()?.filter { it.isFile }.orEmpty()
+        var used = files.sumOf { it.length() }
+        for (old in files.sortedBy { it.lastModified() }) {
+            if (used + incoming <= cap) break
+            used -= old.length()
+            old.delete()
+        }
+        require(used + incoming <= cap) { "theme wallpaper cache is full" }
+    }
+
+    private fun obtainThemeWallpaperOriginal(
+        source: ThemeWallpaperSource, item: ThemeWallpaperRemoteFile,
+        generation: Int? = null
+    ): File {
+        check(generation == null || isThemeWallpaperGenerationCurrent(generation)) { "stale wallpaper preview" }
+        require(item.size in 1..(20L * 1024L * 1024L)) { "wallpaper exceeds 20 MB" }
+        val original = themeWallpaperOriginalFile(source, item)
+        val lock = themeWallpaperOriginalLocks.computeIfAbsent(original.absolutePath) { Any() }
+        synchronized(lock) {
+            check(generation == null || isThemeWallpaperGenerationCurrent(generation)) { "stale wallpaper preview" }
+            if (original.isFile && original.length() == item.size) {
+                original.setLastModified(System.currentTimeMillis())
+                return original
+            }
+            original.delete()
+            val temp = File(original.parentFile, "${original.name}.${UUID.randomUUID()}.tmp")
+            try {
+                CommunityThemes.downloadGithubBinary(item.downloadUrl, temp, 20L * 1024L * 1024L)
+                check(generation == null || isThemeWallpaperGenerationCurrent(generation)) { "stale wallpaper preview" }
+                require(temp.isFile && temp.length() in 1..(20L * 1024L * 1024L)) { "invalid wallpaper download" }
+                require(temp.length() == item.size) { "wallpaper size mismatch" }
+                trimThemeWallpaperOriginalCache(temp.length())
+                original.parentFile?.mkdirs()
+                check(temp.renameTo(original)) { "couldn't cache original wallpaper" }
+                original.setLastModified(System.currentTimeMillis())
+                return original
+            } finally {
+                temp.delete()
+            }
+        }
+    }
+
     private fun loadThemeWallpaperPreview(
-        item: ThemeWallpaperRemoteFile, target: ImageView, source: ThemeWallpaperSource,
-        generation: Int, allowDownloads: Boolean
+        item: ThemeWallpaperRemoteFile, target: ImageView, placeholder: TextView,
+        source: ThemeWallpaperSource, generation: Int, allowDownloads: Boolean
     ) {
         val thumb = themeWallpaperPreviewFile(source, item)
-        if (!allowDownloads && !thumb.isFile) return
         target.tag = item.downloadUrl
-        themeWallpaperExecutor.execute {
+        placeholder.text = item.name
+        placeholder.visibility = View.VISIBLE
+        target.setImageDrawable(null)
+        if (!allowDownloads && !thumb.isFile) return
+        submitThemeWallpaperPreview(generation) {
+            if (!isThemeWallpaperGenerationCurrent(generation)) return@submitThemeWallpaperPreview
             val bitmap = runCatching {
                 if (!thumb.isFile) {
-                    val temp = File(cacheDir, "theme-wallpaper-preview-${UUID.randomUUID()}.tmp")
-                    try {
-                        CommunityThemes.downloadGithubBinary(item.downloadUrl, temp, 20L * 1024L * 1024L)
-                        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                        BitmapFactory.decodeFile(temp.absolutePath, bounds)
-                        require(bounds.outWidth > 0 && bounds.outHeight > 0) { "invalid image" }
-                        var sample = 1
-                        while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 480) sample *= 2
-                        var decoded = BitmapFactory.decodeFile(
-                            temp.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample }
-                        ) ?: error("couldn't decode preview")
-                        val scale = minOf(1f, 480f / maxOf(decoded.width, decoded.height))
-                        if (scale < 1f) {
-                            val scaled = android.graphics.Bitmap.createScaledBitmap(
-                                decoded, (decoded.width * scale).toInt().coerceAtLeast(1),
-                                (decoded.height * scale).toInt().coerceAtLeast(1), true
-                            )
-                            if (scaled !== decoded) decoded.recycle()
-                            decoded = scaled
-                        }
-                        thumb.parentFile?.mkdirs()
-                        thumb.outputStream().use { out ->
-                            check(decoded.compress(android.graphics.Bitmap.CompressFormat.JPEG, 82, out))
-                        }
-                        decoded
-                    } finally { temp.delete() }
+                    val original = obtainThemeWallpaperOriginal(source, item, generation)
+                    if (!isThemeWallpaperGenerationCurrent(generation)) return@runCatching null
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeFile(original.absolutePath, bounds)
+                    require(bounds.outWidth > 0 && bounds.outHeight > 0) { "invalid image" }
+                    var sample = 1
+                    while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 480) sample *= 2
+                    if (!isThemeWallpaperGenerationCurrent(generation)) return@runCatching null
+                    var decoded = BitmapFactory.decodeFile(
+                        original.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample }
+                    ) ?: error("couldn't decode preview")
+                    val scale = minOf(1f, 480f / maxOf(decoded.width, decoded.height))
+                    if (scale < 1f) {
+                        val scaled = android.graphics.Bitmap.createScaledBitmap(
+                            decoded, (decoded.width * scale).toInt().coerceAtLeast(1),
+                            (decoded.height * scale).toInt().coerceAtLeast(1), true
+                        )
+                        if (scaled !== decoded) decoded.recycle()
+                        decoded = scaled
+                    }
+                    if (!isThemeWallpaperGenerationCurrent(generation)) {
+                        decoded.recycle()
+                        return@runCatching null
+                    }
+                    thumb.parentFile?.mkdirs()
+                    thumb.outputStream().use { out ->
+                        check(decoded.compress(android.graphics.Bitmap.CompressFormat.JPEG, 82, out))
+                    }
+                    decoded
                 } else {
+                    if (!isThemeWallpaperGenerationCurrent(generation)) return@runCatching null
                     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                     BitmapFactory.decodeFile(thumb.absolutePath, bounds)
                     var sample = 1
                     while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 480) sample *= 2
+                    if (!isThemeWallpaperGenerationCurrent(generation)) return@runCatching null
                     BitmapFactory.decodeFile(thumb.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample })
                 }
             }.getOrNull()
+            if (!isThemeWallpaperGenerationCurrent(generation)) {
+                bitmap?.recycle()
+                return@submitThemeWallpaperPreview
+            }
             ui {
-                if (generation == themeWallpaperGeneration && target.tag == item.downloadUrl && bitmap != null) {
+                if (isThemeWallpaperGenerationCurrent(generation) &&
+                    target.tag == item.downloadUrl && bitmap != null) {
                     target.setImageBitmap(bitmap)
+                    placeholder.visibility = View.GONE
+                } else {
+                    bitmap?.recycle()
                 }
             }
         }
@@ -6233,9 +6358,10 @@ class MainActivity : AppCompatActivity() {
         require(readWallpaperIndex().count { it.autoDownloaded && it.themeId == source.id } < 12) {
             "theme wallpaper limit reached"
         }
+        val original = obtainThemeWallpaperOriginal(source, item)
         val temp = File(cacheDir, "theme-wallpaper-${UUID.randomUUID()}.tmp")
         try {
-            CommunityThemes.downloadGithubBinary(item.downloadUrl, temp, 20L * 1024L * 1024L)
+            original.copyTo(temp, overwrite = true)
             enforceAutoWallpaperCap(item.size)
             val actualOwner = Uri.parse(item.downloadUrl).pathSegments.firstOrNull()?.takeIf { it.isNotBlank() } ?: source.owner
             val credit = "${source.theme} by ${actualOwner} · github.com/${actualOwner}/${source.repo}"
@@ -6253,7 +6379,7 @@ class MainActivity : AppCompatActivity() {
         if (!themeWallpaperCardBusy.add(key)) return
         val progress = ProgressBar(this).apply { isIndeterminate = true }
         card.addView(progress, LinearLayout.LayoutParams(dp(20), dp(20)).apply { gravity = Gravity.CENTER })
-        themeWallpaperExecutor.execute {
+        applyExecutor.execute {
             val result = runCatching {
                 if (!isWallpaperDownloadAllowed()) throw IllegalStateException("wallpapers not downloaded (mobile data)")
                 downloadThemeWallpaper(source, item)
@@ -6271,7 +6397,7 @@ class MainActivity : AppCompatActivity() {
         source: ThemeWallpaperSource, firstImmediately: Boolean, allowMetered: Boolean = false
     ) {
         if (!themeWallpaperBusy.add(source.id)) return
-        themeWallpaperExecutor.execute {
+        bulkExecutor.execute {
             try {
                 val files = runCatching { fetchThemeWallpaperFiles(source) }.getOrElse { emptyList() }
                 if (files.isEmpty()) return@execute
