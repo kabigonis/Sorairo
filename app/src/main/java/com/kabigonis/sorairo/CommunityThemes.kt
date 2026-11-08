@@ -149,6 +149,18 @@ object CommunityThemes {
             }
     }
 
+    /** Read a catalogue palette without installing it. Blocking; call off the main thread. */
+    fun previewPalette(context: Context, theme: CatalogTheme): OmarchyThemes.Palette? {
+        val direct = rawFile(theme, "colors.toml")
+        if (direct != null) {
+            OmarchyThemes.fromColorsToml(theme.id, direct)?.let { return named(it, theme.title) }
+        }
+        val legacy = rawFile(theme, "alacritty.toml") ?: return null
+        val map = fromAlacritty(legacy) ?: return null
+        val converted = map.entries.joinToString("\n") { "${it.key} = \"${it.value}\"" }
+        return OmarchyThemes.fromColorsToml(theme.id, converted)?.let { named(it, theme.title) }
+    }
+
     /**
      * The theme's palette, downloading it first when it isn't installed yet.
      * Blocking: call from a background thread. Throws with a readable message.
