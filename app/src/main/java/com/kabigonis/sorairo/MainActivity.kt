@@ -5177,6 +5177,9 @@ class MainActivity : AppCompatActivity() {
         }
         edit.apply()
         showWallpaperBitmap(entry, true)
+        if (prefs.getBoolean("wallpaper_auto_theme_match", true)) {
+            recommendThemeForWallpaper(entry)
+        }
         if (applyToSystem) {
             if (prefs.getBoolean("wallpaper_home_lock_sync", true)) {
                 applySystemWallpaper(
@@ -5189,6 +5192,133 @@ class MainActivity : AppCompatActivity() {
             }
         }
         if (wallpaperPageOpen && settings.visibility == View.VISIBLE) fillWallpaperSettings()
+    }
+
+    private data class WallpaperThemeCandidate(
+        val name: String,
+        val palette: Pal,
+        val installedIndex: Int?,
+        val catalogTheme: CatalogTheme?,
+        val score: Double
+    )
+
+    private fun wallpaperColorSamples(file: File): List<Pair<Int, Double>> {
+        val options = BitmapFactory.Options().apply { inSampleSize = 8 }
+        val bitmap = BitmapFactory.decodeFile(file.absolutePath, options) ?: return emptyList()
+        return try {
+            val bins = HashMap<Int, Int>()
+            var total = 0
+            val stepX = (bitmap.width / 48).coerceAtLeast(1)
+            val stepY = (bitmap.height / 48).coerceAtLeast(1)
+            for (y in 0 until bitmap.height step stepY) for (x in 0 until bitmap.width step stepX) {
+                val color = bitmap.getPixel(x, y)
+                if (Color.alpha(color) < 180) continue
+                val key = ((Color.red(color) shr 3) shl 10) or
+                    ((Color.green(color) shr 3) shl 5) or (Color.blue(color) shr 3)
+                bins[key] = (bins[key] ?: 0) + 1
+                total++
+            }
+            bins.entries.sortedByDescending { it.value }.take(8).map { (key, count) ->
+                val r = ((key shr 10) and 31) * 8 + 4
+                val g = ((key shr 5) and 31) * 8 + 4
+                val b = (key and 31) * 8 + 4
+                Color.rgb(r, g, b) to (count.toDouble() / total.coerceAtLeast(1))
+            }
+        } finally { bitmap.recycle() }
+    }
+
+    private fun wallpaperThemeScore(samples: List<Pair<Int, Double>>, theme: Pal): Double {
+        if (samples.isEmpty()) return Double.MAX_VALUE
+        val palette = listOf(theme.cBg, theme.cFg, theme.cDim, theme.cBlue,
+            theme.cGreen, theme.cAccent, theme.cSel)
+        var score = 0.0
+        for ((color, weight) in samples) {
+            val nearest = palette.minOf { candidate ->
+                val dr = Color.red(color) - Color.red(candidate)
+                val dg = Color.green(color) - Color.green(candidate)
+                val db = Color.blue(color) - Color.blue(candidate)
+                // Green contributes most to perceived brightness; keep hue differences meaningful.
+                0.30 * dr * dr + 0.59 * dg * dg + 0.11 * db * db
+            }
+            score += kotlin.math.sqrt(nearest) * weight
+        }
+        val average = samples.sumOf { (color, weight) ->
+            val lum = (0.2126 * Color.red(color) + 0.7152 * Color.green(color) +
+                0.0722 * Color.blue(color)) / 255.0
+            lum * weight
+        }
+        val themeLum = (0.2126 * Color.red(theme.cBg) + 0.7152 * Color.green(theme.cBg) +
+            0.0722 * Color.blue(theme.cBg)) / 255.0
+        return score + kotlin.math.abs(average - themeLum) * 42.0
+    }
+
+    private fun recommendThemeForWallpaper(entry: WallpaperEntry) {
+        if (prefs.getString("wall_theme_checked_id", null) == entry.id) return
+        prefs.edit().putString("wall_theme_checked_id", entry.id).apply()
+        wallpaperExecutor.execute {
+            val samples = wallpaperColorSamples(File(wallpaperDir(), entry.file))
+            if (samples.isEmpty()) return@execute
+            val installed = pals
+            val candidates = installed.mapIndexed { index, theme ->
+                WallpaperThemeCandidate(theme.name, theme, index, null, wallpaperThemeScore(samples, theme))
+            }.toMutableList()
+            val catalog = runCatching {
+                val cached = CommunityThemes.cachedCatalog(this)
+                if (cached.isNotEmpty() && CommunityThemes.catalogIsFresh(this)) cached
+                else CommunityThemes.fetchCatalog(this)
+            }.getOrElse { CommunityThemes.cachedCatalog(this) }
+            val installedIds = CommunityThemes.installedIds(this)
+            val known = installed.map { it.name.lowercase() }.toSet()
+            for (theme in catalog) {
+                if (theme.id in installedIds || theme.title.lowercase() in known) continue
+                val palette = runCatching { CommunityThemes.previewPalette(this, theme) }.getOrNull() ?: continue
+                val candidate = toPal(palette)
+                candidates += WallpaperThemeCandidate(
+                    theme.title, candidate, null, theme, wallpaperThemeScore(samples, candidate)
+                )
+            }
+            val best = candidates.minByOrNull { it.score } ?: return@execute
+            ui {
+                if (isFinishing || isDestroyed || prefs.getString("wall_current_id", null) != entry.id) return@ui
+                if (best.installedIndex != null) {
+                    val current = prefs.getInt("theme", 0)
+                    if (current != best.installedIndex) {
+                        prefs.edit().putInt("theme", best.installedIndex).apply()
+                        rebuild(false)
+                        showOverlay()
+                        Toast.makeText(this, "matched wallpaper with ${best.name}", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    val remote = best.catalogTheme ?: return@ui
+                    showSorairoConfirmDialog(
+                        "Recommended theme",
+                        "The closest match for this wallpaper is ${best.name}. Would you like to install and apply it?",
+                        "Install"
+                    ) {
+                        installWallpaperRecommendedTheme(remote)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun installWallpaperRecommendedTheme(theme: CatalogTheme) {
+        netPool.execute {
+            val result = runCatching { CommunityThemes.install(this, theme) }
+            ui {
+                result.onSuccess { palette ->
+                    invalidatePals()
+                    val index = pals.indexOfLast { it.name == palette.name }.coerceAtLeast(0)
+                    prefs.edit().putInt("theme", index).apply()
+                    rebuild(false)
+                    onThemeApplied(index, communityInstalled = true)
+                    showOverlay()
+                    Toast.makeText(this, "applied ${palette.name}", Toast.LENGTH_SHORT).show()
+                }.onFailure {
+                    Toast.makeText(this, "couldn't install ${theme.title}: ${it.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 
     private fun showWallpaperApplyDialog(entry: WallpaperEntry) {
