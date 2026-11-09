@@ -5063,7 +5063,7 @@ class MainActivity : AppCompatActivity() {
                     val retriever = android.media.MediaMetadataRetriever()
                     try {
                         retriever.setDataSource(sourceFile.absolutePath)
-                        require(retriever.frameAtTime != null) { "unsupported or invalid video" }
+                        require(retriever.getFrameAtTime() != null) { "unsupported or invalid video" }
                     } finally { retriever.release() }
                 }
                 val id = UUID.randomUUID().toString()
