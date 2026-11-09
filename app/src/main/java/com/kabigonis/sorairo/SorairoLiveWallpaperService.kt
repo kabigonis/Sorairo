@@ -92,7 +92,7 @@ class SorairoLiveWallpaperService : WallpaperService() {
                         handler.post(drawFrame)
                     }
                 }
-                "mp4", "webm", "mkv", "mov", "3gp" -> {
+                "mp4", "webm", "mkv", "mov", "3gp", "m4v" -> {
                     player = runCatching {
                         MediaPlayer().apply {
                             isLooping = true
@@ -139,7 +139,7 @@ class SorairoLiveWallpaperService : WallpaperService() {
         private fun releaseMedia() {
             running = false
             movie = null
-            player?.runCatching { setOnPreparedListener(null); stop(); release() }
+            player?.let { media -> runCatching { media.setOnPreparedListener(null); media.reset() }; runCatching { media.release() } }
             player = null
         }
     }
