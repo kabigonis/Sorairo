@@ -5317,7 +5317,7 @@ class MainActivity : AppCompatActivity() {
             fillWallpaperSettings()
         }
         target.addView(txt(10f, p.cDim,
-            "Parallax preserves image proportions and adds only the space needed for workspace movement. When sync is off, selecting a wallpaper asks which screen to update. Theme auto-follow only changes Sorairo."),
+            "Parallax preserves image proportions and adds only the space needed for workspace movement. When sync is off, selecting a wallpaper asks which screen to update. Theme auto-follow updates Sorairo and the Android wallpaper; home & lock sync controls whether both screens are updated."),
             LinearLayout.LayoutParams(-1, -2))
     }
 
@@ -6540,7 +6540,7 @@ class MainActivity : AppCompatActivity() {
                 val remembered = prefs.getString("theme_wall_${source.id}", null)
                 val rememberedEntry = readWallpaperIndex().firstOrNull { it.id == remembered }
                 if (firstImmediately && rememberedEntry != null && prefs.getBoolean("wallpaper_follows_theme", true)) {
-                    ui { applyWallpaper(rememberedEntry.id, rememberForTheme = false) }
+                    ui { applyThemeWallpaper(rememberedEntry) }
                 }
                 var used = readWallpaperIndex().filter { it.autoDownloaded && it.themeId == source.id }
                     .sumOf { it.remoteSize }
@@ -6550,7 +6550,7 @@ class MainActivity : AppCompatActivity() {
                     if (existing != null) {
                         if (firstImmediately && !appliedFirst && prefs.getBoolean("wallpaper_follows_theme", true)) {
                             appliedFirst = true
-                            ui { applyWallpaper(existing.id, rememberForTheme = false) }
+                            ui { applyThemeWallpaper(existing) }
                         }
                         continue
                     }
@@ -6560,7 +6560,7 @@ class MainActivity : AppCompatActivity() {
                         used += item.size
                         if (firstImmediately && !appliedFirst && prefs.getBoolean("wallpaper_follows_theme", true)) {
                             appliedFirst = true
-                            ui { applyWallpaper(entry.id, rememberForTheme = false) }
+                            ui { applyThemeWallpaper(entry) }
                         }
                     }
                 }
@@ -6577,6 +6577,17 @@ class MainActivity : AppCompatActivity() {
         return try { currentThemeWallpaperSource() } finally {
             if (previous != index) prefs.edit().putInt("theme", previous).apply()
         }
+    }
+
+    /** Applies a theme-selected wallpaper to Sorairo and Android without opening a chooser. */
+    private fun applyThemeWallpaper(entry: WallpaperEntry) {
+        applyWallpaper(entry.id, rememberForTheme = false)
+        val flags = if (prefs.getBoolean("wallpaper_home_lock_sync", true)) {
+            android.app.WallpaperManager.FLAG_SYSTEM or android.app.WallpaperManager.FLAG_LOCK
+        } else {
+            android.app.WallpaperManager.FLAG_SYSTEM
+        }
+        applySystemWallpaper(entry, flags, "Theme wallpaper updated")
     }
 
     private fun onThemeApplied(index: Int, communityInstalled: Boolean = false) {
