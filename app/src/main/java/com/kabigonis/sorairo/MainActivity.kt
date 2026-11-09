@@ -6612,12 +6612,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onThemeApplied(index: Int, communityInstalled: Boolean = false) {
-        val source = themeWallpaperSourceFor(index) ?: return
-        if (prefs.getBoolean("wallpaper_follows_theme", true)) {
-            val remembered = prefs.getString("theme_wall_${source.id}", null)
-            if (remembered != null && readWallpaperIndex().any { it.id == remembered }) {
-                applyWallpaper(remembered, rememberForTheme = false)
-            }
+        if (!prefs.getBoolean("wallpaper_follows_theme", true)) return
+        val source = themeWallpaperSourceFor(index)
+        if (source == null) {
+            // Some palettes have no wallpaper source at all. Keep the user's
+            // most recently selected local wallpaper instead of returning early.
+            lastPickedLocalWallpaper()?.let { applyThemeWallpaper(it) }
+            return
+        }
+        val remembered = prefs.getString("theme_wall_${source.id}", null)
+        if (remembered != null && readWallpaperIndex().any { it.id == remembered }) {
+            applyThemeWallpaper(readWallpaperIndex().first { it.id == remembered })
         }
         beginThemeWallpaperDownloads(source, firstImmediately = true)
     }
