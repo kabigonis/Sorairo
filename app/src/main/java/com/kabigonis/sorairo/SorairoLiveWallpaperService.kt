@@ -73,7 +73,7 @@ class SorairoLiveWallpaperService : WallpaperService() {
         }
 
         private fun selectedFile(): File? {
-            val prefs = getSharedPreferences("sorairo", MODE_PRIVATE)
+            val prefs = getSharedPreferences("launcher", MODE_PRIVATE)
             val name = prefs.getString("live_wallpaper_file", null) ?: return null
             if (name.contains('/') || name.contains('\\')) return null
             return File(File(filesDir, "wallpapers"), name).takeIf { it.isFile }
