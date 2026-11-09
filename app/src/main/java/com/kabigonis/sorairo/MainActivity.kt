@@ -5215,6 +5215,9 @@ class MainActivity : AppCompatActivity() {
             writeWallpaperIndex(readWallpaperIndex().map { if (it.id == id) it.copy(lastUsed = now) else it })
         }
         val edit = prefs.edit().putString("wall_current_id", id).remove("wall")
+        if (entry.source == "device") {
+            edit.putString("wall_last_local_id", id)
+        }
         if (rememberForTheme) {
             currentThemeWallpaperSource()?.let { edit.putString("theme_wall_${it.id}", id) }
         }
@@ -6529,7 +6532,17 @@ class MainActivity : AppCompatActivity() {
         bulkExecutor.execute {
             try {
                 val files = runCatching { fetchThemeWallpaperFiles(source) }.getOrElse { emptyList() }
-                if (files.isEmpty()) return@execute
+                if (files.isEmpty()) {
+                    if (firstImmediately && prefs.getBoolean("wallpaper_follows_theme", true)) {
+                        val remembered = prefs.getString("theme_wall_${source.id}", null)
+                        val hasRememberedThemeWallpaper = remembered != null &&
+                            readWallpaperIndex().any { it.id == remembered }
+                        if (!hasRememberedThemeWallpaper) {
+                            ui { lastPickedLocalWallpaper()?.let { applyThemeWallpaper(it) } }
+                        }
+                    }
+                    return@execute
+                }
                 if (!isWallpaperDownloadAllowed() && !allowMetered) {
                     ui {
                         themeWallpaperStatus = "wallpapers not downloaded (mobile data)"
@@ -6569,6 +6582,14 @@ class MainActivity : AppCompatActivity() {
                 ui { if (wallpaperPageOpen && settings.visibility == View.VISIBLE) fillWallpaperSettings() }
             }
         }
+    }
+
+    /** Returns the most recently selected local wallpaper for themes without their own wallpaper. */
+    private fun lastPickedLocalWallpaper(): WallpaperEntry? {
+        val entries = readWallpaperIndex().filter { it.source == "device" }
+        val rememberedId = prefs.getString("wall_last_local_id", null)
+        return entries.firstOrNull { it.id == rememberedId }
+            ?: entries.maxByOrNull { it.lastUsed }
     }
 
     private fun themeWallpaperSourceFor(index: Int): ThemeWallpaperSource? {
