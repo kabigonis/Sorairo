@@ -666,6 +666,7 @@ class MainActivity : AppCompatActivity() {
     private val focusBorderAnimators = java.util.WeakHashMap<View, ValueAnimator>()
     private val focusBorderColors = java.util.WeakHashMap<View, Int>()
     private lateinit var wall: ImageView
+    private var wallpaperVideoView: android.widget.VideoView? = null
     private data class WallpaperEntry(
         val id: String,
         val file: String,
@@ -677,7 +678,8 @@ class MainActivity : AppCompatActivity() {
         val themeId: String? = null,
         val autoDownloaded: Boolean = false,
         val lastUsed: Long = 0L,
-        val sha256: String? = null
+        val sha256: String? = null,
+        val mediaType: String = "image"
     )
     private val wallpaperExecutor = Executors.newFixedThreadPool(4)
     private val wallpaperThumbCache = object : LruCache<String, android.graphics.Bitmap>(24 * 1024 * 1024) {
@@ -1211,13 +1213,16 @@ class MainActivity : AppCompatActivity() {
 
     private val pickWall = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
+            try {
+                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (_: Exception) {}
             wallpaperExecutor.execute {
                 val added = try { importWallpaper(uri, "device") } catch (_: Exception) { null }
                 handler.post {
                     if (added == null) {
                         Toast.makeText(this, "couldn't add wallpaper", Toast.LENGTH_LONG).show()
                     } else {
-                        Toast.makeText(this, "wallpaper added · tap it to apply", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, "${added.mediaType} wallpaper added · tap it to apply", Toast.LENGTH_SHORT).show()
                         if (wallpaperPageOpen && settings.visibility == View.VISIBLE) fillWallpaperSettings()
                     }
                 }
@@ -1458,6 +1463,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        wallpaperVideoView?.start()
         activityResumed = true
         refreshInstalledApps()
         handler.removeCallbacks(tick)
@@ -1506,6 +1512,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
+        wallpaperVideoView?.pause()
         super.onPause()
         activityResumed = false
         unregisterActiveSessionsListener()
@@ -4922,7 +4929,8 @@ class MainActivity : AppCompatActivity() {
                     item.optString("themeId").takeIf { it.isNotBlank() },
                     item.optBoolean("autoDownloaded", false),
                     item.optLong("lastUsed", 0L),
-                    item.optString("sha256").takeIf { it.isNotBlank() }
+                    item.optString("sha256").takeIf { it.isNotBlank() },
+                    item.optString("mediaType", "image")
                 )
             }.filter { File(wallpaperDir(), it.file).isFile }.toMutableList()
         } catch (_: Exception) { mutableListOf() }
@@ -4943,6 +4951,7 @@ class MainActivity : AppCompatActivity() {
             item.put("autoDownloaded", entry.autoDownloaded)
             item.put("lastUsed", entry.lastUsed)
             entry.sha256?.let { item.put("sha256", it) }
+            item.put("mediaType", entry.mediaType)
             array.put(item)
         }
         val temp = File(wallpaperDir(), "index.json.tmp")
@@ -5039,6 +5048,39 @@ class MainActivity : AppCompatActivity() {
             migrateWallpaperLibraryDuplicates()
             val contentHash = sha256File(sourceFile)
             findWallpaperByHash(contentHash)?.let { return it }
+            val mime = contentResolver.getType(uri)?.lowercase(Locale.ROOT).orEmpty()
+            val hintedExt = uri.lastPathSegment?.substringAfterLast('.', "")?.lowercase(Locale.ROOT).orEmpty()
+            val isVideo = mime.startsWith("video/") || hintedExt in setOf("mp4", "webm", "mkv", "mov", "3gp", "m4v")
+            val isGif = mime == "image/gif" || hintedExt == "gif"
+            if (isVideo || isGif) {
+                require(sourceFile.length() in 1..(100L * 1024L * 1024L)) { "animated wallpaper must be under 100 MB" }
+                val extension = if (isGif) "gif" else when (mime.substringAfter('/', "")) {
+                    "webm" -> "webm"; "quicktime" -> "mov"; "3gpp" -> "3gp"; "x-matroska" -> "mkv"; else -> "mp4"
+                }
+                if (isGif) {
+                    require(sourceFile.inputStream().use { input -> input.read() == 'G'.code && input.read() == 'I'.code && input.read() == 'F'.code }) { "invalid GIF file" }
+                } else {
+                    val retriever = android.media.MediaMetadataRetriever()
+                    try {
+                        retriever.setDataSource(sourceFile.absolutePath)
+                        require(retriever.frameAtTime != null) { "unsupported or invalid video" }
+                    } finally { retriever.release() }
+                }
+                val id = UUID.randomUUID().toString()
+                val filename = "$id.$extension"
+                val destination = File(wallpaperDir(), filename)
+                sourceFile.copyTo(destination)
+                val entry = WallpaperEntry(id, filename, source, sha256 = contentHash,
+                    mediaType = if (isGif) "gif" else "video")
+                synchronized(this) {
+                    readWallpaperIndex().firstOrNull { it.sha256 == contentHash }?.let { destination.delete(); return it }
+                    val items = readWallpaperIndex()
+                    items.add(0, entry)
+                    writeWallpaperIndex(items)
+                }
+                return entry
+            }
+            require(mime.isEmpty() || mime.startsWith("image/")) { "choose an image, GIF, or video" }
             val orientation = ExifInterface(sourceFile.absolutePath).getAttributeInt(
                 ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL
             )
@@ -5155,7 +5197,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun clearCurrentWallpaper() {
-        prefs.edit().remove("wall_current_id").remove("wall").apply()
+        prefs.edit().remove("wall_current_id").remove("wall").remove("live_wallpaper_file").apply()
+        clearWallpaperVideoPreview()
         if (::wall.isInitialized) wall.setImageDrawable(null)
         wallpaperThumbCache.remove("current")
         if (wallpaperPageOpen && settings.visibility == View.VISIBLE) fillWallpaperSettings()
@@ -5279,6 +5322,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun applySystemWallpaper(entry: WallpaperEntry, which: Int, successMessage: String) {
+        if (entry.mediaType == "gif" || entry.mediaType == "video") {
+            prefs.edit().putString("live_wallpaper_file", entry.file).apply()
+            try {
+                val intent = Intent(android.app.WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER).apply {
+                    putExtra(
+                        android.app.WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT,
+                        ComponentName(this@MainActivity, SorairoLiveWallpaperService::class.java)
+                    )
+                }
+                startActivity(intent)
+                Toast.makeText(this, "Choose Sorairo to apply this live wallpaper", Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                Toast.makeText(this, e.message ?: "couldn't open live wallpaper picker", Toast.LENGTH_LONG).show()
+            }
+            return
+        }
         wallpaperExecutor.execute {
             val result = runCatching {
                 val file = File(wallpaperDir(), entry.file)
@@ -5300,6 +5359,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun removeWallpaper(entry: WallpaperEntry) {
+        if (prefs.getString("live_wallpaper_file", null) == entry.file) {
+            prefs.edit().remove("live_wallpaper_file").apply()
+        }
         synchronized(this) {
             File(wallpaperDir(), entry.file).delete()
             writeWallpaperIndex(readWallpaperIndex().filterNot { it.id == entry.id })
@@ -5348,8 +5410,47 @@ class MainActivity : AppCompatActivity() {
         showWallpaperBitmap(entry, false)
     }
 
+    private fun clearWallpaperVideoPreview() {
+        wallpaperVideoView?.let { view ->
+            (view.parent as? ViewGroup)?.removeView(view)
+            runCatching { view.stopPlayback() }
+        }
+        wallpaperVideoView = null
+        if (::wall.isInitialized) wall.visibility = View.VISIBLE
+    }
+
     private fun showWallpaperBitmap(entry: WallpaperEntry, crossfade: Boolean) {
         if (!::wall.isInitialized) return
+        if (entry.mediaType == "video") {
+            screenWallpaperCache.remove(entry.id)
+            val parent = wall.parent as? ViewGroup ?: return
+            clearWallpaperVideoPreview()
+            val index = parent.indexOfChild(wall).coerceAtLeast(0)
+            val video = android.widget.VideoView(this).apply {
+                setBackgroundColor(Color.BLACK)
+                setOnPreparedListener { mp -> mp.isLooping = true; start() }
+                setVideoURI(Uri.fromFile(File(wallpaperDir(), entry.file)))
+            }
+            parent.addView(video, index, wall.layoutParams)
+            wall.visibility = View.GONE
+            wallpaperVideoView = video
+            return
+        }
+        clearWallpaperVideoPreview()
+        if (entry.mediaType == "gif" && Build.VERSION.SDK_INT >= 28) {
+            wallpaperExecutor.execute {
+                val drawable = runCatching {
+                    ImageDecoder.decodeDrawable(ImageDecoder.createSource(File(wallpaperDir(), entry.file)))
+                }.getOrNull()
+                handler.post {
+                    if (prefs.getString("wall_current_id", null) == entry.id && drawable != null) {
+                        wall.setImageDrawable(drawable)
+                        (drawable as? AnimatedImageDrawable)?.start()
+                    }
+                }
+            }
+            return
+        }
         fun display(bitmap: android.graphics.Bitmap) {
             val next = BitmapDrawable(resources, bitmap)
             if (crossfade && wall.drawable != null) {
@@ -5369,7 +5470,7 @@ class MainActivity : AppCompatActivity() {
                 val maxDimension = maxOf(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels).coerceAtLeast(1)
                 var sample = 1
                 while (maxOf(bounds.outWidth, bounds.outHeight) / sample > maxDimension * 1.15f) sample *= 2
-                BitmapFactory.decodeFile(file.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample })
+                if (entry.mediaType == "video") null else BitmapFactory.decodeFile(file.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample })
             }.getOrNull()
             handler.post {
                 if (bitmap != null) {
@@ -5390,13 +5491,19 @@ class MainActivity : AppCompatActivity() {
         wallpaperExecutor.execute {
             val bitmap = try {
                 val file = File(wallpaperDir(), entry.file)
-                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                BitmapFactory.decodeFile(file.absolutePath, bounds)
-                var sample = 1
-                while (maxOf(bounds.outWidth, bounds.outHeight) / sample > sizePx * 2) sample *= 2
-                BitmapFactory.decodeFile(
-                    file.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample }
-                )
+                if (entry.mediaType == "video") {
+                    val retriever = android.media.MediaMetadataRetriever()
+                    try {
+                        retriever.setDataSource(file.absolutePath)
+                        retriever.getFrameAtTime(0L, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    } finally { retriever.release() }
+                } else {
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeFile(file.absolutePath, bounds)
+                    var sample = 1
+                    while (maxOf(bounds.outWidth, bounds.outHeight) / sample > sizePx * 2) sample *= 2
+                    BitmapFactory.decodeFile(file.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample })
+                }
             } catch (_: Exception) { null }
             if (bitmap != null) wallpaperThumbCache.put(entry.id, bitmap)
             handler.post {
@@ -5489,7 +5596,7 @@ class MainActivity : AppCompatActivity() {
         tabRow.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         tabRow.addView(txt(11f, p.cAccent, "+ add from device").apply {
             setPadding(dp(8), dp(8), dp(2), dp(8))
-            setOnClickListener { pickWall.launch(arrayOf("image/*")) }
+            setOnClickListener { pickWall.launch(arrayOf("image/*", "video/*")) }
         })
         shell.addView(tabRow, LinearLayout.LayoutParams(-1, -2))
 
@@ -5569,7 +5676,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val bytes = wallpaperDir().listFiles()
-            ?.filter { it.isFile && it.extension.equals("jpg", true) }
+            ?.filter { it.isFile && it.extension.lowercase() in setOf("jpg", "jpeg", "png", "gif", "mp4", "webm", "mkv", "mov", "3gp", "m4v") }
             ?.sumOf { it.length() } ?: 0L
         target.addView(txt(11f, p.cDim,
             "wallpapers use %.1f MB".format(bytes / 1048576.0)).apply {
@@ -5624,7 +5731,7 @@ class MainActivity : AppCompatActivity() {
                 val entry = entries[position]
                 val card = holder.itemView as LinearLayout
                 loadWallpaperThumbnail(entry, card.getChildAt(0) as ImageView, dp(180))
-                (card.getChildAt(1) as TextView).text = entry.file
+                (card.getChildAt(1) as TextView).text = (if (entry.mediaType == "video") "VIDEO · " else if (entry.mediaType == "gif") "GIF · " else "") + entry.file
                 (card.getChildAt(2) as TextView).text = entry.credit.orEmpty()
                 val isCurrent = prefs.getString("wall_current_id", null) == entry.id
                 card.background = if (isCurrent) box(pal.cBg, pal.cAccent) else null
