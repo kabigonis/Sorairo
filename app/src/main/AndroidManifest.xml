@@ -41,6 +41,18 @@
             </intent-filter>
         </activity>
         <service
+            android:name=".SorairoLiveWallpaperService"
+            android:exported="true"
+            android:label="Sorairo live wallpaper"
+            android:permission="android.permission.BIND_WALLPAPER">
+            <intent-filter>
+                <action android:name="android.service.wallpaper.WallpaperService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.wallpaper"
+                android:resource="@xml/sorairo_live_wallpaper" />
+        </service>
+        <service
             android:name=".NowPlayingService"
             android:exported="true"
             android:label="Launcher media access"
