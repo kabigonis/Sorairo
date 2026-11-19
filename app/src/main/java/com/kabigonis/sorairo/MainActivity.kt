@@ -741,6 +741,10 @@ class MainActivity : AppCompatActivity() {
     private val wallhavenExecutor = Executors.newSingleThreadExecutor()
     private val wallhavenColors = listOf("660000", "990000", "cc0000", "cc3333", "ea4c88", "993399", "663399", "333399", "0066cc", "0099cc", "66cccc", "77cc33", "669900", "336600", "666600", "999900", "cccc33", "ffff00", "ffcc33", "ff9900", "ff6600", "cc6633", "996633", "663300", "000000", "999999", "cccccc", "ffffff", "424153")
     private lateinit var clock: TextView
+    private val islandCore = IslandCore()
+    private var islandView: IslandView? = null
+    private var islandEmptyExpanded = false
+    private val islandWake = Runnable { refreshIsland() }
     private lateinit var status: TextView
     private lateinit var pager: ViewPager2
     private val wsLabels = ArrayList<TextView>()
@@ -1518,6 +1522,7 @@ class MainActivity : AppCompatActivity() {
         unregisterActiveSessionsListener()
         handler.removeCallbacks(tick)
         handler.removeCallbacks(monitorTick)
+        handler.removeCallbacks(islandWake)
         stopPlayerCallbacks()
     }
 
@@ -1589,7 +1594,9 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { togglePlay() }
         }
         left.addView(song)
-        clock = txt(13f, p.cFg)
+        clock = txt(13f, p.cFg).apply {
+            visibility = if (prefs.getBoolean("dynamic_island", true)) View.GONE else View.VISIBLE
+        }
         status = txt(13f, p.cFg)
         battText = txt(13f, p.cFg).apply {
             setPadding(dp(12), dp(8), dp(4), dp(8))
@@ -1634,6 +1641,22 @@ class MainActivity : AppCompatActivity() {
         val home = HomeLayer(this)
         home.addView(content, FrameLayout.LayoutParams(-1, -1))
         root.addView(home, FrameLayout.LayoutParams(-1, -1))
+
+        // Fixed transparent host: only the pill inside it changes size.
+        val islandWidth = min(dp(480), (dm.widthPixels * 0.6f).toInt())
+        val island = islandView ?: IslandView(
+            this, islandWidth, dp(34), dp(120), pal.cDim, panelColor(),
+            onFill(pal.cFg, panelColor()), font,
+            onTap = { toggleIsland() },
+            onLongPress = { showSettings() }
+        ).also { islandView = it }
+        (island.parent as? ViewGroup)?.removeView(island)
+        island.updateStyle(islandWidth, dp(34), dp(120), pal.cDim,
+            panelColor(), onFill(pal.cFg, panelColor()), font)
+        root.addView(island, FrameLayout.LayoutParams(
+            islandWidth, dp(120), Gravity.TOP or Gravity.CENTER_HORIZONTAL
+        ).apply { topMargin = dp(4) })
+        island.visibility = if (prefs.getBoolean("dynamic_island", true)) View.VISIBLE else View.GONE
 
         // ---- drawer ----
         drawer = FrameLayout(this).apply {
@@ -1812,6 +1835,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(root)
         updateWsBar()
         updateStatus()
+        refreshIsland()
     }
 
     inner class PageAdapter : RecyclerView.Adapter<PageAdapter.VH>() {
@@ -3321,6 +3345,13 @@ class MainActivity : AppCompatActivity() {
         setBox.addView(txt(11f, p.cDim, "choose what you want to configure").apply {
             setPadding(0, dp(2), 0, dp(6))
         })
+        row("dynamic island", if (prefs.getBoolean("dynamic_island", true)) "on" else "off") {
+            val enabled = !prefs.getBoolean("dynamic_island", true)
+            prefs.edit().putBoolean("dynamic_island", enabled).apply()
+            if (!enabled) islandEmptyExpanded = false
+            refreshIsland()
+            fillSettings()
+        }
         fun row(k: String, v: String, onTap: () -> Unit) {
             val r = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -4303,6 +4334,38 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, "removed ${t.title}", Toast.LENGTH_SHORT).show()
     }
 
+
+    private fun toggleIsland() {
+        val now = SystemClock.elapsedRealtime()
+        val current = islandCore.snapshot(now).current
+        if (current == null) {
+            islandEmptyExpanded = !islandEmptyExpanded
+            islandCore.tap(now)
+        } else {
+            islandEmptyExpanded = false
+            islandCore.tap(now)
+        }
+        refreshIsland()
+    }
+
+    private fun refreshIsland() {
+        if (!::clock.isInitialized) return
+        val enabled = prefs.getBoolean("dynamic_island", true)
+        val view = islandView
+        clock.visibility = if (enabled) View.GONE else View.VISIBLE
+        view?.visibility = if (enabled) View.VISIBLE else View.GONE
+        handler.removeCallbacks(islandWake)
+        if (!enabled || view == null) return
+        val now = SystemClock.elapsedRealtime()
+        val snapshot = islandCore.snapshot(now)
+        if (snapshot.current != null) islandEmptyExpanded = false
+        val date = SimpleDateFormat("EEEE, MMMM d", Locale.getDefault()).format(Date())
+        view.render(snapshot, clock.text.toString(), date, islandEmptyExpanded)
+        snapshot.nextWakeAt?.let { wakeAt ->
+            handler.postDelayed(islandWake, (wakeAt - now).coerceAtLeast(0L))
+        }
+    }
+
     private fun rebuild(reopenSettings: Boolean) {
         initHistory()
         buildUi()
@@ -4385,6 +4448,8 @@ class MainActivity : AppCompatActivity() {
                     "  wall           open wallpaper library",
                     "  wall clear     clear current wallpaper",
                     "  config         open settings",
+                    "  island on|off  toggle the dynamic island",
+                    "  island demo <kind>  preview hud/media/timer/alarm/power",
                     "  pin <app>      pin to this workspace",
                     "  unpin <app>    unpin it",
                     "  hide <app>     hide app from launcher",
@@ -4449,6 +4514,58 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 "config", "settings" -> showSettings()
+                "island" -> {
+                    when {
+                        arg.equals("on", true) -> {
+                            prefs.edit().putBoolean("dynamic_island", true).apply()
+                            refreshIsland()
+                            say("dynamic island on", p.cGreen)
+                        }
+                        arg.equals("off", true) -> {
+                            prefs.edit().putBoolean("dynamic_island", false).apply()
+                            islandEmptyExpanded = false
+                            refreshIsland()
+                            say("dynamic island off", p.cGreen)
+                        }
+                        arg.startsWith("demo ", true) -> {
+                            val kind = when (arg.substringAfter(' ').trim().lowercase()) {
+                                "hud" -> IslandKind.HUD
+                                "media" -> IslandKind.MEDIA
+                                "timer" -> IslandKind.TIMER
+                                "alarm" -> IslandKind.ALARM
+                                "power" -> IslandKind.POWER
+                                else -> null
+                            }
+                            if (kind == null) {
+                                say("usage: island demo hud|media|timer|alarm|power", p.cDim)
+                            } else {
+                                val title = when (kind) {
+                                    IslandKind.HUD -> "HUD demo"
+                                    IslandKind.MEDIA -> "Now playing demo"
+                                    IslandKind.TIMER -> "Timer demo"
+                                    IslandKind.ALARM -> "Alarm demo"
+                                    IslandKind.POWER -> "Power demo"
+                                    IslandKind.NOTIFICATION -> "Notification demo"
+                                }
+                                val result = islandCore.submit(IslandActivity(
+                                    id = "demo:" + kind.name.lowercase(),
+                                    kind = kind,
+                                    title = title,
+                                    subtitle = "Dynamic Island preview",
+                                    progress = if (kind == IslandKind.TIMER) 0.65f else null,
+                                    ttlMs = 0L
+                                ), SystemClock.elapsedRealtime())
+                                if (result.accepted) {
+                                    prefs.edit().putBoolean("dynamic_island", true).apply()
+                                    islandEmptyExpanded = false
+                                    refreshIsland()
+                                    say("submitted " + kind.name.lowercase() + " demo", p.cGreen)
+                                } else say(result.error ?: "could not submit demo", p.cAccent)
+                            }
+                        }
+                        else -> say("usage: island on|off|demo hud|media|timer|alarm|power", p.cDim)
+                    }
+                }
                 "logo" -> {
                     val i = logoNames.indexOfFirst { it.startsWith(arg.lowercase()) }
                     if (arg.isEmpty() || i < 0) {
@@ -6718,6 +6835,7 @@ class MainActivity : AppCompatActivity() {
     private fun updateStatus() {
         clock.text = SimpleDateFormat("EEEE h:mm a", Locale.getDefault())
             .format(Date()).replace("AM", "am").replace("PM", "pm")
+        refreshIsland()
 
         val now = SystemClock.elapsedRealtime()
         val rx = TrafficStats.getTotalRxBytes()
