@@ -3345,13 +3345,6 @@ class MainActivity : AppCompatActivity() {
         setBox.addView(txt(11f, p.cDim, "choose what you want to configure").apply {
             setPadding(0, dp(2), 0, dp(6))
         })
-        row("dynamic island", if (prefs.getBoolean("dynamic_island", true)) "on" else "off") {
-            val enabled = !prefs.getBoolean("dynamic_island", true)
-            prefs.edit().putBoolean("dynamic_island", enabled).apply()
-            if (!enabled) islandEmptyExpanded = false
-            refreshIsland()
-            fillSettings()
-        }
         fun row(k: String, v: String, onTap: () -> Unit) {
             val r = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -3361,6 +3354,13 @@ class MainActivity : AppCompatActivity() {
             r.addView(txt(14f, p.cFg, k), LinearLayout.LayoutParams(0, -2, 1f))
             r.addView(txt(14f, p.cAccent, v))
             setBox.addView(r)
+        }
+        row("dynamic island", if (prefs.getBoolean("dynamic_island", true)) "on" else "off") {
+            val enabled = !prefs.getBoolean("dynamic_island", true)
+            prefs.edit().putBoolean("dynamic_island", enabled).apply()
+            if (!enabled) islandEmptyExpanded = false
+            refreshIsland()
+            fillSettings()
         }
         row("style", "appearance & layout ›") {
             switchSettingsContent {
