@@ -4547,6 +4547,12 @@ class MainActivity : AppCompatActivity() {
                                     IslandKind.POWER -> "Power demo"
                                     IslandKind.NOTIFICATION -> "Notification demo"
                                 }
+                                // Demo activities are sticky by design, so remove the previous
+                                // preview before submitting another one. Otherwise a higher-priority
+                                // old demo (for example ALARM) masks the new preview indefinitely.
+                                IslandKind.values().forEach { demoKind ->
+                                    islandCore.remove("demo:" + demoKind.name.lowercase())
+                                }
                                 val result = islandCore.submit(IslandActivity(
                                     id = "demo:" + kind.name.lowercase(),
                                     kind = kind,
