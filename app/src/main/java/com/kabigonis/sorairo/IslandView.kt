@@ -47,6 +47,8 @@ class IslandView(
         clipToPadding = false
         pill.background = pillBackground()
         pill.clipToOutline = true
+        pill.isClickable = true
+        pill.isFocusable = true
         collapsedText.apply {
             gravity = Gravity.CENTER
             textSize = 13f
@@ -140,7 +142,7 @@ class IslandView(
             append(activity?.title ?: "Nothing going on")
             if (!activity?.subtitle.isNullOrBlank()) append(". ").append(activity?.subtitle)
             append(". Tap to expand or collapse. Long press for settings.")
-        }
+        }.also { pill.contentDescription = it }
         setExpanded(snapshot.state != IslandState.COLLAPSED || emptyExpanded)
     }
 
