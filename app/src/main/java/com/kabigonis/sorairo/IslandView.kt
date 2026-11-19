@@ -115,6 +115,17 @@ class IslandView(
 
     fun render(snapshot: IslandSnapshot, clock: String, date: String, emptyExpanded: Boolean) {
         collapsedText.text = clock
+        collapsedWidthPx = minOf(
+            maxWidthPx,
+            maxOf(dp(160), collapsedText.paint.measureText(clock).toInt() + dp(24))
+        )
+        if (!targetExpanded) {
+            val lp = pill.layoutParams as LayoutParams
+            if (lp.width != collapsedWidthPx) {
+                lp.width = collapsedWidthPx
+                pill.layoutParams = lp
+            }
+        }
         timeText.text = clock.substringAfter(' ').replaceFirstChar { it.uppercase() }
         dateText.text = date
         val activity = snapshot.current
