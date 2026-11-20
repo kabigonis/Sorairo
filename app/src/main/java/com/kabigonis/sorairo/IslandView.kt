@@ -47,6 +47,10 @@ class IslandView(
         clipToPadding = false
         pill.background = pillBackground()
         pill.clipToOutline = true
+        pill.clipChildren = true
+        pill.clipToPadding = true
+        expandedContent.clipChildren = true
+        expandedContent.clipToPadding = true
         pill.isClickable = true
         pill.isFocusable = true
         collapsedText.apply {
@@ -136,6 +140,7 @@ class IslandView(
         subtitleText.visibility = if (activity?.subtitle.isNullOrBlank()) View.GONE else View.VISIBLE
         progress.visibility = if (activity?.progress != null) View.VISIBLE else View.GONE
         if (activity?.progress != null) progress.progress = (activity.progress * 100f).toInt()
+        updateProgressWidth((pill.layoutParams as? LayoutParams)?.width ?: collapsedWidthPx)
         contentDescription = buildString {
             append("Dynamic Island. ")
             append(if (snapshot.state == IslandState.COLLAPSED && !emptyExpanded) "Collapsed. " else "Expanded. ")
@@ -157,6 +162,7 @@ class IslandView(
         if (!ValueAnimator.areAnimatorsEnabled()) {
             val lp = pill.layoutParams as LayoutParams
             lp.width = endWidth; lp.height = endHeight; pill.layoutParams = lp
+            updateProgressWidth(endWidth)
             expandedContent.alpha = if (expanded) 1f else 0f
             collapsedText.alpha = if (expanded) 0f else 1f
             expandedContent.visibility = if (expanded) View.VISIBLE else View.GONE
@@ -172,6 +178,7 @@ class IslandView(
             lp.width = (startWidth + (endWidth - startWidth) * fraction).toInt()
             lp.height = (startHeight + (endHeight - startHeight) * fraction).toInt()
             pill.layoutParams = lp
+            updateProgressWidth(lp.width)
             expandedContent.alpha = if (expanded) fraction else 1f - fraction
             collapsedText.alpha = if (expanded) 1f - fraction else fraction
         }
@@ -203,8 +210,19 @@ class IslandView(
         return handled
     }
 
+    private fun updateProgressWidth(pillWidth: Int) {
+        val lp = progress.layoutParams as? LinearLayout.LayoutParams ?: return
+        val contentWidth = (pillWidth - expandedContent.paddingLeft - expandedContent.paddingRight)
+            .coerceAtLeast(0)
+        if (lp.width != contentWidth) {
+            lp.width = contentWidth
+            progress.layoutParams = lp
+        }
+    }
+
     private fun pillBackground() = GradientDrawable().apply {
-        setColor(fillColor)
+        // Keep the theme background fully opaque, even if a palette supplies an alpha channel.
+        setColor(fillColor or (0xFF shl 24))
         setStroke(dp(1), dimColor)
         cornerRadius = dp(22).toFloat()
     }
