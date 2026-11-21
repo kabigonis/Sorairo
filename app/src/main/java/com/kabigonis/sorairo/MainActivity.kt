@@ -3282,12 +3282,54 @@ class MainActivity : AppCompatActivity() {
         val c = activeController()
         ctrl = c
         val md = c?.metadata
-        val t = md?.getString(MediaMetadata.METADATA_KEY_TITLE)
-        val a = md?.getString(MediaMetadata.METADATA_KEY_ARTIST)
-        if (!t.isNullOrEmpty()) {
-            title = if (a.isNullOrEmpty()) t else "$t — $a"
-            playing = c?.playbackState?.state == PlaybackState.STATE_PLAYING
+        val rawTitle = md?.getString(MediaMetadata.METADATA_KEY_TITLE)
+            ?: md?.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE)
+        val artist = md?.getString(MediaMetadata.METADATA_KEY_ARTIST)
+            ?: md?.getString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE)
+            ?: md?.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST)
+        val playback = c?.playbackState
+        playing = playback?.state == PlaybackState.STATE_PLAYING
+        if (!rawTitle.isNullOrBlank()) {
+            title = if (artist.isNullOrBlank()) rawTitle else "$rawTitle — $artist"
         }
+
+        // Keep the island's MEDIA activity in sync with the same session used by
+        // Sorairo's player window. A sticky entry remains visible while paused;
+        // losing the session or its track metadata removes it.
+        if (!rawTitle.isNullOrBlank()) {
+            val duration = md?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L
+            val position = playback?.position ?: -1L
+            val progress = if (duration > 0L && position >= 0L) {
+                (position.toDouble() / duration.toDouble()).toFloat().coerceIn(0f, 1f)
+            } else {
+                null
+            }
+            val playbackLabel = when (playback?.state) {
+                PlaybackState.STATE_PLAYING -> "Playing"
+                PlaybackState.STATE_PAUSED -> "Paused"
+                PlaybackState.STATE_BUFFERING -> "Buffering"
+                PlaybackState.STATE_STOPPED -> "Stopped"
+                else -> "Not playing"
+            }
+            val subtitle = listOfNotNull(
+                artist?.takeIf { it.isNotBlank() },
+                playbackLabel
+            ).joinToString(" · ").take(80)
+            islandCore.submit(
+                IslandActivity(
+                    id = "media:now-playing",
+                    kind = IslandKind.MEDIA,
+                    title = rawTitle.take(60),
+                    subtitle = subtitle,
+                    progress = progress,
+                    ttlMs = 0L
+                ),
+                SystemClock.elapsedRealtime()
+            )
+        } else {
+            islandCore.remove("media:now-playing")
+        }
+
         if (title == null) {
             song.visibility = View.GONE
             vis.visibility = View.GONE
@@ -3300,6 +3342,7 @@ class MainActivity : AppCompatActivity() {
             vis.color = if (playing) pal.cGreen else pal.cDim
             vis.playing = playing
         }
+        refreshIsland()
     }
 
     private fun closeSettings() {
