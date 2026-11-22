@@ -44,6 +44,12 @@ internal fun MainActivity.anchorDialogToTop(dialog: AlertDialog?, horizontal: In
     if (horizontal == Gravity.END) lp.x = sideMarginPx
     lp.dimAmount = 0f
     w.attributes = lp
+    // short slide-and-fade in, like the Omarchy popups
+    w.decorView.apply {
+        alpha = 0f
+        translationY = -dp(10).toFloat()
+        animate().alpha(1f).translationY(0f).setDuration(170).start()
+    }
 }
 
 internal fun MainActivity.showCalendarPopup() {

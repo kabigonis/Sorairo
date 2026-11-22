@@ -38,4 +38,22 @@ class BatteryPanelTest {
         assertEquals("59m", formatMinutes(59))
         assertEquals("2h 0m", formatMinutes(120))
     }
+
+    @Test fun displayedTimeLeftSnapsToFiveMinutes() {
+        assertEquals(125, roundMinutesForDisplay(127))
+        assertEquals(130, roundMinutesForDisplay(128))
+        assertEquals(10, roundMinutesForDisplay(10))
+    }
+
+    @Test fun smoothingDampsSpikesButFollowsTrends() {
+        // first sample passes through
+        assertEquals(1000f, smoothValue(null, 1000f, 2000L), 0.001f)
+        // one big spike for 2 s moves the average only a little
+        val afterSpike = smoothValue(1000f, 3000f, 2000L)
+        assertEquals(true, afterSpike > 1000f && afterSpike < 1200f)
+        // a sustained new level is mostly reached after several time constants
+        var v = 1000f
+        repeat(150) { v = smoothValue(v, 2000f, 2000L) }
+        assertEquals(2000f, v, 20f)
+    }
 }

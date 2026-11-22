@@ -79,5 +79,6 @@ internal fun MainActivity.updateStatus() {
     parts.add(net)
     status.text = parts.joinToString("   ")
     battText.text = "▮ ${bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)}%"
+    sampleBatteryCurrent(bm)
     updateNowPlaying()
 }
