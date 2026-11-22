@@ -4,6 +4,7 @@ import android.app.ActivityManager
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
+import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.BitmapFactory
@@ -147,7 +148,7 @@ internal fun MainActivity.updateMonitorSummary(ws: Int) {
     val view = monitorSummaries[ws] ?: return
     val p = pal
     val mi = ActivityManager.MemoryInfo()
-    (getSystemService(ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(mi)
+    (getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(mi)
 
     fun line(label: String, used: Long, total: Long): SpannableStringBuilder {
         val safeTotal = total.coerceAtLeast(1L)
@@ -181,7 +182,7 @@ internal fun MainActivity.updateMonitorSummary(ws: Int) {
     val sdTotal = sdStats?.let { it.blockCountLong * it.blockSizeLong } ?: 0L
     val sdFree = sdStats?.let { it.availableBlocksLong * it.blockSizeLong } ?: 0L
 
-    val battery = (getSystemService(BATTERY_SERVICE) as BatteryManager)
+    val battery = (getSystemService(Context.BATTERY_SERVICE) as BatteryManager)
         .getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY).coerceIn(0, 100)
 
     val text = SpannableStringBuilder()
@@ -289,7 +290,7 @@ internal fun MainActivity.fetchInto(sb: SpannableStringBuilder) {
     }
 
     val mi = ActivityManager.MemoryInfo()
-    (getSystemService(ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(mi)
+    (getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(mi)
     val gb = 1024.0 * 1024 * 1024
     val dm = resources.displayMetrics
     val mins = SystemClock.elapsedRealtime() / 60000
@@ -334,7 +335,7 @@ internal fun MainActivity.fmtSpeed(b: Long): String = when {
 
 internal fun MainActivity.headphones(): String? {
     return try {
-        val am = getSystemService(AUDIO_SERVICE) as AudioManager
+        val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val types = setOf(3, 4, 7, 8, 22, 26)
         val d = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull { it.type in types }
             ?: return null
@@ -348,14 +349,14 @@ internal fun MainActivity.headphones(): String? {
 @Suppress("DEPRECATION")
 internal fun MainActivity.netLabel(): String {
     return try {
-        val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val caps = cm.getNetworkCapabilities(cm.activeNetwork)
         when {
             caps == null -> "offline"
             caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> {
                 var s = "wifi"
                 try {
-                    val wm = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
+                    val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
                     val ls = wm.connectionInfo.linkSpeed
                     if (ls > 0) s += " ${ls}M"
                 } catch (_: Exception) {

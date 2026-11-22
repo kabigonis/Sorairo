@@ -1,5 +1,6 @@
 package com.kabigonis.sorairo
 
+import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.ConnectivityManager
 import android.net.Uri
@@ -424,7 +425,7 @@ internal fun MainActivity.findThemeWallpaperEntry(source: ThemeWallpaperSource, 
 internal fun MainActivity.isWallpaperDownloadAllowed(): Boolean {
     if (prefs.getBoolean("wallpaper_any_network", false)) return true
     return try {
-        val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         cm.isActiveNetworkMetered.not()
     } catch (_: Exception) { false }
 }

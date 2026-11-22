@@ -28,7 +28,7 @@ import com.kabigonis.sorairo.MainActivity.Companion.POWERAMP_EXTRA_REPEAT
 internal fun MainActivity.activeController(): MediaController? {
     if (!mediaAccess()) return null
     return try {
-        val manager = getSystemService(MEDIA_SESSION_SERVICE) as MediaSessionManager
+        val manager = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
         val sessions = manager.getActiveSessions(
             ComponentName(this, NowPlayingService::class.java)
         )
@@ -357,7 +357,7 @@ internal fun MainActivity.touchDownStartedInCurrentQueue(): Boolean {
 internal fun MainActivity.registerActiveSessionsListener() {
     if (!mediaAccess() || activeSessionsListener != null) return
     try {
-        val manager = getSystemService(MEDIA_SESSION_SERVICE) as MediaSessionManager
+        val manager = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
         val listener = MediaSessionManager.OnActiveSessionsChangedListener { sessions ->
             val active = sessions?.firstOrNull {
                 it.playbackState?.state == PlaybackState.STATE_PLAYING
@@ -382,7 +382,7 @@ internal fun MainActivity.registerActiveSessionsListener() {
 internal fun MainActivity.unregisterActiveSessionsListener() {
     val listener = activeSessionsListener ?: return
     try {
-        (getSystemService(MEDIA_SESSION_SERVICE) as MediaSessionManager)
+        (getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager)
             .removeOnActiveSessionsChangedListener(listener)
     } catch (_: Exception) {
     }

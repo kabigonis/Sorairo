@@ -1,6 +1,7 @@
 package com.kabigonis.sorairo
 
 import android.provider.Settings
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.text.InputType
@@ -330,7 +331,7 @@ internal fun MainActivity.openDrawer() {
     drawer.animate().alpha(1f).setDuration(160).start()
     panel.animate().translationY(0f).setDuration(200).start()
     search.requestFocus()
-    (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager)
+    (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
         .showSoftInput(search, InputMethodManager.SHOW_IMPLICIT)
 }
 
@@ -338,7 +339,7 @@ internal fun MainActivity.closeDrawer() {
     autoLaunchedQuery = null
     endDrawerAppActions()
     if (drawer.visibility != View.VISIBLE) return
-    (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager)
+    (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
         .hideSoftInputFromWindow(search.windowToken, 0)
     drawer.animate().alpha(0f).setDuration(140)
         .withEndAction { drawer.visibility = View.GONE }.start()

@@ -1,6 +1,7 @@
 package com.kabigonis.sorairo
 
 import android.provider.Settings
+import android.content.Context
 import android.content.Intent
 import android.os.SystemClock
 import android.text.InputType
@@ -94,7 +95,7 @@ internal fun MainActivity.buildPage(ws: Int): View {
         if (field != null) {
             drawerOwnsIme = false
             field.requestFocus()
-            (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager)
+            (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
                 .showSoftInput(field, InputMethodManager.SHOW_IMPLICIT)
         }
     }

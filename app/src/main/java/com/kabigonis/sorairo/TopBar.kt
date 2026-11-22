@@ -1,5 +1,6 @@
 package com.kabigonis.sorairo
 
+import android.content.Context
 import android.net.TrafficStats
 import android.os.BatteryManager
 import android.os.SystemClock
@@ -71,7 +72,7 @@ internal fun MainActivity.updateStatus() {
         lastT = now; lastRx = rx; lastTx = tx
     }
 
-    val bm = getSystemService(BATTERY_SERVICE) as BatteryManager
+    val bm = getSystemService(Context.BATTERY_SERVICE) as BatteryManager
     val parts = ArrayList<String>()
     headphones()?.let { parts.add("♪ $it") }
     val net = netLabel()

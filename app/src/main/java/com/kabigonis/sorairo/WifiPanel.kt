@@ -22,8 +22,8 @@ import androidx.appcompat.app.AlertDialog
 @Suppress("DEPRECATION")
 internal fun MainActivity.showWifiPanel() {
     val p = pal
-    val wifi = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
-    val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+    val wifi = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+    val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     val hasWifi = cm.getNetworkCapabilities(cm.activeNetwork)
         ?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
     val root = LinearLayout(this).apply {
@@ -70,7 +70,7 @@ internal fun MainActivity.showWifiPanel() {
         }
 
     fun locationEnabled(): Boolean = if (Build.VERSION.SDK_INT >= 28) {
-        (getSystemService(LOCATION_SERVICE) as android.location.LocationManager).isLocationEnabled
+        (getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager).isLocationEnabled
     } else {
         Settings.Secure.getInt(contentResolver, Settings.Secure.LOCATION_MODE, Settings.Secure.LOCATION_MODE_OFF) != Settings.Secure.LOCATION_MODE_OFF
     }

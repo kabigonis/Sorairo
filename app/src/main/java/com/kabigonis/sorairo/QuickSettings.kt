@@ -5,6 +5,7 @@ import android.os.PowerManager
 import android.provider.Settings
 import androidx.core.app.NotificationManagerCompat
 import kotlin.math.roundToInt
+import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
 import android.net.ConnectivityManager
@@ -114,12 +115,12 @@ internal fun MainActivity.fillQs() {
     qsBox.removeAllViews()
     qsBox.addView(txt(15f, p.cBlue, "~/quick"))
 
-    val am = getSystemService(AUDIO_SERVICE) as AudioManager
-    val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+    val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     val net = netLabel()
     val wifiOn = net.startsWith("wifi")
     val btOn = try {
-        (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter?.isEnabled == true
+        (getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager).adapter?.isEnabled == true
     } catch (_: Exception) {
         false
     }
@@ -129,7 +130,7 @@ internal fun MainActivity.fillQs() {
     } catch (_: Exception) {
         false
     }
-    val saver = (getSystemService(POWER_SERVICE) as PowerManager).isPowerSaveMode
+    val saver = (getSystemService(Context.POWER_SERVICE) as PowerManager).isPowerSaveMode
     val micMuted = am.isMicrophoneMute
     val vpnOn = try {
         cm.getNetworkCapabilities(cm.activeNetwork)

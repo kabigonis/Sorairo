@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Dialog
 import android.app.NotificationManager
 import android.provider.Settings
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -230,7 +231,7 @@ internal fun MainActivity.fillPermissionSettings() {
     })
 
     fun locationEnabled(): Boolean = if (Build.VERSION.SDK_INT >= 28) {
-        (getSystemService(LOCATION_SERVICE) as android.location.LocationManager).isLocationEnabled
+        (getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager).isLocationEnabled
     } else {
         Settings.Secure.getInt(
             contentResolver, Settings.Secure.LOCATION_MODE,
@@ -300,7 +301,7 @@ internal fun MainActivity.fillPermissionSettings() {
         }
     }
 
-    val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+    val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     val dndGranted = notificationManager.isNotificationPolicyAccessGranted
     permissionRow(
         "Do Not Disturb access",

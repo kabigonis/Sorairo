@@ -1,5 +1,6 @@
 package com.kabigonis.sorairo
 
+import android.content.Context
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.os.SystemClock
@@ -204,7 +205,7 @@ internal fun MainActivity.buildWallhavenSection(): View {
         if (actionId == EditorInfo.IME_ACTION_SEARCH || (event?.keyCode == android.view.KeyEvent.KEYCODE_ENTER && event.action == android.view.KeyEvent.ACTION_UP)) {
             wallhavenQuery = view.text.toString().trim(); wallhavenPage = 1; wallhavenResults = emptyList()
             loadWallhavenPage(1, false, status, grid, more)
-            (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(view.windowToken, 0); true
+            (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(view.windowToken, 0); true
         } else false
     }
     section.addView(more)
