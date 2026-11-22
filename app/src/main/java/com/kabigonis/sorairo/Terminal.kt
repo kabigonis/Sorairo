@@ -238,6 +238,7 @@ internal fun MainActivity.runCommand(ws: Int, line: String) {
                 "  hidden         list hidden apps",
                 "  ls             list apps",
                 "  battery        battery panel (also: tap the % in the bar)",
+                "  battery adb    optional adb grant for the Power-saver switch",
                 "  vpn            open your vpn app",
                 "  <app name>     launch (fuzzy match)"
             ).forEach { say(it) }
@@ -422,7 +423,12 @@ internal fun MainActivity.runCommand(ws: Int, line: String) {
                 val names = allApps.filter { it.pkg in h }.joinToString("  ") { it.label.lowercase() }
                 say(if (names.isEmpty()) "no hidden apps" else names, p.cDim)
             }
-            "battery", "batt" -> showBatteryPanel()
+            "battery", "batt" -> if (arg == "adb") {
+                say("optional, for power users: switch Battery Saver from the panel", p.cDim)
+                say("1. enable Wireless debugging, pair it with adb", p.cDim)
+                say("2. run: ${batterySaverGrantCommand()}", p.cFg)
+                say("without it the panel opens Android's Battery Saver settings", p.cDim)
+            } else showBatteryPanel()
             "vpn" -> launchVpn()
             "ls" -> say(apps.joinToString("  ") { it.label.lowercase() }, p.cDim)
             else -> {

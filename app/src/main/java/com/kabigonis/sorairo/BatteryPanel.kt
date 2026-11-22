@@ -94,6 +94,14 @@ internal fun sampleBatteryCurrent(bm: BatteryManager) {
     smoothedCharging = charging
 }
 
+/** Subtitle under "Battery". Mirrors Omarchy: "SPENDING JOULES" while running on the battery. */
+internal fun batteryStateLabel(status: Int, plugged: Boolean): String = when {
+    status == BatteryManager.BATTERY_STATUS_FULL -> "FULL"
+    status == BatteryManager.BATTERY_STATUS_CHARGING -> "CHARGING"
+    plugged -> "PLUGGED IN"
+    else -> "SPENDING JOULES"
+}
+
 private fun healthName(code: Int) = when (code) {
     BatteryManager.BATTERY_HEALTH_GOOD -> "good"
     BatteryManager.BATTERY_HEALTH_OVERHEAT -> "overheating"
@@ -102,6 +110,10 @@ private fun healthName(code: Int) = when (code) {
     BatteryManager.BATTERY_HEALTH_COLD -> "cold"
     else -> "unknown"
 }
+
+/** The optional one-time adb command that lets the panel switch Battery Saver itself (for power users). */
+internal fun MainActivity.batterySaverGrantCommand(): String =
+    "adb shell pm grant $packageName android.permission.WRITE_SECURE_SETTINGS"
 
 /** Battery Saver can only be switched directly if the user granted WRITE_SECURE_SETTINGS over adb. */
 internal fun MainActivity.canSetBatterySaver(): Boolean =
@@ -134,7 +146,8 @@ internal fun MainActivity.showBatteryPanel() {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
     }
-    head.addView(txt(26f, p.cBlue, "\u25AE").apply { setPadding(0, 0, dp(12), 0) })
+    val battIcon = BatteryIconView(this, p.cBlue, p.cBg or (0xFF shl 24))
+    head.addView(battIcon, LinearLayout.LayoutParams(dp(24), dp(32)).apply { marginEnd = dp(14) })
     val titles = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
     titles.addView(txt(17f, p.cFg, "Battery").apply { setTypeface(typeface, Typeface.BOLD) })
     titles.addView(stateText)
@@ -246,7 +259,8 @@ internal fun MainActivity.showBatteryPanel() {
         addView(saverBtn.tv, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(8) })
         addView(balancedBtn.tv, LinearLayout.LayoutParams(0, -2, 1f))
     })
-    val hint = txt(10f, p.cDim, "To switch it from here, run once over adb:\nadb shell pm grant $packageName android.permission.WRITE_SECURE_SETTINGS")
+    // Normal users never see adb instructions: without the optional grant the buttons simply open Android's settings.
+    val hint = txt(10f, p.cDim, "Tap a profile to open Android's Battery Saver settings")
         .apply { setPadding(0, dp(8), 0, 0) }
     root.addView(hint)
 
@@ -255,8 +269,10 @@ internal fun MainActivity.showBatteryPanel() {
         val sticky = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         sampleBatteryCurrent(bm)
         val pct = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY).coerceIn(0, 100)
-        val charging = bm.isCharging
         val status = sticky?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+        // some chargers report "not charging" while plugged in, so look at the plug as well
+        val plugged = (sticky?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0
+        val charging = bm.isCharging || plugged
         val full = status == BatteryManager.BATTERY_STATUS_FULL
         val mv = sticky?.getIntExtra(BatteryManager.EXTRA_VOLTAGE, 0) ?: 0
         val tempC = (sticky?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE) ?: Int.MIN_VALUE)
@@ -276,11 +292,8 @@ internal fun MainActivity.showBatteryPanel() {
             else -> ua?.let { dischargeMinutesFromUa(counter, it) }
         }
 
-        stateText.text = when {
-            full -> "FULL"
-            charging -> "CHARGING"
-            else -> "DISCHARGING"
-        }
+        stateText.text = batteryStateLabel(status, plugged)
+        battIcon.update(pct / 100f, charging)
         pctText.text = "$pct%"
         val target = pct / 100f
         if (animate && root.isAttachedToWindow) fillBar.animate().scaleX(target).setDuration(350).start()

@@ -56,4 +56,12 @@ class BatteryPanelTest {
         repeat(150) { v = smoothValue(v, 2000f, 2000L) }
         assertEquals(2000f, v, 20f)
     }
+
+    @Test fun stateLabels() {
+        assertEquals("SPENDING JOULES", batteryStateLabel(3, false))   // discharging
+        assertEquals("CHARGING", batteryStateLabel(2, true))
+        assertEquals("PLUGGED IN", batteryStateLabel(4, true))         // plugged but "not charging"
+        assertEquals("PLUGGED IN", batteryStateLabel(3, true))
+        assertEquals("FULL", batteryStateLabel(5, true))
+    }
 }

@@ -6,6 +6,7 @@ import android.graphics.Typeface
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
+import androidx.core.view.WindowCompat
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -36,14 +37,29 @@ internal fun yearProgressPercent(d: LocalDate): Int =
  * (calendar, under the clock) or Gravity.END (battery, under the status icons). No screen dimming.
  */
 internal fun MainActivity.anchorDialogToTop(dialog: AlertDialog?, horizontal: Int, sideMarginPx: Int = 0) {
-    val w = dialog?.window ?: return
+    if (dialog == null) return
+    val w = dialog.window ?: return
+    // Lay the popup out against the physical screen, not the inset-adjusted frame. Otherwise it rides
+    // down with the system status bar when the user pulls the Android quick-settings shade.
+    WindowCompat.setDecorFitsSystemWindows(w, false)
+    w.addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
     w.setGravity(Gravity.TOP or horizontal)
     w.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+    // sit just under our own top bar
+    val y = runCatching {
+        val loc = IntArray(2)
+        battText.getLocationOnScreen(loc)
+        if (battText.height > 0) loc[1] + battText.height + dp(4) else dp(40)
+    }.getOrDefault(dp(40))
     val lp = w.attributes
-    lp.y = dp(40)
+    lp.y = y
     if (horizontal == Gravity.END) lp.x = sideMarginPx
     lp.dimAmount = 0f
     w.attributes = lp
+    // the shade (or anything else) taking focus closes the popup instead of leaving it floating
+    w.decorView.viewTreeObserver.addOnWindowFocusChangeListener { hasFocus ->
+        if (!hasFocus && dialog.isShowing) dialog.dismiss()
+    }
     // short slide-and-fade in, like the Omarchy popups
     w.decorView.apply {
         alpha = 0f
@@ -65,24 +81,12 @@ internal fun MainActivity.showCalendarPopup() {
         background = box(p.cBg or (0xFF shl 24), p.cBlue)
     }
 
-    // Big "November 22" header; tap it to open the system calendar app.
+    // Big "November 22" header with the calendar icon (display only).
     val head = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER
-        setOnClickListener {
-            try {
-                startActivity(
-                    Intent(
-                        Intent.ACTION_VIEW,
-                        android.provider.CalendarContract.CONTENT_URI.buildUpon().appendPath("time").build()
-                    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                )
-            } catch (_: Exception) {
-                Toast.makeText(this@showCalendarPopup, "No calendar app found", Toast.LENGTH_SHORT).show()
-            }
-        }
     }
-    head.addView(txt(26f, p.cBlue, "\u25A6").apply { setPadding(0, 0, dp(12), 0) })
+    head.addView(CalendarIconView(this, p.cBlue), LinearLayout.LayoutParams(dp(34), dp(34)).apply { marginEnd = dp(12) })
     head.addView(
         txt(30f, p.cBlue, today.month.getDisplayName(TextStyle.FULL, loc) + " " + today.dayOfMonth)
             .apply { setTypeface(typeface, Typeface.BOLD) }
