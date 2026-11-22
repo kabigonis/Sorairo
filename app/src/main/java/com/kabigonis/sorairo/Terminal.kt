@@ -237,7 +237,7 @@ internal fun MainActivity.runCommand(ws: Int, line: String) {
                 "  unhide <app>   show it again",
                 "  hidden         list hidden apps",
                 "  ls             list apps",
-                "  qs             quick settings panel",
+                "  battery        battery panel (also: tap the % in the bar)",
                 "  vpn            open your vpn app",
                 "  <app name>     launch (fuzzy match)"
             ).forEach { say(it) }
@@ -422,7 +422,7 @@ internal fun MainActivity.runCommand(ws: Int, line: String) {
                 val names = allApps.filter { it.pkg in h }.joinToString("  ") { it.label.lowercase() }
                 say(if (names.isEmpty()) "no hidden apps" else names, p.cDim)
             }
-            "qs" -> openQs()
+            "battery", "batt" -> showBatteryPanel()
             "vpn" -> launchVpn()
             "ls" -> say(apps.joinToString("  ") { it.label.lowercase() }, p.cDim)
             else -> {

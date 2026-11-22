@@ -67,7 +67,6 @@ internal fun MainActivity.showSettings() {
     wallpaperPageOpen = false
     cancelThemeWallpaperJobs()
     closeDrawer()
-    closeQs()
     fillSettings()
     setScroll.scrollTo(0, 0)
     showOverlay()
@@ -748,6 +747,5 @@ internal fun MainActivity.rebuild(reopenSettings: Boolean) {
 internal fun MainActivity.refreshPaletteSurfaces() {
     val p = pal
     if (panelInitialized) panel.background = box(solidColor(), p.cAccent)
-    if (qsBoxInitialized) qsBox.background = box(solidColor(), p.cAccent)
     if (setBoxInitialized) setBox.background = box(solidColor(), p.cAccent)
 }

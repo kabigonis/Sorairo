@@ -24,7 +24,6 @@ import com.kabigonis.sorairo.MainActivity.Companion.NEW_APP_WINDOW_MS
 // Moved verbatim from MainActivity.kt as extension functions on MainActivity.
 
 internal fun MainActivity.showPinnedPicker(ws: Int) {
-    closeQs()
     fillPinnedPicker(ws)
     setScroll.scrollTo(0, 0)
     showOverlay()
@@ -303,7 +302,6 @@ internal fun MainActivity.showRenameDialog(app: App) {
 
 internal fun MainActivity.launchApp(app: App) {
     closeDrawer()
-    closeQs()
     packageManager.getLaunchIntentForPackage(app.pkg)?.let { startActivity(it) }
 }
 

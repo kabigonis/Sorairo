@@ -360,8 +360,6 @@ class MainActivity : AppCompatActivity() {
     internal lateinit var vis: VisualizerView
     internal lateinit var song: TextView
     internal lateinit var battText: TextView
-    internal lateinit var qs: FrameLayout
-    internal lateinit var qsBox: LinearLayout
     internal var ctrl: MediaController? = null
     internal var listeningController: MediaController? = null
     internal var playerCallback: MediaController.Callback? = null
@@ -697,13 +695,11 @@ class MainActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         closeDrawer()
         closeSettings()
-        closeQs()
     }
 
     @Deprecated("Launcher stays put on back")
     override fun onBackPressed() {
         if (moveSource[curWs] >= 0) endMove()
-        else if (qs.visibility == View.VISIBLE) closeQs()
         else if (settings.visibility == View.VISIBLE) closeSettings() else closeDrawer()
     }
 
@@ -763,11 +759,16 @@ class MainActivity : AppCompatActivity() {
         left.addView(song)
         clock = txt(13f, p.cFg).apply {
             visibility = if (prefs.getBoolean("dynamic_island", true)) View.GONE else View.VISIBLE
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            setOnClickListener { showCalendarPopup() }
         }
-        status = txt(13f, p.cFg)
+        status = txt(13f, p.cFg).apply {
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            setOnClickListener { showWifiPanel() }
+        }
         battText = txt(13f, p.cFg).apply {
             setPadding(dp(12), dp(8), dp(4), dp(8))
-            setOnLongClickListener { openQs(); true }
+            setOnClickListener { showBatteryPanel() }
         }
         val right = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -889,26 +890,6 @@ class MainActivity : AppCompatActivity() {
         )
         root.addView(drawer, FrameLayout.LayoutParams(-1, -1))
 
-        // ---- quick settings overlay ----
-        qs = FrameLayout(this).apply {
-            visibility = View.GONE
-            setBackgroundColor(Color.parseColor("#55000000"))
-            setOnClickListener { closeQs() }
-        }
-        qsBox = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = box(solidColor(), p.cAccent)
-            setPadding(dp(16), dp(12), dp(16), dp(14))
-            isClickable = true
-        }
-        qs.addView(
-            qsBox,
-            FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply {
-                topMargin = dp(44); marginEnd = dp(12)
-            }
-        )
-        root.addView(qs, FrameLayout.LayoutParams(-1, -1))
-
         // ---- settings overlay ----
         settings = FrameLayout(this).apply {
             visibility = View.GONE
@@ -939,8 +920,7 @@ class MainActivity : AppCompatActivity() {
             terminalPrompts.getOrNull(curWs)?.hasFocus() == true &&
                 !drawerOwnsIme &&
                 drawer.visibility != View.VISIBLE &&
-                settings.visibility != View.VISIBLE &&
-                qs.visibility != View.VISIBLE
+                settings.visibility != View.VISIBLE
 
         fun applyContentPadding(insets: WindowInsetsCompat) {
             val stable = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars())
@@ -1168,7 +1148,6 @@ class MainActivity : AppCompatActivity() {
     // the moved extension functions use these instead of ::x.isInitialized.
     internal val clockInitialized: Boolean get() = ::clock.isInitialized
     internal val panelInitialized: Boolean get() = ::panel.isInitialized
-    internal val qsBoxInitialized: Boolean get() = ::qsBox.isInitialized
     internal val setBoxInitialized: Boolean get() = ::setBox.isInitialized
     internal val setScrollInitialized: Boolean get() = ::setScroll.isInitialized
     internal val wallInitialized: Boolean get() = ::wall.isInitialized
