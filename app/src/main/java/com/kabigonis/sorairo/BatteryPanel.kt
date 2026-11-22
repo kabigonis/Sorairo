@@ -3,6 +3,8 @@ package com.kabigonis.sorairo
 import android.Manifest
 import android.animation.ArgbEvaluator
 import android.animation.ValueAnimator
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -315,4 +317,51 @@ internal fun MainActivity.showBatteryPanel() {
     }
     anchorDialogToTop(dialog, Gravity.END, dp(12))
     handler.postDelayed(tick, 2000)
+}
+
+/** Explains the optional adb grant (Settings > Permissions). Normal users can ignore it entirely. */
+internal fun MainActivity.showBatterySaverGrantHelp() {
+    val p = pal
+    val cmd = batterySaverGrantCommand()
+    val root = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(18), dp(16), dp(18), dp(14))
+        background = box(p.cBg or (0xFF shl 24), p.cBlue)
+    }
+    root.addView(txt(15f, p.cBlue, "~/battery-saver-switch"))
+    root.addView(txt(
+        12f, p.cFg,
+        "Optional, for power users. Android doesn't let apps switch Battery Saver by themselves, so this " +
+            "one-time grant lets the battery panel do it in one tap. Without it, the Power-saver button " +
+            "just opens Android's Battery Saver settings."
+    ).apply { setPadding(0, dp(8), 0, dp(10)) })
+    root.addView(txt(11f, p.cDim, "Turn on Developer options > Wireless debugging, pair adb, then run once:"))
+    root.addView(txt(11f, p.cFg, cmd).apply {
+        setPadding(dp(10), dp(8), dp(10), dp(8))
+        background = box(p.cSel, p.cDim)
+        setTextIsSelectable(true)
+    }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+    root.addView(txt(10f, p.cDim, "Undo any time: adb shell pm revoke $packageName android.permission.WRITE_SECURE_SETTINGS")
+        .apply { setPadding(0, dp(8), 0, dp(10)) })
+    var dialog: AlertDialog? = null
+    val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+    actions.addView(txt(13f, p.cAccent, "COPY COMMAND").apply {
+        setPadding(0, dp(8), dp(18), dp(8))
+        setOnClickListener {
+            (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                .setPrimaryClip(ClipData.newPlainText("adb command", cmd))
+            Toast.makeText(this@showBatterySaverGrantHelp, "Copied", Toast.LENGTH_SHORT).show()
+        }
+    })
+    actions.addView(txt(13f, p.cDim, "CLOSE").apply {
+        setPadding(0, dp(8), 0, dp(8))
+        setOnClickListener { dialog?.dismiss() }
+    })
+    root.addView(actions)
+    dialog = AlertDialog.Builder(this).create().apply {
+        setView(root)
+        show()
+        window?.setBackgroundDrawableResource(android.R.color.transparent)
+        window?.setLayout(minOf(resources.displayMetrics.widthPixels - dp(40), dp(460)), -2)
+    }
 }

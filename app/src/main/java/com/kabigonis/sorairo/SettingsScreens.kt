@@ -304,12 +304,23 @@ internal fun MainActivity.fillPermissionSettings() {
     val dndGranted = notificationManager.isNotificationPolicyAccessGranted
     permissionRow(
         "Do Not Disturb access",
-        "Used by the quick-settings silent tile to change the ringer mode.",
+        "Lets Sorairo change the ringer mode. No current panel uses it; kept for future controls.",
         if (dndGranted) "granted" else "enable ›",
         dndGranted
     ) {
         try { startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)) }
         catch (_: Exception) { openSystem(Settings.ACTION_SETTINGS) }
+    }
+
+    val secureGranted = canSetBatterySaver()
+    permissionRow(
+        "Battery Saver switch (advanced)",
+        "Optional. Lets the battery panel switch Battery Saver in one tap. Needs a one-time adb grant; without it the button opens Android's settings.",
+        if (secureGranted) "granted" else "adb setup ›",
+        secureGranted
+    ) {
+        if (secureGranted) Toast.makeText(this, "Granted: Power-saver switches directly", Toast.LENGTH_SHORT).show()
+        else showBatterySaverGrantHelp()
     }
 
     val locationGranted = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) ==
