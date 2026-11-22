@@ -763,6 +763,8 @@ class MainActivity : AppCompatActivity() {
         left.addView(song)
         clock = txt(13f, p.cFg).apply {
             visibility = if (prefs.getBoolean("dynamic_island", true)) View.GONE else View.VISIBLE
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            setOnClickListener { showCalendarPopup() }
         }
         status = txt(13f, p.cFg)
         battText = txt(13f, p.cFg).apply {
