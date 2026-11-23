@@ -159,6 +159,7 @@ internal fun MainActivity.barBottomY(): Int = try {
 internal fun MainActivity.dismissActivePopup() {
     activePopup?.takeIf { it.isShowing }?.dismiss()
     activePopup = null
+    activePopupKind = null
 }
 
 internal fun MainActivity.openBarPanel(kind: BarKind) {
@@ -209,7 +210,9 @@ internal fun MainActivity.routePopupTap(event: MotionEvent): Boolean {
     val hitClock = hitKind == null && clockInitialized && clock.containsScreenPoint(x, y)
     if (hitKind == null && !hitClock) return false
 
+    val samePanel = hitKind != null && hitKind == activePopupKind
     dialog.dismiss()
+    if (samePanel) return true
     when {
         hitKind != null && barButtons[hitKind]?.isShown == true -> handler.post { openBarPanel(hitKind) }
         hitClock -> handler.post { showCalendarPopup() }
@@ -235,10 +238,14 @@ internal fun MainActivity.showBarDialog(
     dialog.setView(root)
     dialog.setOnDismissListener {
         btn?.setActive(false)
-        if (activePopup === dialog) activePopup = null
+        if (activePopup === dialog) {
+            activePopup = null
+            activePopupKind = null
+        }
         onDismiss()
     }
     activePopup = dialog
+    activePopupKind = kind
     dialog.show()
     dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
     dialog.window?.setLayout(w, WindowManager.LayoutParams.WRAP_CONTENT)
