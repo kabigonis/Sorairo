@@ -75,6 +75,10 @@ import com.kabigonis.sorairo.MainActivity.Companion.NEW_APP_WINDOW_MS
 import com.kabigonis.sorairo.MainActivity.Companion.NEW_APP_MARKER
 
 class MainActivity : AppCompatActivity() {
+    companion object {
+        const val REQUEST_SCREEN_CAPTURE = 4207
+    }
+
     internal companion object {
         const val POWERAMP_PACKAGE = "com.maxmpz.audioplayer"
         const val POWERAMP_API_COMMAND = "com.maxmpz.audioplayer.API_COMMAND"
@@ -657,6 +661,24 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ================= lifecycle =================
+    @Deprecated("Android MediaProjection consent uses the activity result callback")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_SCREEN_CAPTURE) {
+            if (resultCode == RESULT_OK && data != null) {
+                val serviceIntent = Intent(this, ScreenRecordingService::class.java).apply {
+                    putExtra(ScreenRecordingService.EXTRA_RESULT_CODE, resultCode)
+                    putExtra(ScreenRecordingService.EXTRA_RESULT_DATA, data)
+                }
+                if (Build.VERSION.SDK_INT >= 26) startForegroundService(serviceIntent)
+                else startService(serviceIntent)
+                Toast.makeText(this, "Screen recording started. Use its notification to stop.", Toast.LENGTH_LONG).show()
+            } else {
+                Toast.makeText(this, "Screen recording permission was not granted.", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
