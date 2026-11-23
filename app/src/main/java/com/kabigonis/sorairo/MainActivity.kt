@@ -75,11 +75,8 @@ import com.kabigonis.sorairo.MainActivity.Companion.NEW_APP_WINDOW_MS
 import com.kabigonis.sorairo.MainActivity.Companion.NEW_APP_MARKER
 
 class MainActivity : AppCompatActivity() {
-    companion object {
-        const val REQUEST_SCREEN_CAPTURE = 4207
-    }
-
     internal companion object {
+        const val REQUEST_SCREEN_CAPTURE = 4207
         const val POWERAMP_PACKAGE = "com.maxmpz.audioplayer"
         const val POWERAMP_API_COMMAND = "com.maxmpz.audioplayer.API_COMMAND"
         const val POWERAMP_API_RECEIVER = "com.maxmpz.audioplayer.player.PowerampAPIReceiver"
