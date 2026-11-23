@@ -5,6 +5,8 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.view.Gravity
 import android.view.View
+import android.view.WindowManager
+import androidx.core.view.WindowCompat
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -30,6 +32,52 @@ internal fun calendarGridStart(month: YearMonth, firstDow: DayOfWeek): LocalDate
 internal fun yearProgressPercent(d: LocalDate): Int =
     (d.dayOfYear * 100f / d.lengthOfYear()).toInt().coerceIn(0, 100)
 
+/**
+ * Pins a dialog under the top bar like the Omarchy popups: [horizontal] is Gravity.CENTER_HORIZONTAL
+ * (calendar, under the clock) or Gravity.END (battery, under the status icons). No screen dimming.
+ */
+internal fun MainActivity.anchorDialogToTop(
+    dialog: AlertDialog?,
+    horizontal: Int,
+    sideMarginPx: Int = 0,
+    panelWidth: Int = 0,
+    anchor: View? = null
+) {
+    if (dialog == null) return
+    val w = dialog.window ?: return
+    // Lay the popup out against the physical screen, not the inset-adjusted frame. Otherwise it rides
+    // down with the system status bar when the user pulls the Android quick-settings shade.
+    WindowCompat.setDecorFitsSystemWindows(w, false)
+    w.addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
+    w.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+    val lp = w.attributes
+    lp.y = barBottomY()
+    if (anchor != null && panelWidth > 0) {
+        // centred under the icon that opened it, kept on screen
+        w.setGravity(Gravity.TOP or Gravity.START)
+        val loc = IntArray(2)
+        anchor.getLocationOnScreen(loc)
+        val screenW = resources.displayMetrics.widthPixels
+        val cx = loc[0] + anchor.width / 2
+        lp.x = (cx - panelWidth / 2).coerceIn(dp(8), maxOf(dp(8), screenW - panelWidth - dp(8)))
+    } else {
+        w.setGravity(Gravity.TOP or horizontal)
+        if (horizontal == Gravity.END) lp.x = sideMarginPx
+    }
+    lp.dimAmount = 0f
+    w.attributes = lp
+    // the shade (or anything else) taking focus closes the popup instead of leaving it floating
+    w.decorView.viewTreeObserver.addOnWindowFocusChangeListener { hasFocus ->
+        if (!hasFocus && dialog.isShowing) dialog.dismiss()
+    }
+    // short slide-and-fade in, like the Omarchy popups
+    w.decorView.apply {
+        alpha = 0f
+        translationY = -dp(10).toFloat()
+        animate().alpha(1f).translationY(0f).setDuration(170).start()
+    }
+}
+
 internal fun MainActivity.showCalendarPopup() {
     val p = pal
     val loc = Locale.getDefault()
@@ -43,24 +91,12 @@ internal fun MainActivity.showCalendarPopup() {
         background = box(p.cBg or (0xFF shl 24), p.cBlue)
     }
 
-    // Big "November 22" header; tap it to open the system calendar app.
+    // Big "November 22" header with the calendar icon (display only).
     val head = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER
-        setOnClickListener {
-            try {
-                startActivity(
-                    Intent(
-                        Intent.ACTION_VIEW,
-                        android.provider.CalendarContract.CONTENT_URI.buildUpon().appendPath("time").build()
-                    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                )
-            } catch (_: Exception) {
-                Toast.makeText(this@showCalendarPopup, "No calendar app found", Toast.LENGTH_SHORT).show()
-            }
-        }
     }
-    head.addView(txt(26f, p.cBlue, "\u25A6").apply { setPadding(0, 0, dp(12), 0) })
+    head.addView(CalendarIconView(this, p.cBlue), LinearLayout.LayoutParams(dp(34), dp(34)).apply { marginEnd = dp(12) })
     head.addView(
         txt(30f, p.cBlue, today.month.getDisplayName(TextStyle.FULL, loc) + " " + today.dayOfMonth)
             .apply { setTypeface(typeface, Typeface.BOLD) }
@@ -96,7 +132,7 @@ internal fun MainActivity.showCalendarPopup() {
             layoutParams = LinearLayout.LayoutParams(0, dp(h), weight)
         }
 
-    fun render() {
+    fun render(dir: Int = 0) {
         grid.removeAllViews()
         monthLabel.text = (shown.month.getDisplayName(TextStyle.FULL, loc) + " " + shown.year).uppercase(loc)
         val hdr = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -126,6 +162,11 @@ internal fun MainActivity.showCalendarPopup() {
             }
             grid.addView(row, LinearLayout.LayoutParams(-1, -2))
         }
+        if (dir != 0) {
+            grid.alpha = 0f
+            grid.translationX = dir * dp(24).toFloat()
+            grid.animate().alpha(1f).translationX(0f).setDuration(180).start()
+        }
     }
 
     val footer = LinearLayout(this).apply {
@@ -135,23 +176,26 @@ internal fun MainActivity.showCalendarPopup() {
     }
     val prev = txt(20f, p.cDim, "\u2039").apply {
         setPadding(dp(14), dp(4), dp(14), dp(4))
-        setOnClickListener { shown = shown.minusMonths(1); render() }
+        setOnClickListener { shown = shown.minusMonths(1); render(-1) }
     }
     val next = txt(20f, p.cDim, "\u203A").apply {
         setPadding(dp(14), dp(4), dp(14), dp(4))
-        setOnClickListener { shown = shown.plusMonths(1); render() }
+        setOnClickListener { shown = shown.plusMonths(1); render(1) }
     }
-    monthLabel.setOnClickListener { shown = YearMonth.from(today); render() }
+    monthLabel.setOnClickListener { shown = YearMonth.from(today); render(0) }
     footer.addView(prev)
     footer.addView(monthLabel, LinearLayout.LayoutParams(0, -2, 1f))
     footer.addView(next)
     root.addView(footer, LinearLayout.LayoutParams(-1, -2))
     render()
 
-    AlertDialog.Builder(this).create().apply {
+    val dialog = AlertDialog.Builder(this).create().apply {
         setView(root)
+        setOnDismissListener { (clock as? ClockView)?.setActive(false) }
         show()
         window?.setBackgroundDrawableResource(android.R.color.transparent)
         window?.setLayout(minOf(resources.displayMetrics.widthPixels - dp(40), dp(480)), -2)
     }
+    (clock as? ClockView)?.setActive(true)
+    anchorDialogToTop(dialog, Gravity.CENTER_HORIZONTAL)
 }

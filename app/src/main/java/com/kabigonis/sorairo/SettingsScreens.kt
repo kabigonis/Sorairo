@@ -67,7 +67,6 @@ internal fun MainActivity.showSettings() {
     wallpaperPageOpen = false
     cancelThemeWallpaperJobs()
     closeDrawer()
-    closeQs()
     fillSettings()
     setScroll.scrollTo(0, 0)
     showOverlay()
@@ -305,12 +304,23 @@ internal fun MainActivity.fillPermissionSettings() {
     val dndGranted = notificationManager.isNotificationPolicyAccessGranted
     permissionRow(
         "Do Not Disturb access",
-        "Used by the quick-settings silent tile to change the ringer mode.",
+        "Lets Sorairo change the ringer mode. No current panel uses it; kept for future controls.",
         if (dndGranted) "granted" else "enable ›",
         dndGranted
     ) {
         try { startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)) }
         catch (_: Exception) { openSystem(Settings.ACTION_SETTINGS) }
+    }
+
+    val secureGranted = canSetBatterySaver()
+    permissionRow(
+        "Secure settings (advanced)",
+        "Optional. Lets the battery panel switch Battery Saver and the network panel switch DNS in one tap. Needs a one-time adb grant.",
+        if (secureGranted) "granted" else "adb setup ›",
+        secureGranted
+    ) {
+        if (secureGranted) Toast.makeText(this, "Granted: Power-saver and DNS switch directly", Toast.LENGTH_SHORT).show()
+        else showSecureGrantHelp()
     }
 
     val locationGranted = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) ==
@@ -748,6 +758,5 @@ internal fun MainActivity.rebuild(reopenSettings: Boolean) {
 internal fun MainActivity.refreshPaletteSurfaces() {
     val p = pal
     if (panelInitialized) panel.background = box(solidColor(), p.cAccent)
-    if (qsBoxInitialized) qsBox.background = box(solidColor(), p.cAccent)
     if (setBoxInitialized) setBox.background = box(solidColor(), p.cAccent)
 }
