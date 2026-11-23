@@ -188,18 +188,33 @@ internal fun MainActivity.handleOutsideTap(x: Float, y: Float, owner: BarKind?, 
 }
 
 internal fun MainActivity.installOutsideTapRouter(dialog: AlertDialog, owner: BarKind?) {
-    val window = dialog.window ?: return
-    val original = window.callback ?: return
-    window.addFlags(WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH)
-    window.callback = object : android.view.Window.Callback by original {
-        override fun dispatchTouchEvent(event: MotionEvent): Boolean {
-            if (event.actionMasked == MotionEvent.ACTION_OUTSIDE) {
-                if (dialog.isShowing) handleOutsideTap(event.rawX, event.rawY, owner, dialog)
-                return true
-            }
-            return original.dispatchTouchEvent(event)
-        }
+    // Let taps outside the popup reach the activity as well as reporting ACTION_OUTSIDE.
+    // MainActivity.routePopupTap handles icon-to-icon handoff before normal click dispatch.
+    dialog.window?.addFlags(
+        WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+            WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
+    )
+}
+
+/**
+ * Called by MainActivity.dispatchTouchEvent. This is the reliable handoff path:
+ * the dialog is non-touch-modal, so a tap on another top-bar icon reaches the activity.
+ */
+internal fun MainActivity.routePopupTap(event: MotionEvent): Boolean {
+    if (event.actionMasked != MotionEvent.ACTION_DOWN) return false
+    val dialog = activePopup?.takeIf { it.isShowing } ?: return false
+    val x = event.rawX
+    val y = event.rawY
+    val hitKind = barButtons.entries.firstOrNull { it.value.containsScreenPoint(x, y) }?.key
+    val hitClock = hitKind == null && clockInitialized && clock.containsScreenPoint(x, y)
+    if (hitKind == null && !hitClock) return false
+
+    dialog.dismiss()
+    when {
+        hitKind != null && barButtons[hitKind]?.isShown == true -> handler.post { openBarPanel(hitKind) }
+        hitClock -> handler.post { showCalendarPopup() }
     }
+    return true
 }
 
 /**
