@@ -269,6 +269,7 @@ private fun MainActivity.showScreenRecordingMenu() {
         }
     }
     root.addView(txt(13f, p.cDim, "Screenrecord..."))
+    var menu: AlertDialog? = null
     labels.forEachIndexed { index, label ->
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -277,6 +278,7 @@ private fun MainActivity.showScreenRecordingMenu() {
             if (index == 0) setBackgroundColor(p.cSel)
             isClickable = true
             setOnClickListener {
+                menu?.dismiss()
                 showAndroidScreenRecordingGuide(label)
             }
         }
@@ -290,7 +292,7 @@ private fun MainActivity.showScreenRecordingMenu() {
         row.addView(txt(13f, if (index == 0) p.cBlue else p.cFg, label))
         root.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
     }
-    AlertDialog.Builder(this).create().apply {
+    menu = AlertDialog.Builder(this).create().apply {
         setView(root)
         show()
         window?.setBackgroundDrawableResource(android.R.color.transparent)
@@ -314,11 +316,6 @@ private fun MainActivity.showAndroidScreenRecordingGuide(mode: String) {
     root.addView(txt(12f, p.cFg,
         "Android controls screen capture. Swipe down twice to open Quick Settings, tap Screen record, then choose: $mode."
     ).apply { setPadding(0, dp(8), 0, dp(12)) })
-    root.addView(txt(12f, p.cAccent, "OK").apply {
-        gravity = Gravity.END
-        setPadding(dp(12), dp(8), 0, dp(6))
-        setOnClickListener { (it.parent as? View)?.let { _ -> } }
-    })
     AlertDialog.Builder(this).setView(root).setPositiveButton("Close", null).show()
 }
 
