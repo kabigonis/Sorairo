@@ -64,6 +64,7 @@ internal fun MainActivity.createOmarchyActionTray(): View {
             }
             addView(icon, android.widget.FrameLayout.LayoutParams(dp(14), dp(16), Gravity.CENTER))
         }
+        hit.tag = glyph
         icons[glyph] = hit
         row.addView(hit, LinearLayout.LayoutParams(dp(20), dp(30)))
     }
@@ -112,13 +113,13 @@ internal fun MainActivity.refreshOmarchyActionTray() {
     (icons[OmarchyGlyph.HAND] as? View)?.visibility = if (expanded) View.VISIBLE else View.GONE
     (icons[OmarchyGlyph.SUDO] as? View)?.visibility = View.VISIBLE
     // Pinned states use the reference's blue active tint.
-    (icons[OmarchyGlyph.COFFEE]?.findViewById<View>(android.R.id.content) as? OmarchyActionIconView)?.active = awake
     icons.values.forEach { hit ->
         val icon = (hit as? ViewGroup)?.getChildAt(0) as? OmarchyActionIconView
         when (hit.tag as? OmarchyGlyph) {
             OmarchyGlyph.COFFEE -> icon?.active = awake
             OmarchyGlyph.MUTED_BELL -> icon?.active = dnd
             OmarchyGlyph.NIGHT_LIGHT -> icon?.active = night
+            else -> Unit
         }
     }
 }
