@@ -322,29 +322,29 @@ private fun MainActivity.showReminderInput() {
                         } catch (_: Exception) {
                             Toast.makeText(this@showReminderInput, "Enable Alarms & reminders access for Sorairo in Settings.", Toast.LENGTH_LONG).show()
                         }
-                        return@trayDialogActions
-                    }
-                    val fireIntent = Intent(this@showReminderInput, ReminderReceiver::class.java).apply {
-                        action = ReminderReceiver.ACTION_FIRE
-                    }
-                    val pending = PendingIntent.getBroadcast(
-                        this@showReminderInput,
-                        8801,
-                        fireIntent,
-                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                    )
-                    val triggerAt = System.currentTimeMillis() + minutes * 60_000L
-                    try {
-                        if (Build.VERSION.SDK_INT >= 23) {
-                            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pending)
-                        } else {
-                            @Suppress("DEPRECATION")
-                            alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerAt, pending)
+                    } else {
+                        val fireIntent = Intent(this@showReminderInput, ReminderReceiver::class.java).apply {
+                            action = ReminderReceiver.ACTION_FIRE
                         }
-                        Toast.makeText(this@showReminderInput, "Reminder set for $minutes minute(s).", Toast.LENGTH_SHORT).show()
-                        activeDialog?.dismiss()
-                    } catch (_: SecurityException) {
-                        Toast.makeText(this@showReminderInput, "Exact alarm access is required for accurate reminders.", Toast.LENGTH_LONG).show()
+                        val pending = PendingIntent.getBroadcast(
+                            this@showReminderInput,
+                            8801,
+                            fireIntent,
+                            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                        )
+                        val triggerAt = System.currentTimeMillis() + minutes * 60_000L
+                        try {
+                            if (Build.VERSION.SDK_INT >= 23) {
+                                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pending)
+                            } else {
+                                @Suppress("DEPRECATION")
+                                alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerAt, pending)
+                            }
+                            Toast.makeText(this@showReminderInput, "Reminder set for $minutes minute(s).", Toast.LENGTH_SHORT).show()
+                            activeDialog?.dismiss()
+                        } catch (_: SecurityException) {
+                            Toast.makeText(this@showReminderInput, "Exact alarm access is required for accurate reminders.", Toast.LENGTH_LONG).show()
+                        }
                     }
                 }
             }
