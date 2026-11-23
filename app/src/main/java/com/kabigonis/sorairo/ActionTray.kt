@@ -66,7 +66,7 @@ internal fun MainActivity.createOmarchyActionTray(): View {
         }
         hit.tag = glyph
         icons[glyph] = hit
-        row.addView(hit, LinearLayout.LayoutParams(dp(16), dp(30)))
+        row.addView(hit, LinearLayout.LayoutParams(dp(22), dp(30)))
     }
 
     add(OmarchyGlyph.RECORD, { "Screen Recording" }) { requestScreenRecording() }
