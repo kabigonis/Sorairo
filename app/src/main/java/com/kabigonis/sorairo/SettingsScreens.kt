@@ -291,21 +291,17 @@ internal fun MainActivity.fillPermissionSettings() {
         checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
     permissionRow(
         "Reminder notifications",
-        "Opens Sorairo's Android app-permissions screen so notification permission can be changed directly.",
-        if (reminderNotificationsGranted) "granted · app perms ›" else "enable · app perms ›",
+        "Allows Sorairo to show the quiet notification when a countdown finishes. You can manage the Sorairo reminders category here.",
+        if (reminderNotificationsGranted) "manage ›" else "enable ›",
         reminderNotificationsGranted
     ) {
         if (Build.VERSION.SDK_INT >= 33 && !reminderNotificationsGranted) {
-            // Show Android's one-tap runtime permission prompt first.
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 743)
         } else {
-            // Android exposes no public intent for a specific app permission sub-page.
-            // This opens Sorairo's own App info screen, where Permissions is one tap away.
             try {
-                startActivity(Intent(
-                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                    Uri.parse("package:$packageName")
-                ))
+                startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                    putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                })
             } catch (_: Exception) {
                 openSystem(Settings.ACTION_SETTINGS)
             }
