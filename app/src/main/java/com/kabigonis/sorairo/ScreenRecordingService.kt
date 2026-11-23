@@ -54,7 +54,15 @@ class ScreenRecordingService : Service() {
         }
         try {
             createNotificationChannel()
-            startForeground(NOTIFICATION_ID, buildNotification())
+            if (Build.VERSION.SDK_INT >= 29) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    buildNotification(),
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, buildNotification())
+            }
             val manager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             projection = manager.getMediaProjection(resultCode, resultData)
             startCapture()
@@ -84,7 +92,14 @@ class ScreenRecordingService : Service() {
         media.setVideoSize(width, height)
         media.setVideoFrameRate(30)
         media.setVideoEncodingBitRate(5_000_000)
-        media.setOutputFile(outputFileDescriptorPath())
+        if (Build.VERSION.SDK_INT >= 29) {
+            val uri = outputUri ?: throw IllegalStateException("Output URI missing")
+            retainedPfd = contentResolver.openFileDescriptor(uri, "w")
+                ?: throw IllegalStateException("Could not open recording file")
+            media.setOutputFile(retainedPfd!!.fileDescriptor)
+        } else {
+            media.setOutputFile(legacyOutput?.absolutePath ?: throw IllegalStateException("Output path missing"))
+        }
         media.prepare()
 
         val surface: Surface = media.surface
@@ -116,18 +131,6 @@ class ScreenRecordingService : Service() {
             dir.mkdirs()
             legacyOutput = File(dir, name)
         }
-    }
-
-    private fun outputFileDescriptorPath(): String {
-        if (Build.VERSION.SDK_INT >= 29) {
-            val uri = outputUri ?: throw IllegalStateException("Output URI missing")
-            val pfd = contentResolver.openFileDescriptor(uri, "w")
-                ?: throw IllegalStateException("Could not open recording file")
-            // MediaRecorder closes the path's descriptor on release; use the fd path while retaining pfd.
-            retainedPfd = pfd
-            return "/proc/self/fd/${pfd.fileDescriptor}"
-        }
-        return legacyOutput?.absolutePath ?: throw IllegalStateException("Output path missing")
     }
 
     private var retainedPfd: android.os.ParcelFileDescriptor? = null
