@@ -66,9 +66,16 @@ internal fun MainActivity.anchorDialogToTop(
     }
     lp.dimAmount = 0f
     w.attributes = lp
-    // the shade (or anything else) taking focus closes the popup instead of leaving it floating
+    // Ignore the initial focus transition while the dialog is being shown. Some Android
+    // builds report a transient focus loss before the popup has ever acquired focus; closing
+    // here makes the panel appear to never open. Once it has held focus, later loss dismisses it.
+    var hasReceivedFocus = false
     w.decorView.viewTreeObserver.addOnWindowFocusChangeListener { hasFocus ->
-        if (!hasFocus && dialog.isShowing) dialog.dismiss()
+        if (hasFocus) {
+            hasReceivedFocus = true
+        } else if (hasReceivedFocus && dialog.isShowing) {
+            dialog.dismiss()
+        }
     }
     // short slide-and-fade in, like the Omarchy popups
     w.decorView.apply {
