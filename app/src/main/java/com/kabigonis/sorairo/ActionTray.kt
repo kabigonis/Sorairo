@@ -115,7 +115,7 @@ internal fun MainActivity.toggleActionTray() {
         collapseActionTray()
         return
     }
-    handler.removeCallbacks(actionTrayHideCallbacks[this] ?: return)
+    actionTrayHideCallbacks[this]?.let { handler.removeCallbacks(it) }
     scroll.visibility = View.VISIBLE
     row.visibility = View.VISIBLE
     row.alpha = 0f
@@ -275,14 +275,8 @@ internal fun MainActivity.showScreenRecordingOptions() {
                 else -> "Choose device and microphone audio in the Android recorder"
             }
             AlertDialog.Builder(this)
-                .setMessage("$detail. Android controls recording permissions and audio options.")
-                .setPositiveButton("Open Quick Settings") { _, _ ->
-                    Toast.makeText(this, "Open Screen record from Quick Settings and select the requested audio option", Toast.LENGTH_LONG).show()
-                    try {
-                        startActivity(Intent(Settings.ACTION_SETTINGS))
-                    } catch (_: Exception) {}
-                }
-                .setNegativeButton("Cancel", null)
+                .setMessage("$detail. Android controls recording permissions and audio options. Swipe down twice to open Quick Settings, then choose Screen record.")
+                .setPositiveButton("Got it", null)
                 .show()
         }
         .show()
