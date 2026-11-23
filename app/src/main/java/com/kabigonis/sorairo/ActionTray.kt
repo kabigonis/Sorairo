@@ -200,16 +200,41 @@ private fun MainActivity.showOmarchyTooltip(anchor: View, label: String) {
 }
 
 internal fun MainActivity.applyTrayStayAwake() {
-    if (prefs.getBoolean("tray_stay_awake", false)) {
-        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-    } else {
-        window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    // Universal mode: Android's global screen timeout applies across all apps.
+    if (!prefs.getBoolean("tray_stay_awake", false) || !Settings.System.canWrite(this)) return
+    try {
+        Settings.System.putInt(contentResolver, Settings.System.SCREEN_OFF_TIMEOUT, Int.MAX_VALUE)
+    } catch (_: Exception) {
+        Toast.makeText(this, "Couldn't apply the system-wide screen timeout.", Toast.LENGTH_LONG).show()
     }
 }
 
 private fun MainActivity.toggleStayAwake() {
     val enabled = !prefs.getBoolean("tray_stay_awake", false)
-    prefs.edit().putBoolean("tray_stay_awake", enabled).apply()
+    if (!Settings.System.canWrite(this)) {
+        try {
+            startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS).apply {
+                data = android.net.Uri.parse("package:$packageName")
+            })
+            Toast.makeText(this, "Allow Modify system settings, then tap Stay Awake again.", Toast.LENGTH_LONG).show()
+        } catch (_: Exception) {
+            Toast.makeText(this, "Allow Sorairo to modify system settings.", Toast.LENGTH_LONG).show()
+        }
+        return
+    }
+    try {
+        if (enabled) {
+            val current = Settings.System.getInt(contentResolver, Settings.System.SCREEN_OFF_TIMEOUT, 30_000)
+            prefs.edit().putInt("tray_previous_screen_timeout", current).putBoolean("tray_stay_awake", true).apply()
+            Settings.System.putInt(contentResolver, Settings.System.SCREEN_OFF_TIMEOUT, Int.MAX_VALUE)
+        } else {
+            val previous = prefs.getInt("tray_previous_screen_timeout", 30_000)
+            Settings.System.putInt(contentResolver, Settings.System.SCREEN_OFF_TIMEOUT, previous)
+            prefs.edit().putBoolean("tray_stay_awake", false).remove("tray_previous_screen_timeout").apply()
+        }
+    } catch (_: Exception) {
+        Toast.makeText(this, "Android couldn't change the system screen timeout.", Toast.LENGTH_LONG).show()
+    }
     applyTrayStayAwake()
     refreshOmarchyActionTray()
 }
