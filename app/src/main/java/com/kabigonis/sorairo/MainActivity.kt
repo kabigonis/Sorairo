@@ -855,14 +855,15 @@ class MainActivity : AppCompatActivity() {
         val centerGroup = FrameLayout(this)
         centerGroup.addView(clock, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
         val actionTray = createOmarchyActionTray()
-        centerGroup.addView(actionTray, FrameLayout.LayoutParams(-2, dp(30), Gravity.CENTER))
+        // Keep a generous invisible touch zone so tapping beside the clock reveals the tray.
+        // Children are end-aligned, so the visible pinned glyph remains close to the clock.
+        val trayWidth = dp(150)
+        centerGroup.addView(actionTray, FrameLayout.LayoutParams(trayWidth, dp(30), Gravity.CENTER))
         fun positionActionTray() {
-            // Anchor the visible tray edge—not a fixed-width invisible container—beside the clock.
-            actionTray.translationX = -(clock.width / 2f + dp(4) + actionTray.width / 2f)
+            actionTray.translationX = -(clock.width / 2f + dp(2) + trayWidth / 2f)
         }
         centerGroup.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> positionActionTray() }
         clock.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> positionActionTray() }
-        actionTray.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> positionActionTray() }
         centerGroup.post { positionActionTray() }
 
         bar.addView(left, FrameLayout.LayoutParams(-2, -2, Gravity.START or Gravity.CENTER_VERTICAL))
