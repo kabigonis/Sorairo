@@ -195,7 +195,7 @@ internal fun MainActivity.allowIdleLockAndScreensaver() {
 
 internal fun MainActivity.toggleDoNotDisturb() {
     if (Build.VERSION.SDK_INT < 23) return
-    val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+    val nm = getSystemService(android.content.Context.NOTIFICATION_SERVICE) as NotificationManager
     if (!nm.isNotificationPolicyAccessGranted) {
         try {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
