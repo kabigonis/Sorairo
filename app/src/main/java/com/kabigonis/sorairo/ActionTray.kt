@@ -17,8 +17,6 @@ import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.PopupWindow
-import android.widget.Spinner
-import android.widget.ArrayAdapter
 import android.widget.TextView
 import android.widget.Toast
 import java.util.WeakHashMap
@@ -280,12 +278,6 @@ private fun MainActivity.toggleNightLight() {
 
 private fun MainActivity.showReminderInput() {
     val p = pal
-    val sounds = listOf("Alarm tone", "Gentle chime", "Silent")
-    val soundValues = listOf(
-        ReminderReceiver.SOUND_ALARM,
-        ReminderReceiver.SOUND_CHIME,
-        ReminderReceiver.SOUND_SILENT
-    )
     val root = trayDialogRoot(p.cBg, p.cBlue).apply {
         addView(txt(13f, p.cDim, "Remind in minutes..."))
         val input = EditText(this@showReminderInput).apply {
@@ -303,25 +295,6 @@ private fun MainActivity.showReminderInput() {
             setPadding(dp(10), dp(9), dp(10), dp(9))
         }
         addView(input, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
-
-        addView(txt(12f, p.cDim, "Alarm sound").apply {
-            setPadding(0, dp(12), 0, dp(4))
-        })
-        val soundPicker = Spinner(this@showReminderInput).apply {
-            adapter = ArrayAdapter(
-                this@showReminderInput,
-                android.R.layout.simple_spinner_dropdown_item,
-                sounds
-            )
-            val saved = prefs.getString("tray_reminder_sound", ReminderReceiver.SOUND_ALARM)
-            setSelection(soundValues.indexOf(saved).coerceAtLeast(0))
-            background = GradientDrawable().apply {
-                setColor(Color.TRANSPARENT)
-                setStroke(dp(1), p.cDim)
-            }
-        }
-        addView(soundPicker, LinearLayout.LayoutParams(-1, dp(42)))
-
         addView(trayDialogActions(
             "CANCEL" to { activeDialog?.dismiss() },
             "SET" to {
@@ -334,12 +307,9 @@ private fun MainActivity.showReminderInput() {
                     Toast.makeText(this@showReminderInput, "Allow notifications, then tap SET again.", Toast.LENGTH_LONG).show()
                     requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 743)
                 } else {
-                    val sound = soundValues[soundPicker.selectedItemPosition.coerceIn(soundValues.indices)]
-                    prefs.edit().putString("tray_reminder_sound", sound).apply()
                     val alarmManager = getSystemService(android.content.Context.ALARM_SERVICE) as AlarmManager
                     val fireIntent = Intent(this@showReminderInput, ReminderReceiver::class.java).apply {
                         action = ReminderReceiver.ACTION_FIRE
-                        putExtra(ReminderReceiver.EXTRA_SOUND, sound)
                     }
                     val pending = PendingIntent.getBroadcast(
                         this@showReminderInput,
