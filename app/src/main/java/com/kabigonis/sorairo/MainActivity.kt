@@ -690,6 +690,7 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         wallpaperVideoView?.start()
         activityResumed = true
+        refreshOmarchyActionTray()
         refreshInstalledApps()
         handler.removeCallbacks(tick)
         tick.run()
@@ -849,7 +850,13 @@ class MainActivity : AppCompatActivity() {
         right.addView(status)
         right.addView(iconBar)
         bar.addView(left, FrameLayout.LayoutParams(-2, -2, Gravity.START or Gravity.CENTER_VERTICAL))
-        bar.addView(clock, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+        val clockCluster = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(createOmarchyActionTray(), LinearLayout.LayoutParams(-2, dp(30)))
+            addView(clock, LinearLayout.LayoutParams(-2, -2))
+        }
+        bar.addView(clockCluster, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
         bar.addView(right, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.CENTER_VERTICAL))
         content.addView(bar, LinearLayout.LayoutParams(-1, dp(34)))
         content.addView(moveHint, LinearLayout.LayoutParams(-1, dp(22)))
