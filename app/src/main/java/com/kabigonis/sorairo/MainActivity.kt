@@ -76,7 +76,6 @@ import com.kabigonis.sorairo.MainActivity.Companion.NEW_APP_MARKER
 
 class MainActivity : AppCompatActivity() {
     internal companion object {
-        const val REQUEST_SCREEN_CAPTURE = 4207
         const val POWERAMP_PACKAGE = "com.maxmpz.audioplayer"
         const val POWERAMP_API_COMMAND = "com.maxmpz.audioplayer.API_COMMAND"
         const val POWERAMP_API_RECEIVER = "com.maxmpz.audioplayer.player.PowerampAPIReceiver"
@@ -658,24 +657,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ================= lifecycle =================
-    @Deprecated("Android MediaProjection consent uses the activity result callback")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQUEST_SCREEN_CAPTURE) {
-            if (resultCode == RESULT_OK && data != null) {
-                val serviceIntent = Intent(this, ScreenRecordingService::class.java).apply {
-                    putExtra(ScreenRecordingService.EXTRA_RESULT_CODE, resultCode)
-                    putExtra(ScreenRecordingService.EXTRA_RESULT_DATA, data)
-                }
-                if (Build.VERSION.SDK_INT >= 26) startForegroundService(serviceIntent)
-                else startService(serviceIntent)
-                Toast.makeText(this, "Screen recording started. Use its notification to stop.", Toast.LENGTH_LONG).show()
-            } else {
-                Toast.makeText(this, "Screen recording permission was not granted.", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -874,13 +855,14 @@ class MainActivity : AppCompatActivity() {
         val centerGroup = FrameLayout(this)
         centerGroup.addView(clock, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
         val actionTray = createOmarchyActionTray()
-        val trayWidth = dp(150)
-        centerGroup.addView(actionTray, FrameLayout.LayoutParams(trayWidth, dp(30), Gravity.CENTER))
+        centerGroup.addView(actionTray, FrameLayout.LayoutParams(-2, dp(30), Gravity.CENTER))
         fun positionActionTray() {
-            actionTray.translationX = -(clock.width / 2f + dp(1) + trayWidth / 2f)
+            // Anchor the visible tray edge—not a fixed-width invisible container—beside the clock.
+            actionTray.translationX = -(clock.width / 2f + dp(4) + actionTray.width / 2f)
         }
         centerGroup.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> positionActionTray() }
         clock.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> positionActionTray() }
+        actionTray.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> positionActionTray() }
         centerGroup.post { positionActionTray() }
 
         bar.addView(left, FrameLayout.LayoutParams(-2, -2, Gravity.START or Gravity.CENTER_VERTICAL))
