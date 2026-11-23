@@ -196,17 +196,20 @@ private fun MainActivity.toggleDoNotDisturb() {
         if (enabling) {
             // Keep media, alarms and system sounds permitted while DND filters notification
             // interruptions. This avoids turning the tray action into a media-volume mute.
-            val allowedCategories =
+            var allowedCategories =
                 NotificationManager.Policy.PRIORITY_CATEGORY_ALARMS or
-                NotificationManager.Policy.PRIORITY_CATEGORY_MEDIA or
-                NotificationManager.Policy.PRIORITY_CATEGORY_SYSTEM
-            val current = nm.notificationPolicy
-            nm.notificationPolicy = NotificationManager.Policy(
-                allowedCategories,
-                NotificationManager.Policy.PRIORITY_SENDERS_NONE,
-                NotificationManager.Policy.PRIORITY_SENDERS_NONE,
-                current.suppressedVisualEffects
-            )
+                NotificationManager.Policy.PRIORITY_CATEGORY_MEDIA
+            if (Build.VERSION.SDK_INT >= 28) {
+                allowedCategories = allowedCategories or NotificationManager.Policy.PRIORITY_CATEGORY_SYSTEM
+            }
+            val senders = NotificationManager.Policy.PRIORITY_SENDERS_NONE
+            nm.notificationPolicy = if (Build.VERSION.SDK_INT >= 28) {
+                val current = nm.notificationPolicy
+                NotificationManager.Policy(allowedCategories, senders, senders, current.suppressedVisualEffects)
+            } else {
+                @Suppress("DEPRECATION")
+                NotificationManager.Policy(allowedCategories, senders, senders)
+            }
             nm.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY)
         } else {
             nm.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
