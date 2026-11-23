@@ -366,6 +366,8 @@ class MainActivity : AppCompatActivity() {
     internal lateinit var barAudio: AudioIconView
     internal lateinit var barWifi: WifiIconView
     internal val barButtons = HashMap<BarKind, BarIconButton>()
+    /** The single active top-bar panel/calendar popup. */
+    internal var activePopup: AlertDialog? = null
     internal val iconBarInitialized: Boolean get() = ::iconBar.isInitialized && ::barBattery.isInitialized
     internal var ctrl: MediaController? = null
     internal var listeningController: MediaController? = null
