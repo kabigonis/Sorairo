@@ -123,13 +123,6 @@ internal fun MainActivity.fillSettings() {
         r.addView(txt(14f, p.cAccent, v))
         setBox.addView(r)
     }
-    row("dynamic island", if (prefs.getBoolean("dynamic_island", true)) "on" else "off") {
-        val enabled = !prefs.getBoolean("dynamic_island", true)
-        prefs.edit().putBoolean("dynamic_island", enabled).apply()
-        if (!enabled) islandEmptyExpanded = false
-        refreshIsland()
-        fillSettings()
-    }
     row("style", "appearance & layout ›") {
         switchSettingsContent {
             fillStyleSettings()
