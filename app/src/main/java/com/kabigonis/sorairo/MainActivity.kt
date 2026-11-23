@@ -869,15 +869,15 @@ class MainActivity : AppCompatActivity() {
         }
         right.addView(status)
         right.addView(iconBar)
-        // Keep the clock anchored to the exact center. Place the action tray immediately
-        // to its right, without including it in the clock's centering calculation.
+        // Match Omarchy: status actions sit immediately BEFORE the centered clock.
+        // The clock remains independently centered and never shifts with tray visibility.
         val centerGroup = FrameLayout(this)
         centerGroup.addView(clock, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
         val actionTray = createOmarchyActionTray()
         val trayWidth = dp(150)
         centerGroup.addView(actionTray, FrameLayout.LayoutParams(trayWidth, dp(30), Gravity.CENTER))
         fun positionActionTray() {
-            actionTray.translationX = clock.width / 2f + dp(8) + trayWidth / 2f
+            actionTray.translationX = -(clock.width / 2f + dp(8) + trayWidth / 2f)
         }
         centerGroup.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> positionActionTray() }
         clock.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> positionActionTray() }
