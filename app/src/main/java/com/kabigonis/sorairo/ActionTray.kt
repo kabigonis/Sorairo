@@ -21,6 +21,8 @@ import androidx.appcompat.app.AlertDialog
 import java.util.WeakHashMap
 
 private val actionIconViews = WeakHashMap<MainActivity, MutableMap<OmarchyGlyph, OmarchyActionIconView>>()
+private val actionTrayRows = WeakHashMap<MainActivity, LinearLayout>()
+private val actionTrayCollapseCallbacks = WeakHashMap<MainActivity, Runnable>()
 private val actionTooltipWindows = WeakHashMap<MainActivity, PopupWindow>()
 private val actionTooltipCallbacks = WeakHashMap<MainActivity, Runnable>()
 
@@ -31,6 +33,10 @@ internal fun MainActivity.createOmarchyActionTray(): View {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         setPadding(0, 0, dp(3), 0)
+        // Reserve the strip's width so revealing it never shifts the clock.
+        visibility = View.INVISIBLE
+        alpha = 0f
+        translationX = -dp(7).toFloat()
     }
     val icons = linkedMapOf<OmarchyGlyph, OmarchyActionIconView>()
 
@@ -43,6 +49,7 @@ internal fun MainActivity.createOmarchyActionTray(): View {
             contentDescription = label()
             setOnClickListener {
                 showOmarchyTooltip(this, label())
+                scheduleOmarchyActionTrayCollapse(1550L)
                 action()
             }
             addView(icon, android.widget.FrameLayout.LayoutParams(dp(14), dp(16), Gravity.CENTER))
@@ -62,11 +69,39 @@ internal fun MainActivity.createOmarchyActionTray(): View {
     add(OmarchyGlyph.SUDO, { "Disable Passwordless Sudo" }) { showSudoUnavailable() }
 
     actionIconViews[this] = icons
+    actionTrayRows[this] = row
     refreshOmarchyActionTray()
     return row
 }
 
 /** Repaints enabled states without rebuilding the top bar. */
+/** Tap the blank clock/bar area (or hover it with a mouse) to reveal the inactive indicators. */
+internal fun MainActivity.revealOmarchyActionTray() {
+    val row = actionTrayRows[this] ?: return
+    actionTrayCollapseCallbacks[this]?.let { handler.removeCallbacks(it) }
+    if (row.visibility != View.VISIBLE) {
+        row.visibility = View.VISIBLE
+        row.alpha = 0f
+        row.translationX = -dp(7).toFloat()
+        row.animate().alpha(0.88f).translationX(0f).setDuration(170L).start()
+    }
+    scheduleOmarchyActionTrayCollapse(4200L)
+}
+
+internal fun MainActivity.scheduleOmarchyActionTrayCollapse(delay: Long) {
+    val row = actionTrayRows[this] ?: return
+    actionTrayCollapseCallbacks[this]?.let { handler.removeCallbacks(it) }
+    val callback = Runnable {
+        row.animate().alpha(0f).translationX(-dp(7).toFloat()).setDuration(190L)
+            .withEndAction {
+                row.visibility = View.INVISIBLE
+                row.translationX = 0f
+            }.start()
+    }
+    actionTrayCollapseCallbacks[this] = callback
+    handler.postDelayed(callback, delay)
+}
+
 internal fun MainActivity.refreshOmarchyActionTray() {
     val icons = actionIconViews[this] ?: return
     val awake = prefs.getBoolean("tray_stay_awake", false)
