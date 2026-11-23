@@ -211,12 +211,11 @@ internal fun MainActivity.routePopupTap(event: MotionEvent): Boolean {
     val y = event.rawY
     val hitKind = barButtons.entries.firstOrNull { it.value.containsScreenPoint(x, y) }?.key
     val hitClock = hitKind == null && clockInitialized && clock.containsScreenPoint(x, y)
-    if (hitKind == null && !hitClock) return false
-
     val samePanel = (hitKind != null && hitKind == activePopupKind) ||
         (hitClock && activePopupKind == BarKind.CALENDAR)
     dialog.dismiss()
     if (samePanel) return true
+    if (hitKind == null && !hitClock) return false
     when {
         hitKind != null && barButtons[hitKind]?.isShown == true -> handler.post { openBarPanel(hitKind) }
         hitClock -> handler.post { showCalendarPopup() }
@@ -240,6 +239,8 @@ internal fun MainActivity.showBarDialog(
     val btn = barButtons[kind]
     val dialog = AlertDialog.Builder(this).create()
     dialog.setView(root)
+    // Keep outside taps routed through Activity so same-icon taps can be handled once.
+    dialog.setCanceledOnTouchOutside(false)
     dialog.setOnDismissListener {
         btn?.setActive(false)
         if (activePopup === dialog) {
