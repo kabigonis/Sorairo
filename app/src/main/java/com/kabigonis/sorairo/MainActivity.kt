@@ -360,6 +360,13 @@ class MainActivity : AppCompatActivity() {
     internal lateinit var vis: VisualizerView
     internal lateinit var song: TextView
     internal lateinit var battText: TextView
+    internal lateinit var iconBar: LinearLayout
+    internal lateinit var barBattery: BatteryIconView
+    internal lateinit var barDisplay: DisplayIconView
+    internal lateinit var barAudio: AudioIconView
+    internal lateinit var barWifi: WifiIconView
+    internal val barButtons = HashMap<BarKind, BarIconButton>()
+    internal val iconBarInitialized: Boolean get() = ::iconBar.isInitialized && ::barBattery.isInitialized
     internal var ctrl: MediaController? = null
     internal var listeningController: MediaController? = null
     internal var playerCallback: MediaController.Callback? = null
@@ -567,7 +574,32 @@ class MainActivity : AppCompatActivity() {
 
     internal var activeSessionsListener: MediaSessionManager.OnActiveSessionsChangedListener? = null
 
-    internal fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+    // UI scale and text size (Display panel). Cached: dp() runs thousands of times per layout.
+    private var uiScaleCache = -1f
+    internal val uiScale: Float
+        get() {
+            if (uiScaleCache < 0f) uiScaleCache = prefs.getFloat("ui_scale", 1f).coerceIn(0.75f, 2.5f)
+            return uiScaleCache
+        }
+
+    internal fun setUiScale(v: Float) {
+        uiScaleCache = v
+        prefs.edit().putFloat("ui_scale", v).apply()
+    }
+
+    private var uiTextCache = -1
+    internal val uiTextSize: Int
+        get() {
+            if (uiTextCache < 0) uiTextCache = prefs.getInt("text_size", 13).coerceIn(8, 24)
+            return uiTextCache
+        }
+
+    internal fun setUiTextSize(v: Int) {
+        uiTextCache = v
+        prefs.edit().putInt("text_size", v).apply()
+    }
+
+    internal fun dp(v: Int) = (v * resources.displayMetrics.density * uiScale).toInt()
 
     internal fun box(fill: Int, stroke: Int) = GradientDrawable().apply {
         setColor(fill)
@@ -584,7 +616,7 @@ class MainActivity : AppCompatActivity() {
 
     internal fun txt(size: Float, color: Int, s: CharSequence = ""): TextView = TextView(this).apply {
         text = s
-        textSize = size
+        textSize = size * uiScale * (uiTextSize / 13f)
         setTextColor(color)
         typeface = font
     }
@@ -762,20 +794,39 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(10), dp(8), dp(10), dp(8))
             setOnClickListener { showCalendarPopup() }
         }
+        // Headphone name only; the network label moved into the Wi-Fi icon and its panel.
         status = txt(13f, p.cFg).apply {
             setPadding(dp(10), dp(8), dp(10), dp(8))
-            setOnClickListener { showWifiPanel() }
+            visibility = View.GONE
         }
-        battText = txt(13f, p.cFg).apply {
-            setPadding(dp(12), dp(8), dp(4), dp(8))
-            setOnClickListener { showBatteryPanel() }
+        // Legacy text view, kept off-screen: the battery now lives in the icon row.
+        battText = txt(13f, p.cFg)
+        barButtons.clear()
+        barBattery = BatteryIconView(this, p.cFg, p.cBg or (0xFF shl 24))
+        barDisplay = DisplayIconView(this, p.cFg)
+        barAudio = AudioIconView(this, p.cFg)
+        barWifi = WifiIconView(this, p.cFg)
+        fun barButton(kind: BarKind, glyph: View, gw: Int, gh: Int, open: () -> Unit): BarIconButton {
+            val b = BarIconButton(this, glyph, p.cBlue, dp(gw), dp(gh))
+            b.setOnClickListener { open() }
+            barButtons[kind] = b
+            return b
+        }
+        iconBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            val lp = { LinearLayout.LayoutParams(dp(38), dp(34)) }
+            addView(barButton(BarKind.BATTERY, barBattery, 10, 17) { showBatteryPanel() }, lp())
+            addView(barButton(BarKind.DISPLAY, barDisplay, 17, 15) { showDisplayPanel() }, lp())
+            addView(barButton(BarKind.AUDIO, barAudio, 17, 15) { showAudioPanel() }, lp())
+            addView(barButton(BarKind.WIFI, barWifi, 17, 15) { showNetworkPanel() }, lp())
         }
         val right = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
         right.addView(status)
-        right.addView(battText)
+        right.addView(iconBar)
         bar.addView(left, FrameLayout.LayoutParams(-2, -2, Gravity.START or Gravity.CENTER_VERTICAL))
         bar.addView(clock, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
         bar.addView(right, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.CENTER_VERTICAL))

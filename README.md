@@ -30,7 +30,11 @@ Sorairo is a keyboard-first Android home-screen launcher inspired by Omarchy and
 - **Appearance controls:** themes (Tokyo Night, Catppuccin, Gruvbox, Nord, and Dracula), fonts, terminal colors, window opacity, and custom wallpaper.
 - **Top bar:** clock, Wi-Fi link speed, headphones, battery, now-playing information, and a small animated visualizer.
 - **Calendar popup:** tap the clock (when the Dynamic Island is off) for an Omarchy-style calendar with a year-progress bar and week numbers.
-- **Battery panel:** tap the battery percentage (or run `battery`) for charge, state, time left, power draw, estimated size, cycles, temperature and a Power-saver / Balanced switch.
+- **Top-bar icons:** battery, display, audio and Wi-Fi, left to right. Each icon gets an animated underline while its panel is open, and the popups sit under the icon like Omarchy's.
+- **Battery panel:** charge, state (`SPENDING JOULES` on battery), time left, power draw, estimated size, cycles, temperature and a Power-saver / Balanced switch.
+- **Display panel:** brightness (needs "modify system settings"), text size and UI scale (1x, 1.25x, 1.5x, 2x). Terminal: `display`, `scale <x>`.
+- **Audio panel:** mute switch and media volume. No special permission needed. Terminal: `audio`.
+- **Network panel:** Wi-Fi state and signal, ping, packet loss, speeds, totals, IP and gateway, plus a DNS provider switcher (DHCP, Cloudflare, Google, Custom). Terminal: `network`, `dns custom <host>`.
 - **Wi-Fi:** tap the network label in the top bar to open the Wi-Fi panel.
 
 ## Future Updates
@@ -55,7 +59,7 @@ Sorairo is still under development and may not work the same way on every device
 
 ## Android limitations
 
-Android does not let ordinary third-party apps directly toggle every system setting. Android has no "performance" power profile, so the battery panel offers Power-saver and Balanced (Battery Saver off). Switching Battery Saver directly needs a one-time `adb shell pm grant <package> android.permission.WRITE_SECURE_SETTINGS`; without it the button opens Android's Battery Saver settings. Charge cycles and live power draw depend on what the device reports and show `n/a` otherwise. The `vpn` command opens the VPN app you choose; Sorairo is not itself a VPN.
+Android does not let ordinary third-party apps directly toggle every system setting. Android has no "performance" power profile, so the battery panel offers Power-saver and Balanced (Battery Saver off). Switching Battery Saver and the DNS provider (Android's Private DNS) directly needs a one-time `adb shell pm grant <package> android.permission.WRITE_SECURE_SETTINGS`; without it Power-saver opens Android's Battery Saver settings and the DNS buttons show the steps. The Wi-Fi network name is hidden by Android unless the optional location permission is granted; everything else in the Wi-Fi icon and panel works without it. Charge cycles and live power draw depend on what the device reports and show `n/a` otherwise. The `vpn` command opens the VPN app you choose; Sorairo is not itself a VPN.
 
 The visualizer beside the song name is decorative and does not perform real audio analysis. Available system information and controls can vary by Android version and device.
 
@@ -66,7 +70,7 @@ The visualizer beside the song name is decorative and does not perform real audi
 | Notification access | Read currently playing media information (optional) |
 | Modify system settings | Brightness slider (optional) |
 | Do Not Disturb access | Legacy silent-mode control (optional) |
-| Write secure settings | Switch Battery Saver from the battery panel (optional, granted over adb) |
+| Write secure settings | Switch Battery Saver and Private DNS from the panels (optional, granted over adb) |
 | Network and Wi-Fi state | Show connection type and link speed |
 
 Permissions are requested when you use the matching feature.

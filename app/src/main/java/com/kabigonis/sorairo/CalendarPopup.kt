@@ -36,24 +36,34 @@ internal fun yearProgressPercent(d: LocalDate): Int =
  * Pins a dialog under the top bar like the Omarchy popups: [horizontal] is Gravity.CENTER_HORIZONTAL
  * (calendar, under the clock) or Gravity.END (battery, under the status icons). No screen dimming.
  */
-internal fun MainActivity.anchorDialogToTop(dialog: AlertDialog?, horizontal: Int, sideMarginPx: Int = 0) {
+internal fun MainActivity.anchorDialogToTop(
+    dialog: AlertDialog?,
+    horizontal: Int,
+    sideMarginPx: Int = 0,
+    panelWidth: Int = 0,
+    anchor: View? = null
+) {
     if (dialog == null) return
     val w = dialog.window ?: return
     // Lay the popup out against the physical screen, not the inset-adjusted frame. Otherwise it rides
     // down with the system status bar when the user pulls the Android quick-settings shade.
     WindowCompat.setDecorFitsSystemWindows(w, false)
     w.addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
-    w.setGravity(Gravity.TOP or horizontal)
     w.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-    // sit just under our own top bar
-    val y = runCatching {
-        val loc = IntArray(2)
-        battText.getLocationOnScreen(loc)
-        if (battText.height > 0) loc[1] + battText.height + dp(4) else dp(40)
-    }.getOrDefault(dp(40))
     val lp = w.attributes
-    lp.y = y
-    if (horizontal == Gravity.END) lp.x = sideMarginPx
+    lp.y = barBottomY()
+    if (anchor != null && panelWidth > 0) {
+        // centred under the icon that opened it, kept on screen
+        w.setGravity(Gravity.TOP or Gravity.START)
+        val loc = IntArray(2)
+        anchor.getLocationOnScreen(loc)
+        val screenW = resources.displayMetrics.widthPixels
+        val cx = loc[0] + anchor.width / 2
+        lp.x = (cx - panelWidth / 2).coerceIn(dp(8), maxOf(dp(8), screenW - panelWidth - dp(8)))
+    } else {
+        w.setGravity(Gravity.TOP or horizontal)
+        if (horizontal == Gravity.END) lp.x = sideMarginPx
+    }
     lp.dimAmount = 0f
     w.attributes = lp
     // the shade (or anything else) taking focus closes the popup instead of leaving it floating

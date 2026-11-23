@@ -73,12 +73,9 @@ internal fun MainActivity.updateStatus() {
     }
 
     val bm = getSystemService(Context.BATTERY_SERVICE) as BatteryManager
-    val parts = ArrayList<String>()
-    headphones()?.let { parts.add("♪ $it") }
-    val net = netLabel()
-    parts.add(net)
-    status.text = parts.joinToString("   ")
-    battText.text = "▮ ${bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)}%"
+    status.text = headphones()?.let { "♪ $it" } ?: ""
+    status.visibility = if (status.text.isEmpty()) View.GONE else View.VISIBLE
     sampleBatteryCurrent(bm)
+    refreshBarIcons(bm)
     updateNowPlaying()
 }

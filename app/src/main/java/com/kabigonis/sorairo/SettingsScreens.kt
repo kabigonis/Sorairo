@@ -314,13 +314,13 @@ internal fun MainActivity.fillPermissionSettings() {
 
     val secureGranted = canSetBatterySaver()
     permissionRow(
-        "Battery Saver switch (advanced)",
-        "Optional. Lets the battery panel switch Battery Saver in one tap. Needs a one-time adb grant; without it the button opens Android's settings.",
+        "Secure settings (advanced)",
+        "Optional. Lets the battery panel switch Battery Saver and the network panel switch DNS in one tap. Needs a one-time adb grant.",
         if (secureGranted) "granted" else "adb setup ›",
         secureGranted
     ) {
-        if (secureGranted) Toast.makeText(this, "Granted: Power-saver switches directly", Toast.LENGTH_SHORT).show()
-        else showBatterySaverGrantHelp()
+        if (secureGranted) Toast.makeText(this, "Granted: Power-saver and DNS switch directly", Toast.LENGTH_SHORT).show()
+        else showSecureGrantHelp()
     }
 
     val locationGranted = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) ==

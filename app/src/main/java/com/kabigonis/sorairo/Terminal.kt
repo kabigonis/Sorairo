@@ -238,7 +238,12 @@ internal fun MainActivity.runCommand(ws: Int, line: String) {
                 "  hidden         list hidden apps",
                 "  ls             list apps",
                 "  battery        battery panel (also: tap the % in the bar)",
-                "  battery adb    optional adb grant for the Power-saver switch",
+                "  battery adb    optional adb grant for Power-saver and DNS switching",
+                "  display        brightness, text size and UI scale",
+                "  audio          volume and mute",
+                "  network        Wi-Fi stats and DNS provider (also: net)",
+                "  dns custom <h> set the custom DNS hostname",
+                "  scale <x>      UI scale, e.g. scale 1.25 (scale 1 resets)",
                 "  vpn            open your vpn app",
                 "  <app name>     launch (fuzzy match)"
             ).forEach { say(it) }
@@ -422,6 +427,29 @@ internal fun MainActivity.runCommand(ws: Int, line: String) {
                 val h = hiddenSet()
                 val names = allApps.filter { it.pkg in h }.joinToString("  ") { it.label.lowercase() }
                 say(if (names.isEmpty()) "no hidden apps" else names, p.cDim)
+            }
+            "display" -> showDisplayPanel()
+            "audio" -> showAudioPanel()
+            "network", "net" -> showNetworkPanel()
+            "dns" -> {
+                val a = arg.split(" ", limit = 2)
+                if (a[0] == "custom" && a.size > 1 && a[1].isNotBlank()) {
+                    prefs.edit().putString("dns_custom", a[1].trim()).apply()
+                    say("custom DNS host: ${a[1].trim()}", p.cGreen)
+                } else {
+                    val names = listOf("DHCP", "Cloudflare", "Google", "Custom")
+                    say("dns provider: ${names[currentDnsProvider()]}  (set a custom host: dns custom <host>)", p.cDim)
+                }
+            }
+            "scale" -> {
+                val v = arg.removeSuffix("x").toFloatOrNull()
+                if (v == null || v < 0.75f || v > 2.5f) {
+                    say("usage: scale <0.75-2.5>   (current ${formatScale(uiScale)})", p.cDim)
+                } else {
+                    setUiScale(v)
+                    say("scale ${formatScale(v)}", p.cGreen)
+                    rebuild(false)
+                }
             }
             "battery", "batt" -> if (arg == "adb") {
                 say("optional, for power users: switch Battery Saver from the panel", p.cDim)
