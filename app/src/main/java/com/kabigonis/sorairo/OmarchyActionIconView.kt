@@ -100,32 +100,29 @@ internal class OmarchyActionIconView(
     }
 
     private fun drawHand(c: Canvas) {
+        // Omarchy reminder glyph: a compact closed hand with one index finger raised.
+        // Keep the thumb visibly extended to the left and the wrist squared off.
         val p = Path().apply {
-            moveTo(7.2f, 20.1f)
-            lineTo(4.8f, 14.4f)
-            lineTo(4.1f, 12.3f)
-            lineTo(5.2f, 11.5f)
-            lineTo(7.2f, 13.2f)
-            lineTo(7.1f, 7.4f)
-            lineTo(7.5f, 5.8f)
-            lineTo(9.1f, 5.8f)
-            lineTo(9.7f, 12.2f)
-            lineTo(10.1f, 4.2f)
-            lineTo(11.8f, 3.4f)
-            lineTo(13.2f, 4.3f)
-            lineTo(13.2f, 12.1f)
-            lineTo(14.1f, 6.2f)
-            lineTo(15.8f, 5.7f)
-            lineTo(16.9f, 7.1f)
-            lineTo(16.2f, 13.4f)
-            lineTo(18.1f, 10.8f)
-            lineTo(19.6f, 11.1f)
-            lineTo(20.0f, 12.7f)
-            lineTo(17.2f, 18.7f)
-            lineTo(14.5f, 21f)
+            moveTo(8.1f, 20.8f)
+            lineTo(5.2f, 17.2f)
+            lineTo(3.4f, 14.1f)
+            cubicTo(2.8f, 12.9f, 3.7f, 11.8f, 4.8f, 12.3f)
+            lineTo(7.4f, 14.5f)
+            lineTo(7.4f, 6.0f)
+            cubicTo(7.4f, 4.4f, 8.4f, 3.4f, 9.7f, 3.4f)
+            cubicTo(11.0f, 3.4f, 11.8f, 4.4f, 11.8f, 6.0f)
+            lineTo(11.8f, 12.1f)
+            lineTo(12.3f, 11.0f)
+            cubicTo(12.9f, 9.9f, 14.3f, 9.8f, 15.0f, 10.8f)
+            lineTo(16.2f, 12.5f)
+            lineTo(17.1f, 13.3f)
+            cubicTo(18.2f, 14.2f, 18.5f, 15.4f, 18.0f, 16.8f)
+            lineTo(16.4f, 20.8f)
             close()
         }
         c.drawPath(p, fill)
+        // Short wrist cuff gives the same compact silhouette as the reference.
+        c.drawLine(8.2f, 20.7f, 16.5f, 20.7f, stroke)
     }
 
     private fun drawNightLight(c: Canvas) {
