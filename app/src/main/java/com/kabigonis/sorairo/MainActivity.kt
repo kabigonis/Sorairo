@@ -789,7 +789,10 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { togglePlay() }
         }
         left.addView(song)
-        clock = txt(13f, p.cFg).apply {
+        clock = ClockView(this, p.cBlue).apply {
+            textSize = 13f * uiScale * (uiTextSize / 13f)
+            setTextColor(p.cFg)
+            typeface = font
             visibility = if (prefs.getBoolean("dynamic_island", true)) View.GONE else View.VISIBLE
             setPadding(dp(10), dp(8), dp(10), dp(8))
             setOnClickListener { showCalendarPopup() }
@@ -816,10 +819,11 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             val lp = { LinearLayout.LayoutParams(dp(38), dp(34)) }
-            addView(barButton(BarKind.BATTERY, barBattery, 10, 17) { showBatteryPanel() }, lp())
-            addView(barButton(BarKind.DISPLAY, barDisplay, 17, 15) { showDisplayPanel() }, lp())
-            addView(barButton(BarKind.AUDIO, barAudio, 17, 15) { showAudioPanel() }, lp())
+            // left to right: Wi-Fi, audio, display, battery (battery is the right-most)
             addView(barButton(BarKind.WIFI, barWifi, 17, 15) { showNetworkPanel() }, lp())
+            addView(barButton(BarKind.AUDIO, barAudio, 17, 15) { showAudioPanel() }, lp())
+            addView(barButton(BarKind.DISPLAY, barDisplay, 17, 15) { showDisplayPanel() }, lp())
+            addView(barButton(BarKind.BATTERY, barBattery, 10, 17) { showBatteryPanel() }, lp())
         }
         val right = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL

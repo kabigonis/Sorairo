@@ -10,6 +10,7 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.widget.FrameLayout
+import android.widget.TextView
 
 /** Calendar glyph for the popup header: binding tabs, heavy top bar and one filled day square. */
 class CalendarIconView(context: Context, private val color: Int) : View(context) {
@@ -307,5 +308,32 @@ class SwitchBoxView(context: Context, private val fg: Int, private val border: I
         val size = h - 2 * pad
         val x = pad + (w - 2 * pad - size) * pos
         canvas.drawRoundRect(RectF(x, pad, x + size, pad + size), sw, sw, solid)
+    }
+}
+
+/** The top-bar clock. Draws an underline that grows from the centre while the calendar is open. */
+class ClockView(context: Context, lineColor: Int) : TextView(context) {
+    private var fraction = 0f
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = lineColor; style = Paint.Style.FILL }
+
+    fun setActive(on: Boolean) {
+        ValueAnimator.ofFloat(fraction, if (on) 1f else 0f).apply {
+            duration = 180L
+            addUpdateListener {
+                fraction = it.animatedValue as Float
+                invalidate()
+            }
+            start()
+        }
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        if (fraction > 0f) {
+            val half = (width - paddingLeft - paddingRight) / 2f * fraction
+            val cx = width / 2f
+            val y = height - uiDp(5).toFloat()
+            canvas.drawRect(cx - half, y, cx + half, y + uiDp(2).toFloat(), paint)
+        }
     }
 }

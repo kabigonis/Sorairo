@@ -132,7 +132,7 @@ internal fun MainActivity.showCalendarPopup() {
             layoutParams = LinearLayout.LayoutParams(0, dp(h), weight)
         }
 
-    fun render() {
+    fun render(dir: Int = 0) {
         grid.removeAllViews()
         monthLabel.text = (shown.month.getDisplayName(TextStyle.FULL, loc) + " " + shown.year).uppercase(loc)
         val hdr = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -162,6 +162,11 @@ internal fun MainActivity.showCalendarPopup() {
             }
             grid.addView(row, LinearLayout.LayoutParams(-1, -2))
         }
+        if (dir != 0) {
+            grid.alpha = 0f
+            grid.translationX = dir * dp(24).toFloat()
+            grid.animate().alpha(1f).translationX(0f).setDuration(180).start()
+        }
     }
 
     val footer = LinearLayout(this).apply {
@@ -171,13 +176,13 @@ internal fun MainActivity.showCalendarPopup() {
     }
     val prev = txt(20f, p.cDim, "\u2039").apply {
         setPadding(dp(14), dp(4), dp(14), dp(4))
-        setOnClickListener { shown = shown.minusMonths(1); render() }
+        setOnClickListener { shown = shown.minusMonths(1); render(-1) }
     }
     val next = txt(20f, p.cDim, "\u203A").apply {
         setPadding(dp(14), dp(4), dp(14), dp(4))
-        setOnClickListener { shown = shown.plusMonths(1); render() }
+        setOnClickListener { shown = shown.plusMonths(1); render(1) }
     }
-    monthLabel.setOnClickListener { shown = YearMonth.from(today); render() }
+    monthLabel.setOnClickListener { shown = YearMonth.from(today); render(0) }
     footer.addView(prev)
     footer.addView(monthLabel, LinearLayout.LayoutParams(0, -2, 1f))
     footer.addView(next)
@@ -186,9 +191,11 @@ internal fun MainActivity.showCalendarPopup() {
 
     val dialog = AlertDialog.Builder(this).create().apply {
         setView(root)
+        setOnDismissListener { (clock as? ClockView)?.setActive(false) }
         show()
         window?.setBackgroundDrawableResource(android.R.color.transparent)
         window?.setLayout(minOf(resources.displayMetrics.widthPixels - dp(40), dp(480)), -2)
     }
+    (clock as? ClockView)?.setActive(true)
     anchorDialogToTop(dialog, Gravity.CENTER_HORIZONTAL)
 }

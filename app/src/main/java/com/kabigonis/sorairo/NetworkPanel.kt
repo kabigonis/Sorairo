@@ -173,8 +173,13 @@ internal fun MainActivity.showNetworkPanel() {
             return
         }
         if (setPrivateDns(i, custom)) {
-            styleDns(i)
-            Toast.makeText(this, "DNS: ${names[i]}", Toast.LENGTH_SHORT).show()
+            val now = currentDnsProvider()   // read it back so the highlight shows what Android really holds
+            styleDns(now)
+            Toast.makeText(
+                this,
+                if (now == i) "DNS: ${names[i]}" else "Android didn't keep that DNS setting",
+                Toast.LENGTH_SHORT
+            ).show()
         } else {
             Toast.makeText(this, "Couldn't change DNS", Toast.LENGTH_SHORT).show()
         }
@@ -257,11 +262,7 @@ internal fun MainActivity.showNetworkPanel() {
             gwV.text = "--"
         }
         styleDns(currentDnsProvider())
-        hint.text = when {
-            !hasSecureSettings() -> "Switching DNS needs the optional adb grant. Tap a provider for steps."
-            st.onWifi && st.ssid == null -> "Network name needs location access (an Android rule)."
-            else -> ""
-        }
+        hint.text = if (!hasSecureSettings()) "Switching DNS needs the optional adb grant. Tap a provider for steps." else ""
         hint.visibility = if (hint.text.isEmpty()) View.GONE else View.VISIBLE
     }
 
