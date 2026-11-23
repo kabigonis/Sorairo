@@ -641,6 +641,13 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        // A top-bar tap outside the active popup should switch directly to that panel.
+        // Consume the original DOWN so the underlying icon click cannot open it twice.
+        if (routePopupTap(ev)) return true
+        return super.dispatchTouchEvent(ev)
+    }
+
     // ================= lifecycle =================
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
