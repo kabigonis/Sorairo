@@ -323,8 +323,9 @@ private fun MainActivity.showAndroidScreenRecordingGuide(mode: String) {
     val p = pal
     val root = trayDialogRoot(p.cBg, p.cBlue)
     root.addView(txt(13f, p.cBlue, "Screen Recording"))
-    root.addView(txt(12f, p.cFg, "Android will ask for screen-capture permission. The selected audio mode is: $mode.")
-        .apply { setPadding(0, dp(8), 0, dp(12)) })
+    root.addView(txt(12f, p.cFg,
+        "$mode is not available in this Sorairo build yet. Choose ‘With no audio’ to start the working Android screen recorder. Android will show its own screen-capture consent prompt."
+    ).apply { setPadding(0, dp(8), 0, dp(12)) })
     root.addView(trayDialogActions("CLOSE" to { activeDialog?.dismiss() }))
     showTrayDialog(root, 480)
 }
