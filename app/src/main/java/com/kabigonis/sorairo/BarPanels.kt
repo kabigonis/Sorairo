@@ -13,6 +13,7 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
 import android.os.BatteryManager
+import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.TextView
@@ -154,6 +155,53 @@ internal fun MainActivity.barBottomY(): Int = try {
     dp(40)
 }
 
+
+internal fun MainActivity.dismissActivePopup() {
+    activePopup?.takeIf { it.isShowing }?.dismiss()
+    activePopup = null
+}
+
+internal fun MainActivity.openBarPanel(kind: BarKind) {
+    when (kind) {
+        BarKind.WIFI -> showNetworkPanel()
+        BarKind.AUDIO -> showAudioPanel()
+        BarKind.DISPLAY -> showDisplayPanel()
+        BarKind.BATTERY -> showBatteryPanel()
+    }
+}
+
+private fun View.containsScreenPoint(x: Float, y: Float): Boolean {
+    if (!isShown) return false
+    val loc = IntArray(2)
+    getLocationOnScreen(loc)
+    return x >= loc[0] && x < loc[0] + width && y >= loc[1] && y < loc[1] + height
+}
+
+internal fun MainActivity.handleOutsideTap(x: Float, y: Float, owner: BarKind?, dialog: AlertDialog) {
+    val hitKind = barButtons.entries.firstOrNull { it.value.containsScreenPoint(x, y) }?.key
+    val hitClock = hitKind == null && clockInitialized && clock.containsScreenPoint(x, y)
+    dialog.dismiss()
+    when {
+        hitKind != null && hitKind != owner -> handler.post { openBarPanel(hitKind) }
+        hitClock && owner != null -> handler.post { showCalendarPopup() }
+    }
+}
+
+internal fun MainActivity.installOutsideTapRouter(dialog: AlertDialog, owner: BarKind?) {
+    val window = dialog.window ?: return
+    val original = window.callback ?: return
+    window.addFlags(WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH)
+    window.callback = object : android.view.Window.Callback by original {
+        override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+            if (event.actionMasked == MotionEvent.ACTION_OUTSIDE) {
+                if (dialog.isShowing) handleOutsideTap(event.rawX, event.rawY, owner, dialog)
+                return true
+            }
+            return original.dispatchTouchEvent(event)
+        }
+    }
+}
+
 /**
  * Shows [root] as a popup under the matching top-bar icon, lights that icon's underline while it is
  * open, and runs [onDismiss] when it closes.
@@ -164,21 +212,24 @@ internal fun MainActivity.showBarDialog(
     maxWidthDp: Int,
     onDismiss: () -> Unit = {}
 ): AlertDialog {
+    dismissActivePopup()
     val screenW = resources.displayMetrics.widthPixels
     val w = minOf(dp(maxWidthDp), screenW - dp(24))
     val btn = barButtons[kind]
-    val dialog = AlertDialog.Builder(this).create().apply {
-        setView(root)
-        setOnDismissListener {
-            btn?.setActive(false)
-            onDismiss()
-        }
-        show()
-        window?.setBackgroundDrawableResource(android.R.color.transparent)
-        window?.setLayout(w, WindowManager.LayoutParams.WRAP_CONTENT)
+    val dialog = AlertDialog.Builder(this).create()
+    dialog.setView(root)
+    dialog.setOnDismissListener {
+        btn?.setActive(false)
+        if (activePopup === dialog) activePopup = null
+        onDismiss()
     }
+    activePopup = dialog
+    dialog.show()
+    dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+    dialog.window?.setLayout(w, WindowManager.LayoutParams.WRAP_CONTENT)
     btn?.setActive(true)
     anchorDialogToTop(dialog, 0, 0, w, btn)
+    installOutsideTapRouter(dialog, kind)
     return dialog
 }
 
