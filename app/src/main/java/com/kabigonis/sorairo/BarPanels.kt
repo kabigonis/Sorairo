@@ -1,15 +1,21 @@
 package com.kabigonis.sorairo
 
 import android.Manifest
+import android.animation.ArgbEvaluator
+import android.animation.ValueAnimator
 import android.content.Context
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.net.ConnectivityManager
+import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
 import android.os.BatteryManager
 import android.view.View
 import android.view.WindowManager
+import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import java.util.Locale
 
@@ -64,14 +70,36 @@ internal fun formatScale(scale: Float): String =
 
 // ---- connection state for the Wi-Fi icon ----
 
-internal class NetState(val connected: Boolean, val onWifi: Boolean, val arcs: Int, val ssid: String?)
+internal class NetState(
+    val connected: Boolean,
+    val onWifi: Boolean,
+    val arcs: Int,
+    val ssid: String?,
+    val vpn: Boolean = false
+)
+
+/** The real network under a VPN (DNSNet, WireGuard...), preferring Wi-Fi. */
+@Suppress("DEPRECATION")
+internal fun underlyingNetwork(cm: ConnectivityManager): Network? {
+    val real = cm.allNetworks.filter {
+        val c = cm.getNetworkCapabilities(it)
+        c != null && !c.hasTransport(NetworkCapabilities.TRANSPORT_VPN) &&
+            c.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+    return real.firstOrNull { cm.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true }
+        ?: real.firstOrNull()
+}
 
 @Suppress("DEPRECATION")
 internal fun MainActivity.netState(): NetState {
     try {
         val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val net = cm.activeNetwork ?: return NetState(false, false, 0, null)
-        val caps = cm.getNetworkCapabilities(net) ?: return NetState(false, false, 0, null)
+        val active = cm.activeNetwork ?: return NetState(false, false, 0, null)
+        val activeCaps = cm.getNetworkCapabilities(active) ?: return NetState(false, false, 0, null)
+        val vpn = activeCaps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+        // With a VPN on top, read signal and name from the real network underneath it.
+        val under = if (vpn) underlyingNetwork(cm) else null
+        val caps = (if (under != null) cm.getNetworkCapabilities(under) else null) ?: activeCaps
         val onWifi = caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
         var arcs = 3
         var ssid: String? = null
@@ -84,7 +112,7 @@ internal fun MainActivity.netState(): NetState {
                 ssid = info.ssid?.trim('"')?.takeIf { it.isNotEmpty() && it != "<unknown ssid>" }
             }
         }
-        return NetState(true, onWifi, arcs, ssid)
+        return NetState(true, onWifi, arcs, ssid, vpn)
     } catch (_: Exception) {
         return NetState(false, false, 0, null)
     }
@@ -142,4 +170,57 @@ internal fun MainActivity.showBarDialog(
     btn?.setActive(true)
     anchorDialogToTop(dialog, 0, 0, w, btn)
     return dialog
+}
+
+/** A bordered choice button whose fill, border and text colours cross-fade between idle and active. */
+internal class ChoiceButton(
+    val view: TextView,
+    private val bg: GradientDrawable,
+    private val strokePx: Int,
+    private val fillOff: Int,
+    private val fillOn: Int,
+    private val strokeOff: Int,
+    private val strokeOn: Int,
+    private val textOff: Int,
+    private val textOn: Int
+) {
+    private val evaluator = ArgbEvaluator()
+    private var active: Boolean? = null
+    private var anim: ValueAnimator? = null
+
+    private fun paint(f: Float) {
+        bg.setColor(evaluator.evaluate(f, fillOff, fillOn) as Int)
+        bg.setStroke(strokePx, evaluator.evaluate(f, strokeOff, strokeOn) as Int)
+        view.setTextColor(evaluator.evaluate(f, textOff, textOn) as Int)
+    }
+
+    fun set(on: Boolean, animate: Boolean = true) {
+        if (active == on) return
+        val first = active == null
+        active = on
+        anim?.cancel()
+        val target = if (on) 1f else 0f
+        if (first || !animate) {
+            paint(target)
+        } else {
+            anim = ValueAnimator.ofFloat(1f - target, target).apply {
+                duration = 200L
+                addUpdateListener { paint(it.animatedValue as Float) }
+                start()
+            }
+        }
+    }
+}
+
+/** A themed [ChoiceButton] with the same look as the battery panel's profile buttons. */
+internal fun MainActivity.choiceButton(text: String, size: Float = 12f): ChoiceButton {
+    val p = pal
+    val bg = GradientDrawable().apply { setColor(Color.TRANSPARENT) }
+    val tv = txt(size, p.cFg, text).apply { background = bg }
+    return ChoiceButton(
+        tv, bg, dp(2),
+        p.cSel and 0x00FFFFFF, p.cSel,
+        p.cDim, p.cBlue,
+        p.cFg, onFill(p.cFg, p.cSel)
+    )
 }

@@ -321,12 +321,19 @@ internal fun MainActivity.showBatteryPanel() {
             }
         }
     }
-    dialog = showBarDialog(BarKind.BATTERY, root, 440) { handler.removeCallbacks(tick) }
+    dialog = AlertDialog.Builder(this).create().apply {
+        setView(root)
+        setOnDismissListener { handler.removeCallbacks(tick) }
+        show()
+        window?.setBackgroundDrawableResource(android.R.color.transparent)
+        window?.setLayout(minOf(resources.displayMetrics.widthPixels - dp(40), dp(440)), -2)
+    }
+    anchorDialogToTop(dialog, Gravity.END, dp(12))
     handler.postDelayed(tick, 2000)
 }
 
 /** Explains the optional adb grant (Settings > Permissions). Normal users can ignore it entirely. */
-internal fun MainActivity.showSecureGrantHelp() {
+internal fun MainActivity.showBatterySaverGrantHelp() {
     val p = pal
     val cmd = batterySaverGrantCommand()
     val root = LinearLayout(this).apply {
@@ -334,12 +341,12 @@ internal fun MainActivity.showSecureGrantHelp() {
         setPadding(dp(18), dp(16), dp(18), dp(14))
         background = box(p.cBg or (0xFF shl 24), p.cBlue)
     }
-    root.addView(txt(15f, p.cBlue, "~/secure-settings"))
+    root.addView(txt(15f, p.cBlue, "~/battery-saver-switch"))
     root.addView(txt(
         12f, p.cFg,
-        "Optional, for power users. Android doesn't let apps switch Battery Saver or the Private DNS " +
-            "setting by themselves, so this one-time grant lets the battery and network panels do it in one " +
-            "tap. Without it, Power-saver opens Android's Battery Saver settings and the DNS buttons show these steps."
+        "Optional, for power users. Android doesn't let apps switch Battery Saver by themselves, so this " +
+            "one-time grant lets the battery panel do it in one tap. Without it, the Power-saver button " +
+            "just opens Android's Battery Saver settings."
     ).apply { setPadding(0, dp(8), 0, dp(10)) })
     root.addView(txt(11f, p.cDim, "Turn on Developer options > Wireless debugging, pair adb, then run once:"))
     root.addView(txt(11f, p.cFg, cmd).apply {
@@ -356,7 +363,7 @@ internal fun MainActivity.showSecureGrantHelp() {
         setOnClickListener {
             (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
                 .setPrimaryClip(ClipData.newPlainText("adb command", cmd))
-            Toast.makeText(this@showSecureGrantHelp, "Copied", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this@showBatterySaverGrantHelp, "Copied", Toast.LENGTH_SHORT).show()
         }
     })
     actions.addView(txt(13f, p.cDim, "CLOSE").apply {

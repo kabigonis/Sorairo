@@ -151,14 +151,11 @@ internal fun MainActivity.showNetworkPanel() {
 
     // DNS provider (max 4: DHCP, Cloudflare, Google, Custom)
     root.addView(txt(10f, p.cDim, "DNS PROVIDER"))
-    val dnsButtons = ArrayList<TextView>()
+    val dnsButtons = ArrayList<ChoiceButton>()
     val names = listOf("DHCP", "Cloudflare", "Google", "Custom")
+    // colours cross-fade when the active provider changes; unchanged buttons are left alone
     fun styleDns(active: Int) {
-        for ((i, b) in dnsButtons.withIndex()) {
-            val on = i == active
-            b.setTextColor(if (on) onFill(p.cFg, p.cSel) else p.cFg)
-            b.background = box(if (on) p.cSel else Color.TRANSPARENT, if (on) p.cBlue else p.cDim)
-        }
+        for ((i, b) in dnsButtons.withIndex()) b.set(i == active)
     }
     fun chooseDns(i: Int) {
         if (!hasSecureSettings()) {
@@ -186,7 +183,8 @@ internal fun MainActivity.showNetworkPanel() {
     }
     val dnsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
     for ((i, n) in names.withIndex()) {
-        val b = txt(12f, p.cFg, n).apply {
+        val cb = choiceButton(n)
+        val b = cb.view.apply {
             gravity = Gravity.CENTER
             maxLines = 1
             setPadding(dp(2), dp(10), dp(2), dp(10))
@@ -198,12 +196,27 @@ internal fun MainActivity.showNetworkPanel() {
                 true
             }
         }
-        dnsButtons.add(b)
+        dnsButtons.add(cb)
         dnsRow.addView(b, LinearLayout.LayoutParams(0, -2, 1f).apply { if (i < 3) marginEnd = dp(6) })
     }
     root.addView(dnsRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
     val hint = txt(10f, p.cDim, "").apply { setPadding(0, dp(8), 0, 0) }
     root.addView(hint)
+
+    // DNS app (DNSNet and friends run as a VPN, so Sorairo can open them but not switch them)
+    val appRow = txt(12f, p.cAccent, "").apply {
+        setPadding(0, dp(10), 0, 0)
+        setOnClickListener {
+            dialog?.dismiss()
+            launchVpn()
+        }
+        setOnLongClickListener {
+            dialog?.dismiss()
+            showVpnPicker()
+            true
+        }
+    }
+    root.addView(appRow)
 
     // footer: the full Wi-Fi panel (scan and connect)
     root.addView(txt(11f, p.cAccent, "Wi-Fi networks ›").apply {
@@ -251,7 +264,8 @@ internal fun MainActivity.showNetworkPanel() {
         lossV.text = if (st.connected && loss != null) "$loss%" else "--"
         try {
             val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            val net = cm.activeNetwork
+            // with a VPN active, the active network is the tunnel: show the real address and gateway
+            val net = (if (st.vpn) underlyingNetwork(cm) else null) ?: cm.activeNetwork
             val lp = net?.let { cm.getLinkProperties(it) }
             ipV.text = lp?.linkAddresses?.map { it.address }?.firstOrNull { it is Inet4Address }?.hostAddress ?: "--"
             val gw = lp?.routes?.firstOrNull { it.isDefaultRoute && it.gateway is Inet4Address }?.gateway
@@ -262,7 +276,17 @@ internal fun MainActivity.showNetworkPanel() {
             gwV.text = "--"
         }
         styleDns(currentDnsProvider())
-        hint.text = if (!hasSecureSettings()) "Switching DNS needs the optional adb grant. Tap a provider for steps." else ""
+        hint.text = when {
+            !hasSecureSettings() -> "Switching DNS needs the optional adb grant. Tap a provider for steps."
+            st.vpn -> "A VPN is on, so your DNS app handles DNS instead of these buttons."
+            else -> ""
+        }
+        val dnsApp = allApps.find { it.pkg == prefs.getString("vpn_pkg", null) }
+        appRow.text = when {
+            dnsApp == null -> "DNS app: pick yours ›"
+            st.vpn -> "DNS app: ${displayAppLabel(dnsApp)} (running) ›"
+            else -> "DNS app: ${displayAppLabel(dnsApp)} ›"
+        }
         hint.visibility = if (hint.text.isEmpty()) View.GONE else View.VISIBLE
     }
 

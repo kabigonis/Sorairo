@@ -244,7 +244,7 @@ internal fun MainActivity.runCommand(ws: Int, line: String) {
                 "  network        Wi-Fi stats and DNS provider (also: net)",
                 "  dns custom <h> set the custom DNS hostname",
                 "  scale <x>      UI scale, e.g. scale 1.25 (scale 1 resets)",
-                "  vpn            open your vpn app",
+                "  vpn            open your vpn / DNS app (e.g. DNSNet)",
                 "  <app name>     launch (fuzzy match)"
             ).forEach { say(it) }
             "clear" -> sb.clear()
