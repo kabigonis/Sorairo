@@ -318,45 +318,18 @@ private fun MainActivity.showTrayDialog(root: View, maxWidthDp: Int) {
 private fun MainActivity.showScreenRecordingMenu() {
     val p = pal
     val root = trayDialogRoot(p.cBg, p.cBlue)
-    root.addView(txt(13f, p.cDim, "Screenrecord..."))
-    listOf("With no audio", "With device audio", "With device + microphone audio").forEachIndexed { index, label ->
-        root.addView(LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(10), dp(11), dp(10), dp(11))
-            if (index == 0) setBackgroundColor(p.cSel)
-            addView(OmarchyActionIconView(this@showScreenRecordingMenu, OmarchyGlyph.RECORD_VIDEO, p.cDim, p.cBlue, p.cAnsi[1]),
-                LinearLayout.LayoutParams(dp(18), dp(18)).apply { marginEnd = dp(8) })
-            addView(txt(13f, if (index == 0) p.cBlue else p.cFg, label))
-            setOnClickListener {
-                activeDialog?.dismiss()
-                if (index == 0) requestScreenRecording()
-                else showAndroidScreenRecordingGuide(label)
-            }
-        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
-    }
-    root.addView(trayDialogActions("CLOSE" to { activeDialog?.dismiss() }))
-    showTrayDialog(root, 480)
-}
-
-private fun MainActivity.showAndroidScreenRecordingGuide(mode: String) {
-    val p = pal
-    val root = trayDialogRoot(p.cBg, p.cBlue)
     root.addView(txt(13f, p.cBlue, "Screen Recording"))
-    root.addView(txt(12f, p.cFg,
-        "$mode is not available in this Sorairo build yet. Choose ‘With no audio’ to start the working Android screen recorder. Android will show its own screen-capture consent prompt."
-    ).apply { setPadding(0, dp(8), 0, dp(12)) })
+    root.addView(txt(
+        12f,
+        p.cFg,
+        "To record your screen, swipe down twice from the top to open Quick Settings, then tap Screen record. Choose whether to include device audio or microphone audio, then confirm Start."
+    ).apply { setPadding(0, dp(9), 0, dp(14)) })
     root.addView(trayDialogActions("CLOSE" to { activeDialog?.dismiss() }))
     showTrayDialog(root, 480)
 }
 
 private fun MainActivity.requestScreenRecording() {
-    try {
-        val manager = getSystemService(android.media.projection.MediaProjectionManager::class.java)
-        startActivityForResult(manager.createScreenCaptureIntent(), MainActivity.REQUEST_SCREEN_CAPTURE)
-    } catch (_: Exception) {
-        Toast.makeText(this, "Android screen capture is unavailable on this device.", Toast.LENGTH_LONG).show()
-    }
+    showScreenRecordingMenu()
 }
 
 private fun MainActivity.showSudoUnavailable() {
