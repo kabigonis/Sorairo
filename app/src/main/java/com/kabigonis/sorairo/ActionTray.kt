@@ -32,7 +32,7 @@ internal fun MainActivity.createOmarchyActionTray(): View {
     val row = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL or Gravity.END
-        setPadding(dp(2), 0, dp(2), 0)
+        setPadding(0, 0, 0, 0)
         isClickable = true
         setOnClickListener { revealOmarchyActionTray() }
         setOnHoverListener { _, event ->
@@ -66,7 +66,7 @@ internal fun MainActivity.createOmarchyActionTray(): View {
         }
         hit.tag = glyph
         icons[glyph] = hit
-        row.addView(hit, LinearLayout.LayoutParams(dp(20), dp(30)))
+        row.addView(hit, LinearLayout.LayoutParams(dp(16), dp(30)))
     }
 
     add(OmarchyGlyph.RECORD, { "Screen Recording" }) { requestScreenRecording() }
