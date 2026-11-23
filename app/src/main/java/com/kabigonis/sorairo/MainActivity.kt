@@ -877,7 +877,7 @@ class MainActivity : AppCompatActivity() {
         val trayWidth = dp(150)
         centerGroup.addView(actionTray, FrameLayout.LayoutParams(trayWidth, dp(30), Gravity.CENTER))
         fun positionActionTray() {
-            actionTray.translationX = -(clock.width / 2f + dp(4) + trayWidth / 2f)
+            actionTray.translationX = -(clock.width / 2f + dp(1) + trayWidth / 2f)
         }
         centerGroup.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> positionActionTray() }
         clock.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> positionActionTray() }
