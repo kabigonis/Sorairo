@@ -193,7 +193,12 @@ private fun MainActivity.toggleDoNotDisturb() {
     }
     try {
         val on = nm.currentInterruptionFilter != NotificationManager.INTERRUPTION_FILTER_ALL
-        nm.setInterruptionFilter(if (on) NotificationManager.INTERRUPTION_FILTER_ALL else NotificationManager.INTERRUPTION_FILTER_NONE)
+        // PRIORITY DND silences notification interruptions while leaving media playback
+        // volume/audio alone. INTERRUPTION_FILTER_NONE can suppress every interruption.
+        nm.setInterruptionFilter(
+            if (on) NotificationManager.INTERRUPTION_FILTER_ALL
+            else NotificationManager.INTERRUPTION_FILTER_PRIORITY
+        )
         refreshOmarchyActionTray()
     } catch (_: SecurityException) {
         Toast.makeText(this, "Do Not Disturb access was not granted", Toast.LENGTH_SHORT).show()
