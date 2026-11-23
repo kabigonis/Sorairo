@@ -854,8 +854,19 @@ class MainActivity : AppCompatActivity() {
         val clockCluster = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            addView(createOmarchyActionTray(), LinearLayout.LayoutParams(-2, dp(30)))
+            addView(createOmarchyActionTray(), LinearLayout.LayoutParams(dp(123), dp(30)))
             addView(clock, LinearLayout.LayoutParams(-2, -2))
+            // With touch, tapping the empty indicator area reveals the hidden status glyphs.
+            // A mouse hover on the same area reproduces the desktop Waybar reveal behaviour.
+            setOnClickListener { revealOmarchyActionTray() }
+            setOnHoverListener { _, event ->
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_HOVER_ENTER, MotionEvent.ACTION_HOVER_MOVE ->
+                        revealOmarchyActionTray()
+                    MotionEvent.ACTION_HOVER_EXIT -> scheduleOmarchyActionTrayCollapse(650L)
+                }
+                false
+            }
         }
         bar.addView(clockCluster, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
         bar.addView(right, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.CENTER_VERTICAL))
