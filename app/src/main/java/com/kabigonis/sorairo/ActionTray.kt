@@ -41,7 +41,7 @@ internal fun MainActivity.createOmarchyActionTray(): View {
     val icons = linkedMapOf<OmarchyGlyph, OmarchyActionIconView>()
 
     fun add(glyph: OmarchyGlyph, label: () -> String, action: () -> Unit) {
-        val icon = OmarchyActionIconView(this, glyph, p.cDim, p.cBlue, p.cAccent)
+        val icon = OmarchyActionIconView(this, glyph, p.cDim, p.cBlue, p.cAnsi[1])
         icons[glyph] = icon
         val hit = android.widget.FrameLayout(this).apply {
             isClickable = true
@@ -120,7 +120,7 @@ private fun MainActivity.showOmarchyTooltip(anchor: View, label: String) {
         this.text = label
         textSize = 11f * uiScale
         typeface = Typeface.create("monospace", Typeface.NORMAL)
-        setTextColor(p.cDim)
+        setTextColor(p.cFg)
         setPadding(dp(9), dp(5), dp(9), dp(5))
         background = GradientDrawable().apply {
             setColor(p.cBg or (0xFF shl 24))
@@ -317,13 +317,12 @@ private fun MainActivity.showScreenRecordingMenu() {
                 showAndroidScreenRecordingGuide(label)
             }
         }
-        val videoMark = TextView(this).apply {
-            text = "▣"
-            textSize = 15f
-            setTextColor(if (index == 0) p.cBlue else p.cFg)
-            typeface = Typeface.create("monospace", Typeface.BOLD)
-        }
-        row.addView(videoMark, LinearLayout.LayoutParams(dp(25), -2))
+        val videoMark = OmarchyActionIconView(
+            this, OmarchyGlyph.RECORD_VIDEO, p.cDim, p.cBlue, p.cAnsi[1]
+        )
+        row.addView(videoMark, LinearLayout.LayoutParams(dp(18), dp(18)).apply {
+            marginEnd = dp(8)
+        })
         row.addView(txt(13f, if (index == 0) p.cBlue else p.cFg, label))
         root.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
     }
