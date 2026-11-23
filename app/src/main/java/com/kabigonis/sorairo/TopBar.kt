@@ -77,5 +77,6 @@ internal fun MainActivity.updateStatus() {
     status.visibility = if (status.text.isEmpty()) View.GONE else View.VISIBLE
     sampleBatteryCurrent(bm)
     refreshBarIcons(bm)
+    refreshOmarchyActionTray()
     updateNowPlaying()
 }
