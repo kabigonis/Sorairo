@@ -39,7 +39,7 @@ internal fun MainActivity.toggleIsland() {
 
 internal fun MainActivity.refreshIsland() {
     // Dynamic Island is disabled for this build. Keep the normal clock visible.
-    if (::clock.isInitialized) clock.visibility = View.VISIBLE
+    clock.visibility = View.VISIBLE
     handler.removeCallbacks(islandWake)
 }
 
