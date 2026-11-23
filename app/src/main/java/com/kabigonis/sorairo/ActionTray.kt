@@ -1,6 +1,6 @@
 package com.kabigonis.sorairo
 
-import android.app.AlarmClock
+import android.provider.AlarmClock
 import android.app.NotificationManager
 import android.content.Intent
 import android.graphics.Color
@@ -9,6 +9,7 @@ import android.os.Build
 import android.provider.Settings
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
@@ -45,7 +46,7 @@ internal fun MainActivity.createActionTray(): View {
     val scroll = HorizontalScrollView(this).apply {
         isHorizontalScrollBarEnabled = false
         visibility = View.GONE
-        addView(row, HorizontalScrollView.LayoutParams(-2, -2))
+        addView(row, ViewGroup.LayoutParams(-2, -2))
     }
     root.addView(reveal)
     root.addView(scroll)
@@ -155,10 +156,10 @@ internal fun MainActivity.collapseActionTray() {
 }
 
 internal fun MainActivity.refreshActionTray() {
-    if (!::actionTray.isInitialized) return
+    if (actionTrayRow == null) return
     val awake = prefs.getBoolean("tray_stay_awake", false)
     actionTrayItems["Stay Awake"]?.setTextColor(if (awake) pal.cBlue else pal.cDim)
-    val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+    val nm = getSystemService(android.content.Context.NOTIFICATION_SERVICE) as NotificationManager
     val dnd = Build.VERSION.SDK_INT >= 23 && nm.isNotificationPolicyAccessGranted &&
         nm.currentInterruptionFilter != NotificationManager.INTERRUPTION_FILTER_ALL
     actionTrayItems["Silence Notifications"]?.setTextColor(if (dnd) pal.cBlue else pal.cDim)
