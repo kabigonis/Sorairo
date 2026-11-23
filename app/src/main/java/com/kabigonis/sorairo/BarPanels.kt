@@ -22,7 +22,7 @@ import java.util.Locale
 
 // Shared pieces for the four top-bar icon panels: battery, display, audio and network.
 
-internal enum class BarKind { BATTERY, DISPLAY, AUDIO, WIFI }
+internal enum class BarKind { BATTERY, DISPLAY, AUDIO, WIFI, CALENDAR }
 
 // ---- pure helpers (unit tested) ----
 
@@ -168,6 +168,7 @@ internal fun MainActivity.openBarPanel(kind: BarKind) {
         BarKind.AUDIO -> showAudioPanel()
         BarKind.DISPLAY -> showDisplayPanel()
         BarKind.BATTERY -> showBatteryPanel()
+        BarKind.CALENDAR -> showCalendarPopup()
     }
 }
 
@@ -181,7 +182,9 @@ private fun View.containsScreenPoint(x: Float, y: Float): Boolean {
 internal fun MainActivity.handleOutsideTap(x: Float, y: Float, owner: BarKind?, dialog: AlertDialog) {
     val hitKind = barButtons.entries.firstOrNull { it.value.containsScreenPoint(x, y) }?.key
     val hitClock = hitKind == null && clockInitialized && clock.containsScreenPoint(x, y)
+    val sameCalendar = hitClock && activePopupKind == BarKind.CALENDAR
     dialog.dismiss()
+    if (sameCalendar) return
     when {
         hitKind != null && hitKind != owner -> handler.post { openBarPanel(hitKind) }
         hitClock && owner != null -> handler.post { showCalendarPopup() }
@@ -210,7 +213,8 @@ internal fun MainActivity.routePopupTap(event: MotionEvent): Boolean {
     val hitClock = hitKind == null && clockInitialized && clock.containsScreenPoint(x, y)
     if (hitKind == null && !hitClock) return false
 
-    val samePanel = hitKind != null && hitKind == activePopupKind
+    val samePanel = (hitKind != null && hitKind == activePopupKind) ||
+        (hitClock && activePopupKind == BarKind.CALENDAR)
     dialog.dismiss()
     if (samePanel) return true
     when {
