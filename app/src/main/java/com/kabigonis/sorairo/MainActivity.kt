@@ -366,6 +366,7 @@ class MainActivity : AppCompatActivity() {
     internal lateinit var barAudio: AudioIconView
     internal lateinit var barWifi: WifiIconView
     internal val barButtons = HashMap<BarKind, BarIconButton>()
+    internal lateinit var actionTray: View
     /** The single active top-bar panel/calendar popup. */
     internal var activePopup: AlertDialog? = null
     internal var popupHandoffInProgress = false
@@ -690,6 +691,8 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         wallpaperVideoView?.start()
         activityResumed = true
+        applyStayAwakePreference()
+        refreshActionTray()
         refreshInstalledApps()
         handler.removeCallbacks(tick)
         tick.run()
@@ -846,6 +849,7 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
+        right.addView(createActionTray())
         right.addView(status)
         right.addView(iconBar)
         bar.addView(left, FrameLayout.LayoutParams(-2, -2, Gravity.START or Gravity.CENTER_VERTICAL))
