@@ -1,6 +1,7 @@
 package com.kabigonis.sorairo
 
 import android.Manifest
+import android.app.AlarmManager
 import android.app.Dialog
 import android.app.NotificationManager
 import android.provider.Settings
@@ -284,6 +285,50 @@ internal fun MainActivity.fillPermissionSettings() {
     ) {
         try { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
         catch (_: Exception) { openSystem(Settings.ACTION_SETTINGS) }
+    }
+
+    val reminderNotificationsGranted = Build.VERSION.SDK_INT < 33 ||
+        checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+    permissionRow(
+        "Reminder notifications",
+        "Allows Sorairo to show the quiet notification when a countdown finishes. You can manage the Sorairo reminders category here.",
+        if (reminderNotificationsGranted) "manage ›" else "enable ›",
+        reminderNotificationsGranted
+    ) {
+        if (Build.VERSION.SDK_INT >= 33 && !reminderNotificationsGranted) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 743)
+        } else {
+            try {
+                startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                    putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                })
+            } catch (_: Exception) {
+                openSystem(Settings.ACTION_SETTINGS)
+            }
+        }
+    }
+
+    val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+    val exactAlarmsGranted = Build.VERSION.SDK_INT < 31 || alarmManager.canScheduleExactAlarms()
+    permissionRow(
+        "Alarms & reminders",
+        "Allows Sorairo to deliver countdown reminders at the requested time, including while the device is idle.",
+        if (exactAlarmsGranted) "granted" else "enable ›",
+        exactAlarmsGranted
+    ) {
+        if (Build.VERSION.SDK_INT >= 31 && !alarmManager.canScheduleExactAlarms()) {
+            try {
+                startActivity(Intent(
+                    Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                    Uri.parse("package:$packageName")
+                ))
+            } catch (_: Exception) {
+                try { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) }
+                catch (_: Exception) { openSystem(Settings.ACTION_SETTINGS) }
+            }
+        } else {
+            Toast.makeText(this, "Exact countdown reminders are ready", Toast.LENGTH_SHORT).show()
+        }
     }
 
     val writeGranted = Settings.System.canWrite(this)
