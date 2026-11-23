@@ -45,4 +45,12 @@ class BarPanelsTest {
         assertEquals("1.25x", formatScale(1.25f))
         assertEquals("2x", formatScale(2f))
     }
+
+    @Test fun dnsHostnamesAreCleanedAndChecked() {
+        assertEquals("dns.adguard-dns.com", normalizeDnsHost("  https://dns.adguard-dns.com/ "))
+        assertEquals("dns.quad9.net", normalizeDnsHost("dns.quad9.net"))
+        assertNull(normalizeDnsHost("9.9.9.9"))
+        assertNull(normalizeDnsHost("not a host"))
+        assertNull(normalizeDnsHost(""))
+    }
 }

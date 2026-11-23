@@ -65,6 +65,16 @@ internal fun wifiArcs(rssi: Int): Int = when {
     else -> 1
 }
 
+private val HOSTNAME = Regex("^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,}$")
+
+/** Cleans what the user typed into a Private DNS hostname, or null if it is not one. */
+internal fun normalizeDnsHost(raw: String): String? {
+    var h = raw.trim()
+    for (prefix in listOf("https://", "http://", "tls://")) h = h.removePrefix(prefix)
+    h = h.trimEnd('/')
+    return if (HOSTNAME.matches(h)) h else null
+}
+
 internal fun formatScale(scale: Float): String =
     if (scale == scale.toInt().toFloat()) "${scale.toInt()}x" else "${scale}x"
 

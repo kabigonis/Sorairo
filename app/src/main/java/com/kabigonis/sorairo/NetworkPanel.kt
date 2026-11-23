@@ -11,6 +11,8 @@ import android.provider.Settings
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
+import android.view.WindowManager
+import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -70,28 +72,75 @@ internal fun MainActivity.currentDnsProvider(): Int = try {
 
 internal fun MainActivity.askCustomDns(onSaved: (String) -> Unit) {
     val p = pal
+    var dialog: AlertDialog? = null
+    val root = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(20), dp(18), dp(20), dp(14))
+        background = box(p.cBg or (0xFF shl 24), p.cBlue)
+    }
+    root.addView(txt(15f, p.cBlue, "~/custom-dns"))
+    root.addView(txt(11f, p.cDim, "hostname only, e.g. dns.adguard-dns.com").apply { setPadding(0, dp(6), 0, dp(10)) })
     val input = EditText(this).apply {
         hint = "dns.example.com"
         setText(prefs.getString("dns_custom", "") ?: "")
+        setSelection(text.length)
+        textSize = 14f * uiScale * (uiTextSize / 13f)
         setTextColor(p.cFg)
         setHintTextColor(p.cDim)
         typeface = font
         setSingleLine()
         inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-        setPadding(dp(18), dp(14), dp(18), dp(14))
+        imeOptions = EditorInfo.IME_ACTION_DONE
+        background = box(Color.TRANSPARENT, p.cDim)
+        setPadding(dp(12), dp(10), dp(12), dp(10))
     }
-    AlertDialog.Builder(this)
-        .setTitle("Custom DNS hostname")
-        .setView(input)
-        .setPositiveButton("Save") { _, _ ->
-            val host = input.text.toString().trim()
-            if (host.isNotEmpty()) {
-                prefs.edit().putString("dns_custom", host).apply()
-                onSaved(host)
-            }
+    root.addView(input, LinearLayout.LayoutParams(-1, -2))
+    val error = txt(10f, p.cAccent, "Enter a hostname like dns.example.com").apply {
+        setPadding(0, dp(6), 0, 0)
+        visibility = View.GONE
+    }
+    root.addView(error)
+
+    fun save() {
+        val host = normalizeDnsHost(input.text.toString())
+        if (host == null) {
+            error.visibility = View.VISIBLE
+            return
         }
-        .setNegativeButton("Cancel", null)
-        .show()
+        prefs.edit().putString("dns_custom", host).apply()
+        dialog?.dismiss()
+        onSaved(host)
+    }
+    input.setOnEditorActionListener { _, _, _ ->
+        save()
+        true
+    }
+    val actions = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.END
+        setPadding(0, dp(10), 0, 0)
+    }
+    actions.addView(txt(13f, p.cDim, "CANCEL").apply {
+        setPadding(dp(14), dp(8), dp(14), dp(8))
+        setOnClickListener { dialog?.dismiss() }
+    })
+    actions.addView(txt(13f, p.cAccent, "SAVE").apply {
+        setPadding(dp(14), dp(8), dp(4), dp(8))
+        setOnClickListener { save() }
+    })
+    root.addView(actions)
+
+    dialog = AlertDialog.Builder(this).create().apply {
+        setView(root)
+        show()
+        window?.setBackgroundDrawableResource(android.R.color.transparent)
+        window?.setLayout(minOf(resources.displayMetrics.widthPixels - dp(40), dp(440)), -2)
+        window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
+    }
+    input.requestFocus()
+    root.alpha = 0f
+    root.translationY = -dp(8).toFloat()
+    root.animate().alpha(1f).translationY(0f).setDuration(170).start()
 }
 
 internal fun MainActivity.showNetworkPanel() {
@@ -157,6 +206,10 @@ internal fun MainActivity.showNetworkPanel() {
     fun styleDns(active: Int) {
         for ((i, b) in dnsButtons.withIndex()) b.set(i == active)
     }
+    // The custom-host dialog takes window focus, which closes the panel; bring it back afterwards.
+    fun reopenAfterCustom() {
+        handler.post { if (dialog?.isShowing != true) showNetworkPanel() }
+    }
     fun chooseDns(i: Int) {
         if (!hasSecureSettings()) {
             showSecureGrantHelp()
@@ -165,18 +218,16 @@ internal fun MainActivity.showNetworkPanel() {
         val custom = prefs.getString("dns_custom", "") ?: ""
         if (i == 3 && custom.isBlank()) {
             askCustomDns { host ->
-                if (setPrivateDns(3, host)) Toast.makeText(this, "DNS: $host", Toast.LENGTH_SHORT).show()
+                setPrivateDns(3, host)
+                reopenAfterCustom()
             }
             return
         }
         if (setPrivateDns(i, custom)) {
-            val now = currentDnsProvider()   // read it back so the highlight shows what Android really holds
+            // read it back so the highlight shows what Android really holds; stay quiet unless it didn't stick
+            val now = currentDnsProvider()
             styleDns(now)
-            Toast.makeText(
-                this,
-                if (now == i) "DNS: ${names[i]}" else "Android didn't keep that DNS setting",
-                Toast.LENGTH_SHORT
-            ).show()
+            if (now != i) Toast.makeText(this, "Android didn't keep that DNS setting", Toast.LENGTH_SHORT).show()
         } else {
             Toast.makeText(this, "Couldn't change DNS", Toast.LENGTH_SHORT).show()
         }
@@ -191,7 +242,8 @@ internal fun MainActivity.showNetworkPanel() {
             setOnClickListener { chooseDns(i) }
             if (i == 3) setOnLongClickListener {
                 askCustomDns { host ->
-                    if (setPrivateDns(3, host)) Toast.makeText(this@showNetworkPanel, "DNS: $host", Toast.LENGTH_SHORT).show()
+                    if (hasSecureSettings()) setPrivateDns(3, host)
+                    reopenAfterCustom()
                 }
                 true
             }
