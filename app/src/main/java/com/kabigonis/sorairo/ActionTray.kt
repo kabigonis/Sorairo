@@ -106,16 +106,54 @@ internal fun MainActivity.refreshOmarchyActionTray() {
     val awake = prefs.getBoolean("tray_stay_awake", false)
     val dnd = isDoNotDisturbEnabled()
     val night = isNightLightEnabled()
-    (icons[OmarchyGlyph.COFFEE] as? View)?.visibility = if (expanded || awake) View.VISIBLE else View.GONE
-    (icons[OmarchyGlyph.MUTED_BELL] as? View)?.visibility = if (expanded || dnd) View.VISIBLE else View.GONE
-    (icons[OmarchyGlyph.NIGHT_LIGHT] as? View)?.visibility = if (expanded || night) View.VISIBLE else View.GONE
-    (icons[OmarchyGlyph.RECORD] as? View)?.visibility = if (expanded) View.VISIBLE else View.GONE
-    (icons[OmarchyGlyph.HAND] as? View)?.visibility = if (expanded) View.VISIBLE else View.GONE
-    (icons[OmarchyGlyph.SUDO] as? View)?.visibility = View.VISIBLE
-    // Pinned states use the reference's blue active tint.
-    icons.values.forEach { hit ->
+    val visible = mapOf(
+        OmarchyGlyph.RECORD to expanded,
+        OmarchyGlyph.HAND to expanded,
+        OmarchyGlyph.NIGHT_LIGHT to (expanded || night),
+        OmarchyGlyph.MUTED_BELL to (expanded || dnd),
+        OmarchyGlyph.COFFEE to (expanded || awake),
+        OmarchyGlyph.SUDO to true
+    )
+    icons.entries.forEachIndexed { index, (glyph, hit) ->
+        val shouldShow = visible[glyph] == true
+        hit.animate().cancel()
+        if (shouldShow) {
+            if (hit.visibility != View.VISIBLE) {
+                hit.visibility = View.VISIBLE
+                hit.alpha = 0f
+                hit.translationY = dp(4).toFloat()
+                hit.scaleX = 0.88f
+                hit.scaleY = 0.88f
+                hit.animate()
+                    .alpha(1f)
+                    .translationY(0f)
+                    .scaleX(1f)
+                    .scaleY(1f)
+                    .setStartDelay(if (expanded) (icons.size - index - 1) * 22L else 0L)
+                    .setDuration(190L)
+                    .start()
+            }
+        } else if (hit.visibility == View.VISIBLE) {
+            hit.animate()
+                .alpha(0f)
+                .translationY(dp(3).toFloat())
+                .scaleX(0.9f)
+                .scaleY(0.9f)
+                .setStartDelay(0L)
+                .setDuration(145L)
+                .withEndAction {
+                    if (visible[glyph] != true) {
+                        hit.visibility = View.GONE
+                        hit.alpha = 1f
+                        hit.translationY = 0f
+                        hit.scaleX = 1f
+                        hit.scaleY = 1f
+                    }
+                }
+                .start()
+        }
         val icon = (hit as? ViewGroup)?.getChildAt(0) as? OmarchyActionIconView
-        when (hit.tag as? OmarchyGlyph) {
+        when (glyph) {
             OmarchyGlyph.COFFEE -> icon?.active = awake
             OmarchyGlyph.MUTED_BELL -> icon?.active = dnd
             OmarchyGlyph.NIGHT_LIGHT -> icon?.active = night
