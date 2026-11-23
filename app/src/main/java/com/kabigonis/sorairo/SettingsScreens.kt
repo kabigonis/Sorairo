@@ -1,6 +1,7 @@
 package com.kabigonis.sorairo
 
 import android.Manifest
+import android.app.AlarmManager
 import android.app.Dialog
 import android.app.NotificationManager
 import android.provider.Settings
@@ -121,13 +122,6 @@ internal fun MainActivity.fillSettings() {
         r.addView(txt(14f, p.cFg, k), LinearLayout.LayoutParams(0, -2, 1f))
         r.addView(txt(14f, p.cAccent, v))
         setBox.addView(r)
-    }
-    row("dynamic island", if (prefs.getBoolean("dynamic_island", true)) "on" else "off") {
-        val enabled = !prefs.getBoolean("dynamic_island", true)
-        prefs.edit().putBoolean("dynamic_island", enabled).apply()
-        if (!enabled) islandEmptyExpanded = false
-        refreshIsland()
-        fillSettings()
     }
     row("style", "appearance & layout ›") {
         switchSettingsContent {
@@ -284,6 +278,29 @@ internal fun MainActivity.fillPermissionSettings() {
     ) {
         try { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
         catch (_: Exception) { openSystem(Settings.ACTION_SETTINGS) }
+    }
+
+    val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+    val exactAlarmsGranted = Build.VERSION.SDK_INT < 31 || alarmManager.canScheduleExactAlarms()
+    permissionRow(
+        "Alarms & reminders",
+        "Allows Sorairo to deliver countdown reminders at the requested time, including while the device is idle.",
+        if (exactAlarmsGranted) "granted" else "enable ›",
+        exactAlarmsGranted
+    ) {
+        if (Build.VERSION.SDK_INT >= 31 && !alarmManager.canScheduleExactAlarms()) {
+            try {
+                startActivity(Intent(
+                    Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                    Uri.parse("package:$packageName")
+                ))
+            } catch (_: Exception) {
+                try { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) }
+                catch (_: Exception) { openSystem(Settings.ACTION_SETTINGS) }
+            }
+        } else {
+            Toast.makeText(this, "Exact countdown reminders are ready", Toast.LENGTH_SHORT).show()
+        }
     }
 
     val writeGranted = Settings.System.canWrite(this)

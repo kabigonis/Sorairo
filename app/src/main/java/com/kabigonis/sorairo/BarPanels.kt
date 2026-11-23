@@ -22,7 +22,7 @@ import java.util.Locale
 
 // Shared pieces for the four top-bar icon panels: battery, display, audio and network.
 
-internal enum class BarKind { BATTERY, DISPLAY, AUDIO, WIFI }
+internal enum class BarKind { BATTERY, DISPLAY, AUDIO, WIFI, CALENDAR }
 
 // ---- pure helpers (unit tested) ----
 
@@ -159,6 +159,7 @@ internal fun MainActivity.barBottomY(): Int = try {
 internal fun MainActivity.dismissActivePopup() {
     activePopup?.takeIf { it.isShowing }?.dismiss()
     activePopup = null
+    activePopupKind = null
 }
 
 internal fun MainActivity.openBarPanel(kind: BarKind) {
@@ -167,6 +168,7 @@ internal fun MainActivity.openBarPanel(kind: BarKind) {
         BarKind.AUDIO -> showAudioPanel()
         BarKind.DISPLAY -> showDisplayPanel()
         BarKind.BATTERY -> showBatteryPanel()
+        BarKind.CALENDAR -> showCalendarPopup()
     }
 }
 
@@ -180,7 +182,9 @@ private fun View.containsScreenPoint(x: Float, y: Float): Boolean {
 internal fun MainActivity.handleOutsideTap(x: Float, y: Float, owner: BarKind?, dialog: AlertDialog) {
     val hitKind = barButtons.entries.firstOrNull { it.value.containsScreenPoint(x, y) }?.key
     val hitClock = hitKind == null && clockInitialized && clock.containsScreenPoint(x, y)
+    val sameCalendar = hitClock && activePopupKind == BarKind.CALENDAR
     dialog.dismiss()
+    if (sameCalendar) return
     when {
         hitKind != null && hitKind != owner -> handler.post { openBarPanel(hitKind) }
         hitClock && owner != null -> handler.post { showCalendarPopup() }
@@ -207,9 +211,11 @@ internal fun MainActivity.routePopupTap(event: MotionEvent): Boolean {
     val y = event.rawY
     val hitKind = barButtons.entries.firstOrNull { it.value.containsScreenPoint(x, y) }?.key
     val hitClock = hitKind == null && clockInitialized && clock.containsScreenPoint(x, y)
-    if (hitKind == null && !hitClock) return false
-
+    val samePanel = (hitKind != null && hitKind == activePopupKind) ||
+        (hitClock && activePopupKind == BarKind.CALENDAR)
     dialog.dismiss()
+    if (samePanel) return true
+    if (hitKind == null && !hitClock) return false
     when {
         hitKind != null && barButtons[hitKind]?.isShown == true -> handler.post { openBarPanel(hitKind) }
         hitClock -> handler.post { showCalendarPopup() }
@@ -233,12 +239,18 @@ internal fun MainActivity.showBarDialog(
     val btn = barButtons[kind]
     val dialog = AlertDialog.Builder(this).create()
     dialog.setView(root)
+    // Keep outside taps routed through Activity so same-icon taps can be handled once.
+    dialog.setCanceledOnTouchOutside(false)
     dialog.setOnDismissListener {
         btn?.setActive(false)
-        if (activePopup === dialog) activePopup = null
+        if (activePopup === dialog) {
+            activePopup = null
+            activePopupKind = null
+        }
         onDismiss()
     }
     activePopup = dialog
+    activePopupKind = kind
     dialog.show()
     dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
     dialog.window?.setLayout(w, WindowManager.LayoutParams.WRAP_CONTENT)

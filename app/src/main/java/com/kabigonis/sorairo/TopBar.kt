@@ -38,21 +38,9 @@ internal fun MainActivity.toggleIsland() {
 }
 
 internal fun MainActivity.refreshIsland() {
-    if (!clockInitialized) return
-    val enabled = prefs.getBoolean("dynamic_island", true)
-    val view = islandView
-    clock.visibility = if (enabled) View.GONE else View.VISIBLE
-    view?.visibility = if (enabled) View.VISIBLE else View.GONE
+    // Dynamic Island is disabled for this build. Keep the normal clock visible.
+    clock.visibility = View.VISIBLE
     handler.removeCallbacks(islandWake)
-    if (!enabled || view == null) return
-    val now = SystemClock.elapsedRealtime()
-    val snapshot = islandCore.snapshot(now)
-    if (snapshot.current != null) islandEmptyExpanded = false
-    val date = SimpleDateFormat("EEEE, MMMM d", Locale.getDefault()).format(Date())
-    view.render(snapshot, clock.text.toString(), date, islandEmptyExpanded)
-    snapshot.nextWakeAt?.let { wakeAt ->
-        handler.postDelayed(islandWake, (wakeAt - now).coerceAtLeast(0L))
-    }
 }
 
 internal fun MainActivity.updateStatus() {
@@ -77,5 +65,6 @@ internal fun MainActivity.updateStatus() {
     status.visibility = if (status.text.isEmpty()) View.GONE else View.VISIBLE
     sampleBatteryCurrent(bm)
     refreshBarIcons(bm)
+    refreshOmarchyActionTray()
     updateNowPlaying()
 }

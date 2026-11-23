@@ -368,6 +368,7 @@ class MainActivity : AppCompatActivity() {
     internal val barButtons = HashMap<BarKind, BarIconButton>()
     /** The single active top-bar panel/calendar popup. */
     internal var activePopup: AlertDialog? = null
+    internal var activePopupKind: BarKind? = null
     internal var popupHandoffInProgress = false
     internal val iconBarInitialized: Boolean get() = ::iconBar.isInitialized && ::barBattery.isInitialized
     internal var ctrl: MediaController? = null
@@ -690,6 +691,8 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         wallpaperVideoView?.start()
         activityResumed = true
+        applyTrayStayAwake()
+        refreshOmarchyActionTray()
         refreshInstalledApps()
         handler.removeCallbacks(tick)
         tick.run()
@@ -810,7 +813,7 @@ class MainActivity : AppCompatActivity() {
             textSize = 13f * uiScale * (uiTextSize / 13f)
             setTextColor(p.cFg)
             typeface = font
-            visibility = if (prefs.getBoolean("dynamic_island", true)) View.GONE else View.VISIBLE
+            visibility = View.VISIBLE
             setPadding(dp(10), dp(8), dp(10), dp(8))
             setOnClickListener { showCalendarPopup() }
         }
@@ -848,8 +851,24 @@ class MainActivity : AppCompatActivity() {
         }
         right.addView(status)
         right.addView(iconBar)
+        // Match Omarchy: status actions sit immediately BEFORE the centered clock.
+        // The clock remains independently centered and never shifts with tray visibility.
+        val centerGroup = FrameLayout(this)
+        centerGroup.addView(clock, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+        val actionTray = createOmarchyActionTray()
+        // Keep a generous invisible touch zone so tapping beside the clock reveals the tray.
+        // Children are end-aligned, so the visible pinned glyph remains close to the clock.
+        val trayWidth = dp(150)
+        centerGroup.addView(actionTray, FrameLayout.LayoutParams(trayWidth, dp(30), Gravity.CENTER))
+        fun positionActionTray() {
+            actionTray.translationX = -(clock.width / 2f - dp(4) + trayWidth / 2f)
+        }
+        centerGroup.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> positionActionTray() }
+        clock.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> positionActionTray() }
+        centerGroup.post { positionActionTray() }
+
         bar.addView(left, FrameLayout.LayoutParams(-2, -2, Gravity.START or Gravity.CENTER_VERTICAL))
-        bar.addView(clock, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+        bar.addView(centerGroup, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
         bar.addView(right, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.CENTER_VERTICAL))
         content.addView(bar, LinearLayout.LayoutParams(-1, dp(34)))
         content.addView(moveHint, LinearLayout.LayoutParams(-1, dp(22)))
@@ -882,21 +901,7 @@ class MainActivity : AppCompatActivity() {
         home.addView(content, FrameLayout.LayoutParams(-1, -1))
         root.addView(home, FrameLayout.LayoutParams(-1, -1))
 
-        // Fixed transparent host: only the pill inside it changes size.
-        val islandWidth = min(dp(480), (dm.widthPixels * 0.6f).toInt())
-        val island = islandView ?: IslandView(
-            this, islandWidth, dp(34), dp(120), pal.cDim, panelColor(),
-            onFill(pal.cFg, panelColor()), font,
-            onTap = { toggleIsland() },
-            onLongPress = { showSettings() }
-        ).also { islandView = it }
-        (island.parent as? ViewGroup)?.removeView(island)
-        island.updateStyle(islandWidth, dp(34), dp(120), pal.cDim,
-            panelColor(), onFill(pal.cFg, panelColor()), font)
-        root.addView(island, FrameLayout.LayoutParams(
-            islandWidth, dp(120), Gravity.TOP or Gravity.CENTER_HORIZONTAL
-        ).apply { topMargin = dp(4) })
-        island.visibility = if (prefs.getBoolean("dynamic_island", true)) View.VISIBLE else View.GONE
+        // Dynamic Island is disabled; the centered clock remains the normal top-bar element.
 
         // ---- drawer ----
         drawer = FrameLayout(this).apply {

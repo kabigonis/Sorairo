@@ -199,15 +199,21 @@ internal fun MainActivity.showCalendarPopup() {
 
     val dialog = AlertDialog.Builder(this).create().apply {
         setView(root)
+        // Activity handles outside taps so tapping the clock once closes this popup.
+        setCanceledOnTouchOutside(false)
         setOnDismissListener {
             (clock as? ClockView)?.setActive(false)
-            if (activePopup === this) activePopup = null
+            if (activePopup === this) {
+                activePopup = null
+                activePopupKind = null
+            }
         }
         show()
         window?.setBackgroundDrawableResource(android.R.color.transparent)
         window?.setLayout(minOf(resources.displayMetrics.widthPixels - dp(40), dp(480)), -2)
     }
     activePopup = dialog
+    activePopupKind = BarKind.CALENDAR
     (clock as? ClockView)?.setActive(true)
     anchorDialogToTop(dialog, Gravity.CENTER_HORIZONTAL)
     installOutsideTapRouter(dialog, null)
