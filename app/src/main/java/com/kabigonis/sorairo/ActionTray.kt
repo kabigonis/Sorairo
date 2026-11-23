@@ -1,6 +1,6 @@
 package com.kabigonis.sorairo
 
-import android.app.AlarmClock
+import android.provider.AlarmClock
 import android.app.NotificationManager
 import android.content.Intent
 import android.graphics.Color
