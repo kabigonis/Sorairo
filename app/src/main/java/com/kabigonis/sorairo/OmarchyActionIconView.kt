@@ -13,7 +13,7 @@ import kotlin.math.min
  * The drawing intentionally avoids emoji, Material icons and font glyph substitutions.
  */
 internal enum class OmarchyGlyph {
-    RECORD, HAND, NIGHT_LIGHT, MUTED_BELL, COFFEE, SUDO
+    RECORD, RECORD_VIDEO, HAND, NIGHT_LIGHT, MUTED_BELL, COFFEE, SUDO
 }
 
 internal class OmarchyActionIconView(
@@ -56,6 +56,7 @@ internal class OmarchyActionIconView(
         fill.color = color
         when (glyph) {
             OmarchyGlyph.RECORD -> drawRecord(canvas)
+            OmarchyGlyph.RECORD_VIDEO -> drawVideoCamera(canvas)
             OmarchyGlyph.HAND -> drawHand(canvas)
             OmarchyGlyph.NIGHT_LIGHT -> drawNightLight(canvas)
             OmarchyGlyph.MUTED_BELL -> drawMutedBell(canvas)
@@ -68,6 +69,25 @@ internal class OmarchyActionIconView(
     private fun drawRecord(c: Canvas) {
         c.drawCircle(12f, 12f, 7.1f, stroke)
         c.drawCircle(12f, 12f, 2.2f, fill)
+    }
+
+    private fun drawVideoCamera(c: Canvas) {
+        val body = Path().apply {
+            moveTo(3.2f, 6.5f)
+            lineTo(14.8f, 6.5f)
+            lineTo(14.8f, 17.5f)
+            lineTo(3.2f, 17.5f)
+            close()
+        }
+        c.drawPath(body, fill)
+        val lens = Path().apply {
+            moveTo(15.7f, 9.2f)
+            lineTo(21f, 6.2f)
+            lineTo(21f, 17.8f)
+            lineTo(15.7f, 14.8f)
+            close()
+        }
+        c.drawPath(lens, fill)
     }
 
     private fun drawHand(c: Canvas) {
