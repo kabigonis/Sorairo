@@ -690,6 +690,7 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         wallpaperVideoView?.start()
         activityResumed = true
+        applyTrayStayAwake()
         refreshOmarchyActionTray()
         refreshInstalledApps()
         handler.removeCallbacks(tick)
