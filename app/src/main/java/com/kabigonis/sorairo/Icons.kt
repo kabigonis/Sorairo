@@ -224,6 +224,11 @@ class SliderView(context: Context, private val fg: Int, private val track: Int, 
 
     private fun fromX(x: Float): Float {
         val pad = uiDp(8).toFloat()
+        if (segments > 1) {
+            // stepped slider: jump to the nearest segment, never stop between two of them
+            val i = segmentIndexAt(x, pad, width - pad, segments, uiDp(4).toFloat())
+            return i / (segments - 1).toFloat()
+        }
         return ((x - pad) / (width - 2 * pad)).coerceIn(0f, 1f)
     }
 
@@ -254,17 +259,20 @@ class SliderView(context: Context, private val fg: Int, private val track: Int, 
         val left = pad
         val right = width - pad
         val cy = height / 2f
-        val knobX = left + (right - left) * value
         val th = uiDp(4).toFloat()
+        val knobX: Float
         if (segments > 1) {
             val gap = uiDp(4).toFloat()
             val segW = ((right - left) - gap * (segments - 1)) / segments
+            val sel = Math.round(value * (segments - 1)).coerceIn(0, segments - 1)
+            knobX = segmentCenterX(sel, left, right, segments, gap)
             for (i in 0 until segments) {
                 val x0 = left + i * (segW + gap)
-                paint.color = if (x0 + segW / 2 <= knobX) fg else track
+                paint.color = if (i <= sel) fg else track
                 canvas.drawRoundRect(RectF(x0, cy - th / 2, x0 + segW, cy + th / 2), th / 2, th / 2, paint)
             }
         } else {
+            knobX = left + (right - left) * value
             paint.color = track
             canvas.drawRoundRect(RectF(left, cy - th / 2, right, cy + th / 2), th / 2, th / 2, paint)
             paint.color = fg
@@ -273,6 +281,18 @@ class SliderView(context: Context, private val fg: Int, private val track: Int, 
         paint.color = fg
         canvas.drawCircle(knobX, cy, uiDp(6).toFloat(), paint)
     }
+}
+
+/** X of the middle of segment [i] on a stepped track spanning [left]..[right] with [gap] between segments. */
+internal fun segmentCenterX(i: Int, left: Float, right: Float, segments: Int, gap: Float): Float {
+    val segW = ((right - left) - gap * (segments - 1)) / segments
+    return left + i * (segW + gap) + segW / 2f
+}
+
+/** Index of the segment whose centre is closest to [x]. */
+internal fun segmentIndexAt(x: Float, left: Float, right: Float, segments: Int, gap: Float): Int {
+    val segW = ((right - left) - gap * (segments - 1)) / segments
+    return Math.round((x - left - segW / 2f) / (segW + gap)).coerceIn(0, segments - 1)
 }
 
 /** Bordered switch with a sliding square: square on the right = on. */

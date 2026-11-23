@@ -67,8 +67,12 @@ internal fun MainActivity.anchorDialogToTop(
     lp.dimAmount = 0f
     w.attributes = lp
     // the shade (or anything else) taking focus closes the popup instead of leaving it floating
+    // (ignore the focus event a freshly shown window can get before it has ever held focus, which
+    // used to close the popup the moment it opened)
+    var hadFocus = w.decorView.hasWindowFocus()
     w.decorView.viewTreeObserver.addOnWindowFocusChangeListener { hasFocus ->
-        if (!hasFocus && dialog.isShowing) dialog.dismiss()
+        if (hasFocus) hadFocus = true
+        else if (hadFocus && dialog.isShowing) dialog.dismiss()
     }
     // short slide-and-fade in, like the Omarchy popups
     w.decorView.apply {
@@ -189,13 +193,18 @@ internal fun MainActivity.showCalendarPopup() {
     root.addView(footer, LinearLayout.LayoutParams(-1, -2))
     render()
 
-    val dialog = AlertDialog.Builder(this).create().apply {
-        setView(root)
-        setOnDismissListener { (clock as? ClockView)?.setActive(false) }
-        show()
-        window?.setBackgroundDrawableResource(android.R.color.transparent)
-        window?.setLayout(minOf(resources.displayMetrics.widthPixels - dp(40), dp(480)), -2)
+    dismissActivePopup()
+    val dialog = AlertDialog.Builder(this).create()
+    dialog.setView(root)
+    dialog.setOnDismissListener {
+        (clock as? ClockView)?.setActive(false)
+        if (activePopup === dialog) activePopup = null
     }
+    activePopup = dialog
+    dialog.show()
+    dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+    dialog.window?.setLayout(minOf(resources.displayMetrics.widthPixels - dp(40), dp(480)), -2)
     (clock as? ClockView)?.setActive(true)
     anchorDialogToTop(dialog, Gravity.CENTER_HORIZONTAL)
+    installOutsideTapRouter(dialog, null)
 }
