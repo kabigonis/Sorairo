@@ -867,12 +867,24 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        right.addView(createOmarchyActionTray(), LinearLayout.LayoutParams(dp(150), dp(30)))
         right.addView(status)
         right.addView(iconBar)
-        // Keep the clock exactly where it was before the tray update: centered in the bar.
+        // Keep the clock anchored to the exact center. Place the action tray immediately
+        // to its left, rather than grouping it with the Wi-Fi/status controls.
+        val centerGroup = FrameLayout(this)
+        centerGroup.addView(clock, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+        val actionTray = createOmarchyActionTray()
+        val trayWidth = dp(150)
+        centerGroup.addView(actionTray, FrameLayout.LayoutParams(trayWidth, dp(30), Gravity.CENTER))
+        fun positionActionTray() {
+            actionTray.translationX = -(clock.width / 2f + dp(8) + trayWidth / 2f)
+        }
+        centerGroup.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> positionActionTray() }
+        clock.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> positionActionTray() }
+        centerGroup.post { positionActionTray() }
+
         bar.addView(left, FrameLayout.LayoutParams(-2, -2, Gravity.START or Gravity.CENTER_VERTICAL))
-        bar.addView(clock, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+        bar.addView(centerGroup, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
         bar.addView(right, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.CENTER_VERTICAL))
         content.addView(bar, LinearLayout.LayoutParams(-1, dp(34)))
         content.addView(moveHint, LinearLayout.LayoutParams(-1, dp(22)))
