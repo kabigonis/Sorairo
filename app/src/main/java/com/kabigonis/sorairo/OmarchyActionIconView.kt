@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
+import android.animation.ValueAnimator
 import android.view.View
 import kotlin.math.min
 
@@ -23,11 +24,19 @@ internal class OmarchyActionIconView(
     private val activeColor: Int,
     private val accentColor: Int
 ) : View(context) {
+    private var animatedTint: Int = idleColor
     var active: Boolean = false
         set(value) {
             if (field != value) {
                 field = value
-                invalidate()
+                ValueAnimator.ofArgb(animatedTint, if (value) activeColor else idleColor).apply {
+                    duration = 190L
+                    addUpdateListener {
+                        animatedTint = it.animatedValue as Int
+                        invalidate()
+                    }
+                    start()
+                }
             }
         }
 
@@ -50,7 +59,7 @@ internal class OmarchyActionIconView(
         canvas.scale(scale, scale)
         val color = when (glyph) {
             OmarchyGlyph.SUDO -> accentColor
-            else -> if (active) activeColor else idleColor
+            else -> animatedTint
         }
         stroke.color = color
         fill.color = color
