@@ -848,27 +848,12 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
+        right.addView(createOmarchyActionTray(), LinearLayout.LayoutParams(dp(150), dp(30)))
         right.addView(status)
         right.addView(iconBar)
+        // Keep the clock exactly where it was before the tray update: centered in the bar.
         bar.addView(left, FrameLayout.LayoutParams(-2, -2, Gravity.START or Gravity.CENTER_VERTICAL))
-        val clockCluster = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            addView(createOmarchyActionTray(), LinearLayout.LayoutParams(dp(123), dp(30)))
-            addView(clock, LinearLayout.LayoutParams(-2, -2))
-            // With touch, tapping the empty indicator area reveals the hidden status glyphs.
-            // A mouse hover on the same area reproduces the desktop Waybar reveal behaviour.
-            setOnClickListener { revealOmarchyActionTray() }
-            setOnHoverListener { _, event ->
-                when (event.actionMasked) {
-                    MotionEvent.ACTION_HOVER_ENTER, MotionEvent.ACTION_HOVER_MOVE ->
-                        revealOmarchyActionTray()
-                    MotionEvent.ACTION_HOVER_EXIT -> scheduleOmarchyActionTrayCollapse(650L)
-                }
-                false
-            }
-        }
-        bar.addView(clockCluster, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+        bar.addView(clock, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
         bar.addView(right, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.CENTER_VERTICAL))
         content.addView(bar, LinearLayout.LayoutParams(-1, dp(34)))
         content.addView(moveHint, LinearLayout.LayoutParams(-1, dp(22)))
