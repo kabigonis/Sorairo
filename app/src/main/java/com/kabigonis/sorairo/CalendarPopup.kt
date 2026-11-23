@@ -79,6 +79,7 @@ internal fun MainActivity.anchorDialogToTop(
 }
 
 internal fun MainActivity.showCalendarPopup() {
+    dismissActivePopup()
     val p = pal
     val loc = Locale.getDefault()
     val today = LocalDate.now()
@@ -191,11 +192,16 @@ internal fun MainActivity.showCalendarPopup() {
 
     val dialog = AlertDialog.Builder(this).create().apply {
         setView(root)
-        setOnDismissListener { (clock as? ClockView)?.setActive(false) }
+        setOnDismissListener {
+            (clock as? ClockView)?.setActive(false)
+            if (activePopup === this) activePopup = null
+        }
         show()
         window?.setBackgroundDrawableResource(android.R.color.transparent)
         window?.setLayout(minOf(resources.displayMetrics.widthPixels - dp(40), dp(480)), -2)
     }
+    activePopup = dialog
     (clock as? ClockView)?.setActive(true)
     anchorDialogToTop(dialog, Gravity.CENTER_HORIZONTAL)
+    installOutsideTapRouter(dialog, null)
 }
