@@ -5,11 +5,8 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.view.Gravity
 import android.view.View
-<<<<<<< HEAD
 import android.view.WindowManager
 import androidx.core.view.WindowCompat
-=======
->>>>>>> origin/main
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -35,7 +32,6 @@ internal fun calendarGridStart(month: YearMonth, firstDow: DayOfWeek): LocalDate
 internal fun yearProgressPercent(d: LocalDate): Int =
     (d.dayOfYear * 100f / d.lengthOfYear()).toInt().coerceIn(0, 100)
 
-<<<<<<< HEAD
 /**
  * Pins a dialog under the top bar like the Omarchy popups: [horizontal] is Gravity.CENTER_HORIZONTAL
  * (calendar, under the clock) or Gravity.END (battery, under the status icons). No screen dimming.
@@ -82,8 +78,6 @@ internal fun MainActivity.anchorDialogToTop(
     }
 }
 
-=======
->>>>>>> origin/main
 internal fun MainActivity.showCalendarPopup() {
     val p = pal
     val loc = Locale.getDefault()
@@ -97,33 +91,12 @@ internal fun MainActivity.showCalendarPopup() {
         background = box(p.cBg or (0xFF shl 24), p.cBlue)
     }
 
-<<<<<<< HEAD
     // Big "November 22" header with the calendar icon (display only).
     val head = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER
     }
     head.addView(CalendarIconView(this, p.cBlue), LinearLayout.LayoutParams(dp(34), dp(34)).apply { marginEnd = dp(12) })
-=======
-    // Big "November 22" header; tap it to open the system calendar app.
-    val head = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER
-        setOnClickListener {
-            try {
-                startActivity(
-                    Intent(
-                        Intent.ACTION_VIEW,
-                        android.provider.CalendarContract.CONTENT_URI.buildUpon().appendPath("time").build()
-                    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                )
-            } catch (_: Exception) {
-                Toast.makeText(this@showCalendarPopup, "No calendar app found", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-    head.addView(txt(26f, p.cBlue, "\u25A6").apply { setPadding(0, 0, dp(12), 0) })
->>>>>>> origin/main
     head.addView(
         txt(30f, p.cBlue, today.month.getDisplayName(TextStyle.FULL, loc) + " " + today.dayOfMonth)
             .apply { setTypeface(typeface, Typeface.BOLD) }
@@ -159,11 +132,7 @@ internal fun MainActivity.showCalendarPopup() {
             layoutParams = LinearLayout.LayoutParams(0, dp(h), weight)
         }
 
-<<<<<<< HEAD
     fun render(dir: Int = 0) {
-=======
-    fun render() {
->>>>>>> origin/main
         grid.removeAllViews()
         monthLabel.text = (shown.month.getDisplayName(TextStyle.FULL, loc) + " " + shown.year).uppercase(loc)
         val hdr = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -193,14 +162,11 @@ internal fun MainActivity.showCalendarPopup() {
             }
             grid.addView(row, LinearLayout.LayoutParams(-1, -2))
         }
-<<<<<<< HEAD
         if (dir != 0) {
             grid.alpha = 0f
             grid.translationX = dir * dp(24).toFloat()
             grid.animate().alpha(1f).translationX(0f).setDuration(180).start()
         }
-=======
->>>>>>> origin/main
     }
 
     val footer = LinearLayout(this).apply {
@@ -210,7 +176,6 @@ internal fun MainActivity.showCalendarPopup() {
     }
     val prev = txt(20f, p.cDim, "\u2039").apply {
         setPadding(dp(14), dp(4), dp(14), dp(4))
-<<<<<<< HEAD
         setOnClickListener { shown = shown.minusMonths(1); render(-1) }
     }
     val next = txt(20f, p.cDim, "\u203A").apply {
@@ -218,36 +183,19 @@ internal fun MainActivity.showCalendarPopup() {
         setOnClickListener { shown = shown.plusMonths(1); render(1) }
     }
     monthLabel.setOnClickListener { shown = YearMonth.from(today); render(0) }
-=======
-        setOnClickListener { shown = shown.minusMonths(1); render() }
-    }
-    val next = txt(20f, p.cDim, "\u203A").apply {
-        setPadding(dp(14), dp(4), dp(14), dp(4))
-        setOnClickListener { shown = shown.plusMonths(1); render() }
-    }
-    monthLabel.setOnClickListener { shown = YearMonth.from(today); render() }
->>>>>>> origin/main
     footer.addView(prev)
     footer.addView(monthLabel, LinearLayout.LayoutParams(0, -2, 1f))
     footer.addView(next)
     root.addView(footer, LinearLayout.LayoutParams(-1, -2))
     render()
 
-<<<<<<< HEAD
     val dialog = AlertDialog.Builder(this).create().apply {
         setView(root)
         setOnDismissListener { (clock as? ClockView)?.setActive(false) }
-=======
-    AlertDialog.Builder(this).create().apply {
-        setView(root)
->>>>>>> origin/main
         show()
         window?.setBackgroundDrawableResource(android.R.color.transparent)
         window?.setLayout(minOf(resources.displayMetrics.widthPixels - dp(40), dp(480)), -2)
     }
-<<<<<<< HEAD
     (clock as? ClockView)?.setActive(true)
     anchorDialogToTop(dialog, Gravity.CENTER_HORIZONTAL)
-=======
->>>>>>> origin/main
 }
