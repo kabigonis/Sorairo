@@ -368,6 +368,7 @@ class MainActivity : AppCompatActivity() {
     internal val barButtons = HashMap<BarKind, BarIconButton>()
     /** The single active top-bar panel/calendar popup. */
     internal var activePopup: AlertDialog? = null
+    internal var popupHandoffInProgress = false
     internal val iconBarInitialized: Boolean get() = ::iconBar.isInitialized && ::barBattery.isInitialized
     internal var ctrl: MediaController? = null
     internal var listeningController: MediaController? = null
@@ -642,9 +643,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
-        // A top-bar tap outside the active popup should switch directly to that panel.
-        // Consume the original DOWN so the underlying icon click cannot open it twice.
-        if (routePopupTap(ev)) return true
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
+            // A top-bar tap outside the active popup switches directly to that panel.
+            popupHandoffInProgress = routePopupTap(ev)
+        }
+        if (popupHandoffInProgress) {
+            if (ev.actionMasked == MotionEvent.ACTION_UP || ev.actionMasked == MotionEvent.ACTION_CANCEL) {
+                popupHandoffInProgress = false
+            }
+            return true
+        }
         return super.dispatchTouchEvent(ev)
     }
 
