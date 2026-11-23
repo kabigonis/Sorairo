@@ -202,7 +202,7 @@ private fun MainActivity.toggleDoNotDisturb() {
             if (Build.VERSION.SDK_INT >= 28) {
                 allowedCategories = allowedCategories or NotificationManager.Policy.PRIORITY_CATEGORY_SYSTEM
             }
-            val senders = NotificationManager.Policy.PRIORITY_SENDERS_NONE
+            val senders = NotificationManager.Policy.PRIORITY_SENDERS_ANY
             nm.notificationPolicy = if (Build.VERSION.SDK_INT >= 28) {
                 val current = nm.notificationPolicy
                 NotificationManager.Policy(allowedCategories, senders, senders, current.suppressedVisualEffects)
