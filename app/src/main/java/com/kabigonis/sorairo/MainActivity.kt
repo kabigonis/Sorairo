@@ -812,7 +812,7 @@ class MainActivity : AppCompatActivity() {
             textSize = 13f * uiScale * (uiTextSize / 13f)
             setTextColor(p.cFg)
             typeface = font
-            visibility = if (prefs.getBoolean("dynamic_island", true)) View.GONE else View.VISIBLE
+            visibility = View.VISIBLE
             setPadding(dp(10), dp(8), dp(10), dp(8))
             setOnClickListener { showCalendarPopup() }
         }
@@ -900,21 +900,7 @@ class MainActivity : AppCompatActivity() {
         home.addView(content, FrameLayout.LayoutParams(-1, -1))
         root.addView(home, FrameLayout.LayoutParams(-1, -1))
 
-        // Fixed transparent host: only the pill inside it changes size.
-        val islandWidth = min(dp(480), (dm.widthPixels * 0.6f).toInt())
-        val island = islandView ?: IslandView(
-            this, islandWidth, dp(34), dp(120), pal.cDim, panelColor(),
-            onFill(pal.cFg, panelColor()), font,
-            onTap = { toggleIsland() },
-            onLongPress = { showSettings() }
-        ).also { islandView = it }
-        (island.parent as? ViewGroup)?.removeView(island)
-        island.updateStyle(islandWidth, dp(34), dp(120), pal.cDim,
-            panelColor(), onFill(pal.cFg, panelColor()), font)
-        root.addView(island, FrameLayout.LayoutParams(
-            islandWidth, dp(120), Gravity.TOP or Gravity.CENTER_HORIZONTAL
-        ).apply { topMargin = dp(4) })
-        island.visibility = if (prefs.getBoolean("dynamic_island", true)) View.VISIBLE else View.GONE
+        // Dynamic Island is disabled; the centered clock remains the normal top-bar element.
 
         // ---- drawer ----
         drawer = FrameLayout(this).apply {
