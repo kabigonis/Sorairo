@@ -366,6 +366,9 @@ class MainActivity : AppCompatActivity() {
     internal lateinit var barAudio: AudioIconView
     internal lateinit var barWifi: WifiIconView
     internal val barButtons = HashMap<BarKind, BarIconButton>()
+    /** The single active top-bar panel/calendar popup. */
+    internal var activePopup: AlertDialog? = null
+    internal var popupHandoffInProgress = false
     internal val iconBarInitialized: Boolean get() = ::iconBar.isInitialized && ::barBattery.isInitialized
     internal var ctrl: MediaController? = null
     internal var listeningController: MediaController? = null
@@ -637,6 +640,20 @@ class MainActivity : AppCompatActivity() {
             detector.onTouchEvent(ev)
             return super.dispatchTouchEvent(ev)
         }
+    }
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
+            // A top-bar tap outside the active popup switches directly to that panel.
+            popupHandoffInProgress = routePopupTap(ev)
+        }
+        if (popupHandoffInProgress) {
+            if (ev.actionMasked == MotionEvent.ACTION_UP || ev.actionMasked == MotionEvent.ACTION_CANCEL) {
+                popupHandoffInProgress = false
+            }
+            return true
+        }
+        return super.dispatchTouchEvent(ev)
     }
 
     // ================= lifecycle =================

@@ -224,6 +224,10 @@ class SliderView(context: Context, private val fg: Int, private val track: Int, 
 
     private fun fromX(x: Float): Float {
         val pad = uiDp(8).toFloat()
+        if (segments > 1) {
+            val index = stopIndexAt(x, pad, width - pad, segments, uiDp(4).toFloat())
+            return index / (segments - 1).toFloat()
+        }
         return ((x - pad) / (width - 2 * pad)).coerceIn(0f, 1f)
     }
 
@@ -254,17 +258,20 @@ class SliderView(context: Context, private val fg: Int, private val track: Int, 
         val left = pad
         val right = width - pad
         val cy = height / 2f
-        val knobX = left + (right - left) * value
         val th = uiDp(4).toFloat()
+        val knobX: Float
         if (segments > 1) {
             val gap = uiDp(4).toFloat()
-            val segW = ((right - left) - gap * (segments - 1)) / segments
-            for (i in 0 until segments) {
+            val selected = Math.round(value * (segments - 1)).coerceIn(0, segments - 1)
+            knobX = stopX(selected, left, right, segments, gap)
+            val segW = ((right - left) - gap * (segments - 1)) / (segments - 1)
+            for (i in 0 until segments - 1) {
                 val x0 = left + i * (segW + gap)
-                paint.color = if (x0 + segW / 2 <= knobX) fg else track
+                paint.color = if (i < selected) fg else track
                 canvas.drawRoundRect(RectF(x0, cy - th / 2, x0 + segW, cy + th / 2), th / 2, th / 2, paint)
             }
         } else {
+            knobX = left + (right - left) * value
             paint.color = track
             canvas.drawRoundRect(RectF(left, cy - th / 2, right, cy + th / 2), th / 2, th / 2, paint)
             paint.color = fg
@@ -273,6 +280,32 @@ class SliderView(context: Context, private val fg: Int, private val track: Int, 
         paint.color = fg
         canvas.drawCircle(knobX, cy, uiDp(6).toFloat(), paint)
     }
+}
+
+
+/** Position of a slider stop: endpoints at the corners, interior stops in the gaps. */
+internal fun stopX(i: Int, left: Float, right: Float, stops: Int, gap: Float): Float {
+    if (stops <= 1) return left
+    if (i <= 0) return left
+    if (i >= stops - 1) return right
+    val bars = stops - 1
+    val barWidth = ((right - left) - gap * (bars - 1)) / bars
+    return left + i * barWidth + (i - 0.5f) * gap
+}
+
+/** Selects the nearest endpoint or gap-centred stop. */
+internal fun stopIndexAt(x: Float, left: Float, right: Float, stops: Int, gap: Float): Int {
+    if (stops <= 1) return 0
+    var best = 0
+    var bestDistance = Float.MAX_VALUE
+    for (i in 0 until stops) {
+        val distance = kotlin.math.abs(x - stopX(i, left, right, stops, gap))
+        if (distance < bestDistance) {
+            best = i
+            bestDistance = distance
+        }
+    }
+    return best
 }
 
 /** Bordered switch with a sliding square: square on the right = on. */
