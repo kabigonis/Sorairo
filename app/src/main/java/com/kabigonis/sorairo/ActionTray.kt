@@ -1,7 +1,8 @@
 package com.kabigonis.sorairo
 
-import android.provider.AlarmClock
+import android.app.AlarmManager
 import android.app.Dialog
+import android.app.PendingIntent
 import android.app.NotificationManager
 import android.content.Intent
 import android.graphics.Color
@@ -16,6 +17,8 @@ import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.PopupWindow
+import android.widget.Spinner
+import android.widget.ArrayAdapter
 import android.widget.TextView
 import android.widget.Toast
 import java.util.WeakHashMap
@@ -277,6 +280,12 @@ private fun MainActivity.toggleNightLight() {
 
 private fun MainActivity.showReminderInput() {
     val p = pal
+    val sounds = listOf("Alarm tone", "Gentle chime", "Silent")
+    val soundValues = listOf(
+        ReminderReceiver.SOUND_ALARM,
+        ReminderReceiver.SOUND_CHIME,
+        ReminderReceiver.SOUND_SILENT
+    )
     val root = trayDialogRoot(p.cBg, p.cBlue).apply {
         addView(txt(13f, p.cDim, "Remind in minutes..."))
         val input = EditText(this@showReminderInput).apply {
@@ -287,23 +296,66 @@ private fun MainActivity.showReminderInput() {
             typeface = Typeface.create("monospace", Typeface.NORMAL)
             setTextColor(p.cFg)
             setHintTextColor(p.cDim)
-            background = GradientDrawable().apply { setColor(Color.TRANSPARENT); setStroke(dp(1), p.cDim) }
+            background = GradientDrawable().apply {
+                setColor(Color.TRANSPARENT)
+                setStroke(dp(1), p.cDim)
+            }
             setPadding(dp(10), dp(9), dp(10), dp(9))
         }
         addView(input, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
+
+        addView(txt(12f, p.cDim, "Alarm sound").apply {
+            setPadding(0, dp(12), 0, dp(4))
+        })
+        val soundPicker = Spinner(this@showReminderInput).apply {
+            adapter = ArrayAdapter(
+                this@showReminderInput,
+                android.R.layout.simple_spinner_dropdown_item,
+                sounds
+            )
+            val saved = prefs.getString("tray_reminder_sound", ReminderReceiver.SOUND_ALARM)
+            setSelection(soundValues.indexOf(saved).coerceAtLeast(0))
+            background = GradientDrawable().apply {
+                setColor(Color.TRANSPARENT)
+                setStroke(dp(1), p.cDim)
+            }
+        }
+        addView(soundPicker, LinearLayout.LayoutParams(-1, dp(42)))
+
         addView(trayDialogActions(
             "CANCEL" to { activeDialog?.dismiss() },
             "SET" to {
                 val minutes = input.text.toString().toIntOrNull()?.takeIf { it in 1..1440 }
-                if (minutes == null) Toast.makeText(this@showReminderInput, "Enter 1–1440 minutes", Toast.LENGTH_SHORT).show()
-                else {
-                    try {
-                        startActivity(Intent(AlarmClock.ACTION_SET_TIMER).apply {
-                            putExtra(AlarmClock.EXTRA_LENGTH, minutes * 60)
-                            putExtra(AlarmClock.EXTRA_MESSAGE, "Sorairo reminder")
-                        })
-                        activeDialog?.dismiss()
-                    } catch (_: Exception) { Toast.makeText(this@showReminderInput, "No compatible Clock app found", Toast.LENGTH_SHORT).show() }
+                if (minutes == null) {
+                    Toast.makeText(this@showReminderInput, "Enter 1–1440 minutes", Toast.LENGTH_SHORT).show()
+                } else if (Build.VERSION.SDK_INT >= 33 &&
+                    checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                ) {
+                    Toast.makeText(this@showReminderInput, "Allow notifications, then tap SET again.", Toast.LENGTH_LONG).show()
+                    requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 743)
+                } else {
+                    val sound = soundValues[soundPicker.selectedItemPosition.coerceIn(soundValues.indices)]
+                    prefs.edit().putString("tray_reminder_sound", sound).apply()
+                    val alarmManager = getSystemService(android.content.Context.ALARM_SERVICE) as AlarmManager
+                    val fireIntent = Intent(this@showReminderInput, ReminderReceiver::class.java).apply {
+                        action = ReminderReceiver.ACTION_FIRE
+                        putExtra(ReminderReceiver.EXTRA_SOUND, sound)
+                    }
+                    val pending = PendingIntent.getBroadcast(
+                        this@showReminderInput,
+                        8801,
+                        fireIntent,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    )
+                    val triggerAt = System.currentTimeMillis() + minutes * 60_000L
+                    if (Build.VERSION.SDK_INT >= 23) {
+                        alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pending)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAt, pending)
+                    }
+                    Toast.makeText(this@showReminderInput, "Reminder set for $minutes minute(s).", Toast.LENGTH_SHORT).show()
+                    activeDialog?.dismiss()
                 }
             }
         ))
