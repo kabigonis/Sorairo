@@ -308,7 +308,11 @@ private fun MainActivity.showScreenRecordingMenu() {
             addView(OmarchyActionIconView(this@showScreenRecordingMenu, OmarchyGlyph.RECORD_VIDEO, p.cDim, p.cBlue, p.cAnsi[1]),
                 LinearLayout.LayoutParams(dp(18), dp(18)).apply { marginEnd = dp(8) })
             addView(txt(13f, if (index == 0) p.cBlue else p.cFg, label))
-            setOnClickListener { activeDialog?.dismiss(); showAndroidScreenRecordingGuide(label) }
+            setOnClickListener {
+                activeDialog?.dismiss()
+                if (index == 0) requestScreenRecording()
+                else showAndroidScreenRecordingGuide(label)
+            }
         }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
     }
     root.addView(trayDialogActions("CLOSE" to { activeDialog?.dismiss() }))
@@ -326,7 +330,12 @@ private fun MainActivity.showAndroidScreenRecordingGuide(mode: String) {
 }
 
 private fun MainActivity.requestScreenRecording() {
-    showScreenRecordingMenu()
+    try {
+        val manager = getSystemService(android.media.projection.MediaProjectionManager::class.java)
+        startActivityForResult(manager.createScreenCaptureIntent(), MainActivity.REQUEST_SCREEN_CAPTURE)
+    } catch (_: Exception) {
+        Toast.makeText(this, "Android screen capture is unavailable on this device.", Toast.LENGTH_LONG).show()
+    }
 }
 
 private fun MainActivity.showSudoUnavailable() {
