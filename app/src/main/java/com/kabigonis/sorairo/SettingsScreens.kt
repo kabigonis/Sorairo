@@ -280,27 +280,6 @@ internal fun MainActivity.fillPermissionSettings() {
         catch (_: Exception) { openSystem(Settings.ACTION_SETTINGS) }
     }
 
-    val reminderNotificationsGranted = Build.VERSION.SDK_INT < 33 ||
-        checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-    permissionRow(
-        "Reminder notifications",
-        "Allows Sorairo to show the quiet notification when a countdown finishes. You can manage the Sorairo reminders category here.",
-        if (reminderNotificationsGranted) "manage ›" else "enable ›",
-        reminderNotificationsGranted
-    ) {
-        if (Build.VERSION.SDK_INT >= 33 && !reminderNotificationsGranted) {
-            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 743)
-        } else {
-            try {
-                startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-                    putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
-                })
-            } catch (_: Exception) {
-                openSystem(Settings.ACTION_SETTINGS)
-            }
-        }
-    }
-
     val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
     val exactAlarmsGranted = Build.VERSION.SDK_INT < 31 || alarmManager.canScheduleExactAlarms()
     permissionRow(
