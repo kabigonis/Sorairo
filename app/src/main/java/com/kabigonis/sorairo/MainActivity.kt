@@ -368,6 +368,7 @@ class MainActivity : AppCompatActivity() {
     internal val barButtons = HashMap<BarKind, BarIconButton>()
     /** The single active top-bar panel/calendar popup. */
     internal var activePopup: AlertDialog? = null
+    internal var activePopupKind: BarKind? = null
     internal var popupHandoffInProgress = false
     internal val iconBarInitialized: Boolean get() = ::iconBar.isInitialized && ::barBattery.isInitialized
     internal var ctrl: MediaController? = null
