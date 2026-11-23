@@ -53,4 +53,19 @@ class BarPanelsTest {
         assertNull(normalizeDnsHost("not a host"))
         assertNull(normalizeDnsHost(""))
     }
+
+    @Test fun steppedSliderSnapsToSegmentCentres() {
+        // 6 segments on a 0..620 track with 4px gaps -> segment width 100, centres at 50, 154, 258...
+        val n = 6
+        for (i in 0 until n) {
+            val cx = segmentCenterX(i, 0f, 620f, n, 4f)
+            assertEquals(i, segmentIndexAt(cx, 0f, 620f, n, 4f))
+            // a touch a little either side of a centre still picks that segment
+            assertEquals(i, segmentIndexAt(cx - 30f, 0f, 620f, n, 4f))
+            assertEquals(i, segmentIndexAt(cx + 30f, 0f, 620f, n, 4f))
+        }
+        assertEquals(0, segmentIndexAt(-50f, 0f, 620f, n, 4f))
+        assertEquals(n - 1, segmentIndexAt(900f, 0f, 620f, n, 4f))
+        assertEquals(50f, segmentCenterX(0, 0f, 620f, n, 4f), 0.001f)
+    }
 }
