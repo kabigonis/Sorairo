@@ -157,7 +157,7 @@ class ScreenRecorderService : Service() {
                 .addAction(android.R.drawable.ic_media_pause, "Stop", stopPending)
                 .build()
         }
-        if (Build.VERSION.SDK_INT >= 34 && audioMode == ScreenRecordingActivity.AUDIO_DESKTOP_AND_MIC) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && audioMode == ScreenRecordingActivity.AUDIO_DESKTOP_AND_MIC) {
             // Android 14 requires a declared microphone FGS type for long-running mic capture.
             // The consent Activity has just obtained RECORD_AUDIO while visible.
             startForeground(
