@@ -227,7 +227,7 @@ internal fun MainActivity.showNetworkPanel() {
         if (i == 3 && custom.isBlank()) {
             askCustomDns { host ->
                 if (!setPrivateDns(3, host)) {
-                    Toast.makeText(this, "Android didn't apply the custom DNS host.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@showNetworkPanel, "Android didn't apply the custom DNS host.", Toast.LENGTH_SHORT).show()
                 }
                 reopenAfterCustom()
             }
