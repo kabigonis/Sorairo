@@ -18,7 +18,7 @@ import kotlin.math.min
  * UI scale and avoids emoji or font substitution.
  */
 internal enum class OmarchyGlyph {
-    RECORD, REMINDER, NIGHT_LIGHT, MUTED_BELL, COFFEE, SUDO, EXPANDER
+    RECORD, REMINDER, NIGHT_LIGHT, MUTED_BELL, COFFEE, SUDO
 }
 
 internal class OmarchyActionIconView(
@@ -91,16 +91,7 @@ internal class OmarchyActionIconView(
         fill.color = animatedTint
         line.color = animatedTint
         when (glyph) {
-            OmarchyGlyph.EXPANDER -> {
-                line.strokeWidth = 2.8f
-                val chevron = Path().apply {
-                    moveTo(14.5f, 6f)
-                    lineTo(8.5f, 12f)
-                    lineTo(14.5f, 18f)
-                }
-                canvas.drawPath(chevron, line)
-            }
-            OmarchyGlyph.MUTED_BELL -> {
+chevron drawing            OmarchyGlyph.MUTED_BELL -> {
                 canvas.drawPath(shape, fill)
                 line.strokeWidth = 2.6f
                 canvas.drawLine(3.2f, 3.2f, 20.8f, 20.8f, line)
@@ -137,8 +128,7 @@ internal class OmarchyActionIconView(
             OmarchyGlyph.REMINDER -> parse(ALARM_PATH)
             OmarchyGlyph.RECORD -> parse(RECORD_PATH)
             OmarchyGlyph.SUDO -> parse(SUDO_PATH)
-            OmarchyGlyph.EXPANDER -> Path()
-            OmarchyGlyph.MUTED_BELL -> {
+expander path            OmarchyGlyph.MUTED_BELL -> {
                 // Cut a gap around the slash so the bell reads as "broken" like the Omarchy glyph.
                 val bell = parse(BELL_PATH)
                 try {

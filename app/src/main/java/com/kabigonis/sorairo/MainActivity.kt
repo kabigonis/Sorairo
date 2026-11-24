@@ -868,10 +868,9 @@ class MainActivity : AppCompatActivity() {
         val centerGroup = FrameLayout(this)
         centerGroup.addView(clock, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
         val actionTray = createOmarchyActionTray()
-        // The tray row is wide enough for all seven cells but is not clickable itself, so its empty
-        // part lets touches through. Children are end-aligned, hugging the clock.
-        val trayWidth = dp(190)
-        centerGroup.addView(actionTray, FrameLayout.LayoutParams(trayWidth, dp(34), Gravity.CENTER))
+        // Keep the compact tray tucked beside the clock; tapping its empty area expands the actions.
+        val trayWidth = dp(150)
+        centerGroup.addView(actionTray, FrameLayout.LayoutParams(trayWidth, dp(30), Gravity.CENTER))
         fun positionActionTray() {
             actionTray.translationX = -(clock.width / 2f - dp(4) + trayWidth / 2f)
         }

@@ -43,7 +43,6 @@ private class TrayState {
     /** What each icon is currently animating towards; refresh only animates when this changes. */
     val shown = HashMap<OmarchyGlyph, Boolean>()
     var expanded = false
-    var chevronExpanded = false
     var collapse: Runnable? = null
     var tooltip: PopupWindow? = null
     var tooltipHide: Runnable? = null
@@ -59,7 +58,17 @@ internal fun MainActivity.createOmarchyActionTray(): View {
     val row = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL or Gravity.END
-        // Not clickable: the empty part of this row must let touches fall through to the bar.
+        // The empty area beside the sudo indicator is the tray expander.
+        isClickable = true
+        isFocusable = true
+        setOnClickListener { revealOmarchyActionTray() }
+        setOnHoverListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_HOVER_ENTER, MotionEvent.ACTION_HOVER_MOVE -> revealOmarchyActionTray()
+                MotionEvent.ACTION_HOVER_EXIT -> scheduleOmarchyActionTrayCollapse(900L)
+            }
+            false
+        }
     }
 
     fun add(glyph: OmarchyGlyph, activeColor: Int, label: () -> String, onClick: () -> Unit) {
@@ -121,9 +130,7 @@ internal fun MainActivity.createOmarchyActionTray(): View {
     add(OmarchyGlyph.SUDO, red, {
         if (sudoActive()) "Sudo unlocked" else "Sudo locked"
     }) { showSudoPanel() }
-    add(OmarchyGlyph.EXPANDER, p.cFg, { "Show / hide tray" }) { toggleTrayExpanded() }
-
-    ScreenRecordService.listener = WeakReference(this)
+expander add    ScreenRecordService.listener = WeakReference(this)
     refreshOmarchyActionTray()
     return row
 }
@@ -146,17 +153,6 @@ internal fun MainActivity.scheduleOmarchyActionTrayCollapse(delay: Long) {
     handler.postDelayed(callback, delay)
 }
 
-private fun MainActivity.toggleTrayExpanded() {
-    val st = trayStates[this] ?: return
-    if (st.expanded) {
-        st.collapse?.let { handler.removeCallbacks(it) }
-        st.expanded = false
-        refreshOmarchyActionTray()
-    } else {
-        revealOmarchyActionTray()
-    }
-}
-
 /**
  * Safe to call as often as you like (the status tick calls it every 2 s). It only animates an icon
  * when its target state actually changes; the old version cancelled running animations on every
@@ -177,7 +173,7 @@ internal fun MainActivity.refreshOmarchyActionTray() {
     order.forEachIndexed { index, glyph ->
         val hit = st.icons[glyph] ?: return@forEachIndexed
         val isActive = active[glyph] == true
-        val want = glyph == OmarchyGlyph.EXPANDER || expanded || isActive
+        val want = expanded || isActive
         if (st.shown[glyph] != want) {
             st.shown[glyph] = want
             if (want) {
@@ -193,11 +189,7 @@ internal fun MainActivity.refreshOmarchyActionTray() {
         icon?.active = isActive
         if (glyph == OmarchyGlyph.RECORD) icon?.pulsing = isActive
     }
-    if (st.chevronExpanded != expanded) {
-        st.chevronExpanded = expanded
-        st.icons[OmarchyGlyph.EXPANDER]?.animate()?.rotation(if (expanded) 180f else 0f)?.setDuration(160L)?.start()
-    }
-}
+chevron animation}
 
 private fun MainActivity.animateTrayIn(hit: View, delay: Long) {
     hit.animate().cancel()
