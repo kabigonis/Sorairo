@@ -138,4 +138,98 @@ class ScreenRecorderService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val notification = if (Build.VERSION.SDK_INT >= 26) {
-            Notificat
+            Notification.Builder(this, CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.presence_video_online)
+                .setContentTitle("Sorairo is recording")
+                .setContentText("Tap Stop to finish and save the MP4.")
+                .setOngoing(true)
+                .setContentIntent(openPending)
+                .addAction(android.R.drawable.ic_media_pause, "Stop", stopPending)
+                .build()
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+                .setSmallIcon(android.R.drawable.presence_video_online)
+                .setContentTitle("Sorairo is recording")
+                .setContentText("Tap Stop to finish and save the MP4.")
+                .setOngoing(true)
+                .setContentIntent(openPending)
+                .addAction(android.R.drawable.ic_media_pause, "Stop", stopPending)
+                .build()
+        }
+        if (Build.VERSION.SDK_INT >= 34 && audioMode == ScreenRecordingActivity.AUDIO_DESKTOP_AND_MIC) {
+            // Android 14 requires a declared microphone FGS type for long-running mic capture.
+            // The consent Activity has just obtained RECORD_AUDIO while visible.
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION or
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            )
+        } else if (Build.VERSION.SDK_INT >= 29) {
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
+    }
+
+    private fun runRecorder(resultCode: Int, resultData: Intent) {
+        var completed = false
+        try {
+            val manager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            val mediaProjection = manager.getMediaProjection(resultCode, resultData)
+                ?: throw IllegalStateException("Android did not provide screen-capture permission")
+            projection = mediaProjection
+            projectionCallback = object : MediaProjection.Callback() {
+                override fun onStop() { stopRequested = true }
+            }.also { mediaProjection.registerCallback(it, Handler(Looper.getMainLooper())) }
+
+            createOutput()
+            configureVideoEncoder()
+            if (audioMode != ScreenRecordingActivity.AUDIO_NONE) configureAudioEncoder(mediaProjection)
+            // Surface video timestamps use the monotonic clock. Normalize video and audio
+            // to one session origin so the MP4 tracks stay synchronized.
+            recordingStartTimeUs = System.nanoTime() / 1_000L
+            val metrics = resources.displayMetrics
+            virtualDisplay = mediaProjection.createVirtualDisplay(
+                "Sorairo Screen Recording", videoWidth, videoHeight, metrics.densityDpi,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, videoSurface, null, null
+            ) ?: throw IllegalStateException("Android couldn't create the recording display")
+
+            while (!stopRequested) {
+                if (audioEncoder != null) {
+                    val desktop = desktopQueue.poll(15, TimeUnit.MILLISECONDS)
+                    val microphone = if (audioMode == ScreenRecordingActivity.AUDIO_DESKTOP_AND_MIC)
+                        microphoneQueue.poll(15, TimeUnit.MILLISECONDS) else null
+                    val pcm = mixStereoWithMono(desktop, microphone, AUDIO_CHUNK_FRAMES)
+                    queueAudioPcm(pcm)
+                    drainEncoder(audioEncoder!!, false)
+                } else {
+                    Thread.sleep(8)
+                }
+                drainEncoder(videoEncoder!!, true)
+            }
+
+            stopAudioReaders()
+            virtualDisplay?.release()
+            virtualDisplay = null
+            videoEncoder?.signalEndOfInputStream()
+            if (audioEncoder != null) queueAudioEos()
+            val deadline = SystemClock.elapsedRealtime() + 3_000L
+            while (SystemClock.elapsedRealtime() < deadline &&
+                (!videoEos || (audioEncoder != null && !audioEos))
+            ) {
+                if (audioEncoder != null && !audioEos) {
+                    audioEos = drainEncoder(audioEncoder!!, false) || audioEos
+                }
+                if (!videoEos) {
+                    videoEos = drainEncoder(videoEncoder!!, true) || videoEos
+                }
+                Thread.sleep(4)
+            }
+            completed = muxerStarted && videoTrack >= 0 && videoEos &&
+                (audioEncoder == null || (audioTrack >= 0 && audioEos))
+        } catch (t: Throwable) {
+            android.util.Log.e(TAG, "Screen recording failed", t)
+            postFailureNotification(t.message ?: "Unknown recording error")
+        } finally {
