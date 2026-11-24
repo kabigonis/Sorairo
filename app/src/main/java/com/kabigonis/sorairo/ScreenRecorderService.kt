@@ -73,4 +73,69 @@ class ScreenRecorderService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    override fun onStartCommand(intent: Intent?, flags: Int, st
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP) {
+            stopRequested = true
+            if (worker == null) {
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_RECORDING, false).apply()
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf(startId)
+            }
+            return START_NOT_STICKY
+        }
+        if (worker?.isAlive == true) return START_NOT_STICKY
+
+        val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, ActivityResult.RESULT_CANCELED)
+            ?: ActivityResult.RESULT_CANCELED
+        @Suppress("DEPRECATION")
+        val resultData = intent?.getParcelableExtra(EXTRA_RESULT_DATA) as? Intent
+        audioMode = intent?.getIntExtra(EXTRA_AUDIO_MODE, ScreenRecordingActivity.AUDIO_NONE)
+            ?: ScreenRecordingActivity.AUDIO_NONE
+        if (resultCode != ActivityResult.RESULT_OK || resultData == null) {
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
+
+        stopRequested = false
+        recording = true
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_RECORDING, true).apply()
+        try {
+            startRecordingForeground()
+        } catch (t: Exception) {
+            android.util.Log.e(TAG, "Couldn't start recording foreground service", t)
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_RECORDING, false).apply()
+            recording = false
+            Toast.makeText(this, "Android couldn't start the screen recorder service.", Toast.LENGTH_LONG).show()
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
+        worker = Thread({ runRecorder(resultCode, resultData) }, "Sorairo-ScreenRecorder").apply {
+            isDaemon = true
+            start()
+        }
+        return START_NOT_STICKY
+    }
+
+    private fun startRecordingForeground() {
+        val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        if (Build.VERSION.SDK_INT >= 26) {
+            manager.createNotificationChannel(NotificationChannel(
+                CHANNEL_ID, "Screen recording", NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Shows while Sorairo is recording the screen"
+                setSound(null, null)
+                enableVibration(false)
+            })
+        }
+        val stopIntent = Intent(this, ScreenRecorderService::class.java).setAction(ACTION_STOP)
+        val stopPending = PendingIntent.getService(
+            this, NOTIFICATION_ID, stopIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val openPending = PendingIntent.getActivity(
+            this, NOTIFICATION_ID,
+            Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = if (Build.VERSION.SDK_INT >= 26) {
+            Notificat
