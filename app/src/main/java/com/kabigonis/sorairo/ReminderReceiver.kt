@@ -29,11 +29,14 @@ class ReminderReceiver : BroadcastReceiver() {
             manager.createNotificationChannel(channel)
         }
 
+        val reminderId = intent?.getIntExtra(EXTRA_REMINDER_ID, DEFAULT_NOTIFICATION_ID)
+            ?.takeIf { it > 0 } ?: DEFAULT_NOTIFICATION_ID
         val openApp = PendingIntent.getActivity(
             context,
-            8801,
+            reminderId,
             Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                data = android.net.Uri.parse("sorairo://reminder/open/$reminderId")
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_CLEAR_TOP
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -56,12 +59,13 @@ class ReminderReceiver : BroadcastReceiver() {
                 .setContentIntent(openApp)
                 .build()
         }
-        manager.notify(NOTIFICATION_ID, notification)
+        manager.notify(reminderId, notification)
     }
 
     companion object {
         const val ACTION_FIRE = "com.kabigonis.sorairo.REMINDER_FIRE"
+        const val EXTRA_REMINDER_ID = "reminder_id"
         private const val CHANNEL_ID = "sorairo_quiet_reminders"
-        private const val NOTIFICATION_ID = 8801
+        private const val DEFAULT_NOTIFICATION_ID = 8801
     }
 }

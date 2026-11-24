@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.net.ConnectivityManager
 import android.net.TrafficStats
+import android.os.Build
 import android.os.SystemClock
 import android.provider.Settings
 import android.text.InputType
@@ -40,25 +41,28 @@ internal fun MainActivity.hasSecureSettings(): Boolean = canSetBatterySaver()
 
 /** Writes Android's Private DNS setting. Needs the optional WRITE_SECURE_SETTINGS grant. */
 internal fun MainActivity.setPrivateDns(provider: Int, customHost: String?): Boolean {
-    if (!hasSecureSettings()) return false
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P || !hasSecureSettings()) return false
     return try {
         val host = when (provider) {
             1 -> DNS_CLOUDFLARE
             2 -> DNS_GOOGLE
-            3 -> customHost
-            else -> null
+            3 -> customHost?.trim()?.takeIf { it.isNotEmpty() }
+            0 -> null
+            else -> return false
         }
         if (provider != 0 && host.isNullOrBlank()) return false
         if (provider == 0) {
+            Settings.Global.putString(contentResolver, "private_dns_specifier", null)
             Settings.Global.putString(contentResolver, "private_dns_mode", "opportunistic")
         } else {
             Settings.Global.putString(contentResolver, "private_dns_specifier", host)
             Settings.Global.putString(contentResolver, "private_dns_mode", "hostname")
         }
-        true
-    } catch (_: Exception) {
-        false
-    }
+        val mode = Settings.Global.getString(contentResolver, "private_dns_mode")
+        val actualHost = Settings.Global.getString(contentResolver, "private_dns_specifier")
+        if (provider == 0) mode == "opportunistic" && actualHost.isNullOrBlank()
+        else mode == "hostname" && actualHost.equals(host, ignoreCase = true)
+    } catch (_: Exception) { false }
 }
 
 internal fun MainActivity.currentDnsProvider(): Int = try {
@@ -211,6 +215,10 @@ internal fun MainActivity.showNetworkPanel() {
         handler.post { if (dialog?.isShowing != true) showNetworkPanel() }
     }
     fun chooseDns(i: Int) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            Toast.makeText(this, "Private DNS requires Android 9 or newer.", Toast.LENGTH_SHORT).show()
+            return
+        }
         if (!hasSecureSettings()) {
             showSecureGrantHelp()
             return
@@ -218,7 +226,9 @@ internal fun MainActivity.showNetworkPanel() {
         val custom = prefs.getString("dns_custom", "") ?: ""
         if (i == 3 && custom.isBlank()) {
             askCustomDns { host ->
-                setPrivateDns(3, host)
+                if (!setPrivateDns(3, host)) {
+                    Toast.makeText(this, "Android didn't apply the custom DNS host.", Toast.LENGTH_SHORT).show()
+                }
                 reopenAfterCustom()
             }
             return
@@ -242,7 +252,9 @@ internal fun MainActivity.showNetworkPanel() {
             setOnClickListener { chooseDns(i) }
             if (i == 3) setOnLongClickListener {
                 askCustomDns { host ->
-                    if (hasSecureSettings()) setPrivateDns(3, host)
+                    if (!hasSecureSettings() || !setPrivateDns(3, host)) {
+                        Toast.makeText(this, "Android didn't apply the custom DNS host.", Toast.LENGTH_SHORT).show()
+                    }
                     reopenAfterCustom()
                 }
                 true
@@ -282,7 +294,7 @@ internal fun MainActivity.showNetworkPanel() {
     // ping probe, only while the panel is open
     val results = ArrayList<Long>()
     val running = AtomicBoolean(true)
-    Thread {
+    val pingThread = Thread({
         while (running.get()) {
             val ms = tcpPingMs("1.1.1.1", 53, 1500)
             synchronized(results) {
@@ -295,7 +307,7 @@ internal fun MainActivity.showNetworkPanel() {
                 break
             }
         }
-    }.start()
+    }, "Sorairo-Network-Ping").apply { isDaemon = true; start() }
 
     fun render() {
         val st = netState()
@@ -329,6 +341,7 @@ internal fun MainActivity.showNetworkPanel() {
         }
         styleDns(currentDnsProvider())
         hint.text = when {
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.P -> "Private DNS requires Android 9 or newer."
             !hasSecureSettings() -> "Switching DNS needs the optional adb grant. Tap a provider for steps."
             st.vpn -> "A VPN is on, so your DNS app handles DNS instead of these buttons."
             else -> ""
@@ -353,6 +366,7 @@ internal fun MainActivity.showNetworkPanel() {
     }
     dialog = showBarDialog(BarKind.WIFI, root, 460) {
         running.set(false)
+        pingThread.interrupt()
         handler.removeCallbacks(tick)
     }
     handler.postDelayed(tick, 1000)

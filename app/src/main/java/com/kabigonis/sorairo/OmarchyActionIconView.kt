@@ -14,7 +14,7 @@ import kotlin.math.min
  * The drawing intentionally avoids emoji, Material icons and font glyph substitutions.
  */
 internal enum class OmarchyGlyph {
-    RECORD, RECORD_VIDEO, HAND, NIGHT_LIGHT, MUTED_BELL, COFFEE, SUDO
+    RECORD, RECORD_VIDEO, REMINDER, NIGHT_LIGHT, MUTED_BELL, COFFEE, ADMIN_TOOLS
 }
 
 internal class OmarchyActionIconView(
@@ -42,7 +42,7 @@ internal class OmarchyActionIconView(
 
     private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 1.65f
+        strokeWidth = 1.9f
         strokeCap = Paint.Cap.SQUARE
         strokeJoin = Paint.Join.MITER
     }
@@ -58,7 +58,7 @@ internal class OmarchyActionIconView(
         canvas.translate((width - 24f * scale) / 2f, (height - 24f * scale) / 2f)
         canvas.scale(scale, scale)
         val color = when (glyph) {
-            OmarchyGlyph.SUDO -> accentColor
+            OmarchyGlyph.ADMIN_TOOLS -> accentColor
             else -> animatedTint
         }
         stroke.color = color
@@ -66,11 +66,11 @@ internal class OmarchyActionIconView(
         when (glyph) {
             OmarchyGlyph.RECORD -> drawRecord(canvas)
             OmarchyGlyph.RECORD_VIDEO -> drawVideoCamera(canvas)
-            OmarchyGlyph.HAND -> drawHand(canvas)
+            OmarchyGlyph.REMINDER -> drawReminder(canvas)
             OmarchyGlyph.NIGHT_LIGHT -> drawNightLight(canvas)
             OmarchyGlyph.MUTED_BELL -> drawMutedBell(canvas)
             OmarchyGlyph.COFFEE -> drawCoffee(canvas)
-            OmarchyGlyph.SUDO -> drawSudo(canvas)
+            OmarchyGlyph.ADMIN_TOOLS -> drawAdminTools(canvas)
         }
         canvas.restore()
     }
@@ -99,45 +99,32 @@ internal class OmarchyActionIconView(
         c.drawPath(lens, fill)
     }
 
-    private fun drawHand(c: Canvas) {
-        // Omarchy reminder glyph: a compact closed hand with one index finger raised.
-        // Keep the thumb visibly extended to the left and the wrist squared off.
-        val p = Path().apply {
-            moveTo(8.1f, 20.8f)
-            lineTo(5.2f, 17.2f)
-            lineTo(3.4f, 14.1f)
-            cubicTo(2.8f, 12.9f, 3.7f, 11.8f, 4.8f, 12.3f)
-            lineTo(7.4f, 14.5f)
-            lineTo(7.4f, 6.0f)
-            cubicTo(7.4f, 4.4f, 8.4f, 3.4f, 9.7f, 3.4f)
-            cubicTo(11.0f, 3.4f, 11.8f, 4.4f, 11.8f, 6.0f)
-            lineTo(11.8f, 12.1f)
-            lineTo(12.3f, 11.0f)
-            cubicTo(12.9f, 9.9f, 14.3f, 9.8f, 15.0f, 10.8f)
-            lineTo(16.2f, 12.5f)
-            lineTo(17.1f, 13.3f)
-            cubicTo(18.2f, 14.2f, 18.5f, 15.4f, 18.0f, 16.8f)
-            lineTo(16.4f, 20.8f)
-            close()
-        }
-        c.drawPath(p, fill)
-        // Short wrist cuff gives the same compact silhouette as the reference.
-        c.drawLine(8.2f, 20.7f, 16.5f, 20.7f, stroke)
+    private fun drawReminder(c: Canvas) {
+        // Compact alarm-clock silhouette: clearer at status-bar size than a hand glyph.
+        c.drawCircle(12f, 13f, 7.1f, stroke)
+        c.drawLine(12f, 13f, 12f, 8.8f, stroke)
+        c.drawLine(12f, 13f, 15.2f, 14.8f, stroke)
+        c.drawLine(7.0f, 3.8f, 4.6f, 6.0f, stroke)
+        c.drawLine(17.0f, 3.8f, 19.4f, 6.0f, stroke)
+        c.drawLine(8.0f, 20.0f, 6.2f, 22.0f, stroke)
+        c.drawLine(16.0f, 20.0f, 17.8f, 22.0f, stroke)
     }
 
     private fun drawNightLight(c: Canvas) {
-        c.drawCircle(12f, 12f, 4.1f, stroke)
-        val rays = arrayOf(
-            12f to 2f, 12f to 5.1f, 12f to 18.9f, 12f to 22f,
-            2f to 12f, 5.1f to 12f, 18.9f to 12f, 22f to 12f,
-            4.7f to 4.7f, 6.9f to 6.9f, 17.1f to 17.1f, 19.3f to 19.3f,
-            19.3f to 4.7f, 17.1f to 6.9f, 6.9f to 17.1f, 4.7f to 19.3f
-        )
-        for (i in rays.indices step 2) {
-            c.drawLine(rays[i].first, rays[i].second, rays[i + 1].first, rays[i + 1].second, stroke)
+        val moon = Path().apply {
+            moveTo(16.8f, 3.2f)
+            cubicTo(13.0f, 4.0f, 10.2f, 7.3f, 10.2f, 11.3f)
+            cubicTo(10.2f, 15.8f, 13.8f, 19.4f, 18.3f, 19.4f)
+            cubicTo(19.2f, 19.4f, 20.0f, 19.2f, 20.8f, 18.8f)
+            cubicTo(19.3f, 20.2f, 17.2f, 21.0f, 14.9f, 21.0f)
+            cubicTo(9.7f, 21.0f, 5.5f, 16.8f, 5.5f, 11.6f)
+            cubicTo(5.5f, 7.2f, 8.5f, 3.5f, 12.6f, 2.5f)
+            cubicTo(14.1f, 2.2f, 15.6f, 2.5f, 16.8f, 3.2f)
+            close()
         }
-        // The diagonal slash is the small "night mode" cue from the reference glyph.
-        c.drawLine(5.2f, 19f, 19f, 5.2f, stroke)
+        c.drawPath(moon, stroke)
+        c.drawLine(19.5f, 4.0f, 19.5f, 8.0f, stroke)
+        c.drawLine(17.5f, 6.0f, 21.5f, 6.0f, stroke)
     }
 
     private fun drawMutedBell(c: Canvas) {
@@ -170,11 +157,19 @@ internal class OmarchyActionIconView(
         c.drawLine(12f, 7.3f, 10.6f, 4.8f, stroke)
     }
 
-    private fun drawSudo(c: Canvas) {
-        // Compact terminal/privilege glyph. Red is intentionally retained from the reference.
-        c.drawRect(RectF(3.2f, 5.2f, 8.1f, 18.8f), stroke)
-        c.drawRect(RectF(15.9f, 5.2f, 20.8f, 18.8f), stroke)
-        c.drawRect(RectF(9.1f, 8.1f, 14.9f, 15.9f), fill)
-        c.drawLine(1.8f, 12f, 22.2f, 12f, stroke)
+    private fun drawAdminTools(c: Canvas) {
+        // Simple, recognisable gear: eight teeth and a hollow centre.
+        val gear = Path()
+        for (i in 0 until 32) {
+            val angle = Math.PI * 2.0 * i / 32.0 - Math.PI / 2.0
+            val tooth = i % 4 in 0..1
+            val radius = if (tooth) 10.0 else 8.2
+            val x = 12.0 + kotlin.math.cos(angle) * radius
+            val y = 12.0 + kotlin.math.sin(angle) * radius
+            if (i == 0) gear.moveTo(x.toFloat(), y.toFloat()) else gear.lineTo(x.toFloat(), y.toFloat())
+        }
+        gear.close()
+        c.drawPath(gear, stroke)
+        c.drawCircle(12f, 12f, 3.1f, stroke)
     }
 }
