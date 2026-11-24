@@ -36,7 +36,7 @@ class ReminderReceiver : BroadcastReceiver() {
             reminderId,
             Intent(context, MainActivity::class.java).apply {
                 data = android.net.Uri.parse("sorairo://reminder/open/$reminderId")
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_CLEAR_TOP
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
