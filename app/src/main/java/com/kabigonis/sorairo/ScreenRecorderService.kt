@@ -256,4 +256,147 @@ class ScreenRecorderService : Service() {
                         MediaScannerConnection.scanFile(this, arrayOf(file.absolutePath), arrayOf("video/mp4"), null)
                     }
                 }
+            } else {
+                outputUri?.let { try { contentResolver.delete(it, null, null) } catch (_: Exception) { } }
+                outputFile?.let { try { it.delete() } catch (_: Exception) { } }
             }
+            outputUri = null
+            outputFile = null
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_RECORDING, false).apply()
+            recording = false
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
+    }
+
+    private var videoWidth = 0
+    private var videoHeight = 0
+
+    private fun createOutput() {
+        val metrics = resources.displayMetrics
+        val rawWidth = metrics.widthPixels.coerceAtLeast(2)
+        val rawHeight = metrics.heightPixels.coerceAtLeast(2)
+        val landscape = rawWidth >= rawHeight
+        val maxWidth = if (landscape) 1920f else 1080f
+        val maxHeight = if (landscape) 1080f else 1920f
+        val scale = minOf(1f, maxWidth / rawWidth, maxHeight / rawHeight)
+        videoWidth = ((rawWidth * scale).toInt() / 2 * 2).coerceAtLeast(2)
+        videoHeight = ((rawHeight * scale).toInt() / 2 * 2).coerceAtLeast(2)
+        val filename = "Sorairo_" + System.currentTimeMillis() + ".mp4"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
+                put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
+                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/Sorairo")
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+            outputUri = contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
+                ?: throw IllegalStateException("Couldn't create a video in Movies/Sorairo")
+            outputFd = contentResolver.openFileDescriptor(outputUri!!, "w")
+                ?: throw IllegalStateException("Couldn't open the recording output")
+            muxer = MediaMuxer(outputFd!!.fileDescriptor, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        } else {
+            val directory = File(getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: filesDir, "Sorairo")
+            if (!directory.exists() && !directory.mkdirs()) {
+                throw IllegalStateException("Couldn't create Sorairo's Movies folder")
+            }
+            outputFile = File(directory, filename)
+            muxer = MediaMuxer(outputFile!!.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        }
+    }
+
+    private fun configureVideoEncoder() {
+        val bitrate = (videoWidth.toLong() * videoHeight * 5L).coerceIn(5_000_000L, 24_000_000L).toInt()
+        val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, videoWidth, videoHeight).apply {
+            setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
+            setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
+            setInteger(MediaFormat.KEY_FRAME_RATE, VIDEO_FRAME_RATE)
+            setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 2)
+        }
+        videoEncoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC).apply {
+            configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            videoSurface = createInputSurface()
+            start()
+        }
+    }
+
+    private fun configureAudioEncoder(mediaProjection: MediaProjection) {
+        val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, AUDIO_SAMPLE_RATE, 2).apply {
+            setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
+            setInteger(MediaFormat.KEY_BIT_RATE, AUDIO_BIT_RATE)
+            setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, AUDIO_CHUNK_FRAMES * 2 * 2 * 4)
+        }
+        audioEncoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC).apply {
+            configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            start()
+        }
+        expectedTracks = 2
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            throw IllegalStateException("Device audio capture requires Android 10 or newer")
+        }
+        val playbackConfig = AudioPlaybackCaptureConfiguration.Builder(mediaProjection)
+            .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
+            .addMatchingUsage(AudioAttributes.USAGE_GAME)
+            .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN)
+            .build()
+        val desktopFormat = AudioFormat.Builder()
+            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+            .setSampleRate(AUDIO_SAMPLE_RATE)
+            .setChannelMask(AudioFormat.CHANNEL_IN_STEREO)
+            .build()
+        val desktopMin = AudioRecord.getMinBufferSize(
+            AUDIO_SAMPLE_RATE, AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_16BIT
+        ).coerceAtLeast(AUDIO_CHUNK_FRAMES * 4)
+        desktopRecord = AudioRecord.Builder()
+            .setAudioFormat(desktopFormat)
+            .setBufferSizeInBytes(desktopMin * 2)
+            .setAudioPlaybackCaptureConfig(playbackConfig)
+            .build()
+        if (desktopRecord?.state != AudioRecord.STATE_INITIALIZED) {
+            throw IllegalStateException("Couldn't initialise device-audio capture")
+        }
+
+        if (audioMode == ScreenRecordingActivity.AUDIO_DESKTOP_AND_MIC) {
+            val micFormat = AudioFormat.Builder()
+                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                .setSampleRate(AUDIO_SAMPLE_RATE)
+                .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
+                .build()
+            val micMin = AudioRecord.getMinBufferSize(
+                AUDIO_SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT
+            ).coerceAtLeast(AUDIO_CHUNK_FRAMES * 2)
+            microphoneRecord = AudioRecord.Builder()
+                .setAudioSource(MediaRecorder.AudioSource.MIC)
+                .setAudioFormat(micFormat)
+                .setBufferSizeInBytes(micMin * 2)
+                .build()
+            if (microphoneRecord?.state != AudioRecord.STATE_INITIALIZED) {
+                throw IllegalStateException("Couldn't initialise microphone capture")
+            }
+        }
+        startAudioReader(desktopRecord!!, desktopQueue, AUDIO_CHUNK_FRAMES * 2, "Sorairo-Playback-Audio")
+        microphoneRecord?.let {
+            startAudioReader(it, microphoneQueue, AUDIO_CHUNK_FRAMES, "Sorairo-Microphone-Audio")
+        }
+    }
+
+    private fun startAudioReader(
+        record: AudioRecord, queue: ArrayBlockingQueue<ShortArray>, samplesPerRead: Int, name: String
+    ) {
+        record.startRecording()
+        val thread = Thread({
+            val buffer = ShortArray(samplesPerRead)
+            while (!stopRequested) {
+                val count = try { record.read(buffer, 0, buffer.size, AudioRecord.READ_BLOCKING) }
+                catch (_: Exception) { break }
+                if (count > 0) {
+                    val chunk = buffer.copyOf(count)
+                    if (!queue.offer(chunk)) {
+                        queue.poll()
+                        queue.offer(chunk)
+                    }
+                } else if (count < 0) break
+            }
+        }, name).apply { isDaemon = true; start() }
+        if (name.contains("Playback")) desktopReader = thread else microphoneReader = thread
+    }
