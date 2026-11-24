@@ -253,7 +253,7 @@ internal fun MainActivity.showNetworkPanel() {
             if (i == 3) setOnLongClickListener {
                 askCustomDns { host ->
                     if (!hasSecureSettings() || !setPrivateDns(3, host)) {
-                        Toast.makeText(this, "Android didn't apply the custom DNS host.", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@showNetworkPanel, "Android didn't apply the custom DNS host.", Toast.LENGTH_SHORT).show()
                     }
                     reopenAfterCustom()
                 }
