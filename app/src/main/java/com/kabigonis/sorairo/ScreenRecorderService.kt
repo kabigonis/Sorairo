@@ -400,3 +400,177 @@ class ScreenRecorderService : Service() {
         }, name).apply { isDaemon = true; start() }
         if (name.contains("Playback")) desktopReader = thread else microphoneReader = thread
     }
+
+    private fun queueAudioPcm(pcm: ShortArray) {
+        val codec = audioEncoder ?: return
+        val frames = pcm.size / 2
+        val startOffset = audioStartOffsetUs ?: (System.nanoTime() / 1_000L - recordingStartTimeUs)
+            .coerceAtLeast(0L).also { audioStartOffsetUs = it }
+        val pts = startOffset + audioFramesSubmitted * 1_000_000L / AUDIO_SAMPLE_RATE
+        // Advance the media timeline even if an encoder input slot is temporarily unavailable;
+        // otherwise dropped PCM chunks make later audio drift behind the video.
+        audioFramesSubmitted += frames
+        val inputIndex = codec.dequeueInputBuffer(10_000)
+        if (inputIndex < 0) return
+        val input = codec.getInputBuffer(inputIndex) ?: return
+        input.clear()
+        input.order(ByteOrder.nativeOrder())
+        val maxSamples = minOf(pcm.size, input.remaining() / 2)
+        for (i in 0 until maxSamples) input.putShort(pcm[i])
+        codec.queueInputBuffer(inputIndex, 0, maxSamples * 2, pts, 0)
+    }
+
+    private fun queueAudioEos() {
+        val codec = audioEncoder ?: return
+        // Drain output while waiting for an input slot, then always signal end-of-stream.
+        val deadline = SystemClock.elapsedRealtime() + 1_000L
+        while (SystemClock.elapsedRealtime() < deadline) {
+            val index = codec.dequeueInputBuffer(10_000)
+            if (index >= 0) {
+                val startOffset = audioStartOffsetUs ?: (System.nanoTime() / 1_000L - recordingStartTimeUs)
+                    .coerceAtLeast(0L).also { audioStartOffsetUs = it }
+                val pts = startOffset + audioFramesSubmitted * 1_000_000L / AUDIO_SAMPLE_RATE
+                codec.queueInputBuffer(index, 0, 0, pts, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                return
+            }
+            audioEos = drainEncoder(codec, false) || audioEos
+            if (audioEos) return
+        }
+        throw IllegalStateException("Couldn't finish the audio encoder")
+    }
+
+    private fun drainEncoder(codec: MediaCodec, isVideo: Boolean): Boolean {
+        val info = MediaCodec.BufferInfo()
+        var sawEos = false
+        while (true) {
+            val index = codec.dequeueOutputBuffer(info, 0)
+            when {
+                index == MediaCodec.INFO_TRY_AGAIN_LATER -> return sawEos
+                index == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                    val track = muxer!!.addTrack(codec.outputFormat)
+                    if (isVideo) videoTrack = track else audioTrack = track
+                    startMuxerWhenReady()
+                }
+                index == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED -> Unit
+                index >= 0 -> {
+                    val output = codec.getOutputBuffer(index)
+                    if (info.size > 0 && output != null &&
+                        info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0
+                    ) {
+                        val duplicate = output.duplicate()
+                        duplicate.position(info.offset)
+                        duplicate.limit(info.offset + info.size)
+                        val bytes = ByteArray(info.size)
+                        duplicate.get(bytes)
+                        val track = if (isVideo) videoTrack else audioTrack
+                        val presentationTimeUs = if (isVideo)
+                            (info.presentationTimeUs - recordingStartTimeUs).coerceAtLeast(0L)
+                        else info.presentationTimeUs
+                        val sample = PendingSample(track, bytes, presentationTimeUs, info.flags)
+                        if (muxerStarted) writeSample(sample) else pendingSamples.add(sample)
+                    }
+                    if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) sawEos = true
+                    codec.releaseOutputBuffer(index, false)
+                    if (sawEos) return true
+                }
+                else -> return sawEos
+            }
+        }
+    }
+
+    private fun startMuxerWhenReady() {
+        if (muxerStarted || videoTrack < 0 || (expectedTracks == 2 && audioTrack < 0)) return
+        muxer!!.start()
+        muxerStarted = true
+        pendingSamples.sortedBy { it.presentationTimeUs }.forEach(::writeSample)
+        pendingSamples.clear()
+    }
+
+    private fun writeSample(sample: PendingSample) {
+        if (sample.track < 0 || !muxerStarted) return
+        val buffer = ByteBuffer.wrap(sample.data)
+        val info = MediaCodec.BufferInfo().apply {
+            set(0, sample.data.size, sample.presentationTimeUs, sample.flags)
+        }
+        muxer?.writeSampleData(sample.track, buffer, info)
+    }
+
+    @Synchronized
+    private fun stopAudioReaders() {
+        stopRequested = true
+        try { desktopRecord?.stop() } catch (_: Exception) { }
+        try { microphoneRecord?.stop() } catch (_: Exception) { }
+        try { desktopReader?.join(500) } catch (_: Exception) { }
+        try { microphoneReader?.join(500) } catch (_: Exception) { }
+        desktopReader = null
+        microphoneReader = null
+        desktopRecord?.release()
+        microphoneRecord?.release()
+        desktopRecord = null
+        microphoneRecord = null
+    }
+
+    private fun releaseEncoders() {
+        virtualDisplay?.release()
+        virtualDisplay = null
+        try { videoSurface?.release() } catch (_: Exception) { }
+        videoSurface = null
+        try { videoEncoder?.stop() } catch (_: Exception) { }
+        try { videoEncoder?.release() } catch (_: Exception) { }
+        videoEncoder = null
+        try { audioEncoder?.stop() } catch (_: Exception) { }
+        try { audioEncoder?.release() } catch (_: Exception) { }
+        audioEncoder = null
+        try { projectionCallback?.let { projection?.unregisterCallback(it) } } catch (_: Exception) { }
+        projectionCallback = null
+    }
+
+    private fun postFailureNotification(message: String) {
+        try {
+            val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            val notification = Notification.Builder(this, CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.stat_notify_error)
+                .setContentTitle("Sorairo recording failed")
+                .setContentText(message.take(120))
+                .setAutoCancel(true)
+                .build()
+            manager.notify(NOTIFICATION_ID + 1, notification)
+        } catch (_: Exception) { }
+    }
+
+    override fun onDestroy() {
+        stopRequested = true
+        stopAudioReaders()
+        super.onDestroy()
+    }
+
+    private data class PendingSample(
+        val track: Int, val data: ByteArray, val presentationTimeUs: Long, val flags: Int
+    )
+
+    private object ActivityResult {
+        const val RESULT_CANCELED = 0
+        const val RESULT_OK = -1
+    }
+
+    companion object {
+        const val ACTION_START = "com.kabigonis.sorairo.SCREEN_RECORD_START"
+        const val ACTION_STOP = "com.kabigonis.sorairo.SCREEN_RECORD_STOP"
+        const val EXTRA_RESULT_CODE = "projection_result_code"
+        const val EXTRA_RESULT_DATA = "projection_result_data"
+        const val EXTRA_AUDIO_MODE = "audio_mode"
+        private const val PREFS = "launcher"
+        private const val KEY_RECORDING = "screen_recording_active"
+        private const val CHANNEL_ID = "sorairo_screen_recording"
+        private const val NOTIFICATION_ID = 6203
+        private const val TAG = "SorairoRecorder"
+        private const val AUDIO_SAMPLE_RATE = 48_000
+        private const val AUDIO_CHUNK_FRAMES = 480
+        private const val AUDIO_BIT_RATE = 160_000
+        private const val VIDEO_FRAME_RATE = 30
+    }
+}
+
+private fun MediaMuxer.stopIfStarted(started: Boolean) {
+    if (started) stop()
+}
