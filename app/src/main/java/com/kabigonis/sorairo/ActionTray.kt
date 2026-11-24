@@ -84,11 +84,9 @@ internal fun MainActivity.createOmarchyActionTray(): View {
                 onClick()
                 scheduleOmarchyActionTrayCollapse(2500L)
             }
-            {
-                setOnLongClickListener {
-                    showOmarchyTooltip(this, label())
-                    true
-                }
+            setOnLongClickListener {
+                showOmarchyTooltip(this, label())
+                true
             }
             setOnHoverListener { _, event ->
                 when (event.actionMasked) {
