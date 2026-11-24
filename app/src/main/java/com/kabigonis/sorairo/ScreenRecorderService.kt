@@ -193,43 +193,4 @@ class ScreenRecorderService : Service() {
             val metrics = resources.displayMetrics
             virtualDisplay = mediaProjection.createVirtualDisplay(
                 "Sorairo Screen Recording", videoWidth, videoHeight, metrics.densityDpi,
-                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, videoSurface, null, null
-            ) ?: throw IllegalStateException("Android couldn't create the recording display")
-
-            while (!stopRequested) {
-                if (audioEncoder != null) {
-                    val desktop = desktopQueue.poll(15, TimeUnit.MILLISECONDS)
-                    val microphone = if (audioMode == ScreenRecordingActivity.AUDIO_DESKTOP_AND_MIC)
-                        microphoneQueue.poll(15, TimeUnit.MILLISECONDS) else null
-                    val pcm = mixStereoWithMono(desktop, microphone, AUDIO_CHUNK_FRAMES)
-                    queueAudioPcm(pcm)
-                    drainEncoder(audioEncoder!!, false)
-                } else {
-                    Thread.sleep(8)
-                }
-                drainEncoder(videoEncoder!!, true)
-            }
-
-            stopAudioReaders()
-            virtualDisplay?.release()
-            virtualDisplay = null
-            videoEncoder?.signalEndOfInputStream()
-            if (audioEncoder != null) queueAudioEos()
-            val deadline = SystemClock.elapsedRealtime() + 3_000L
-            while (SystemClock.elapsedRealtime() < deadline &&
-                (!videoEos || (audioEncoder != null && !audioEos))
-            ) {
-                if (audioEncoder != null && !audioEos) {
-                    audioEos = drainEncoder(audioEncoder!!, false) || audioEos
-                }
-                if (!videoEos) {
-                    videoEos = drainEncoder(videoEncoder!!, true) || videoEos
-                }
-                Thread.sleep(4)
-            }
-            completed = muxerStarted && videoTrack >= 0 && videoEos &&
-                (audioEncoder == null || (audioTrack >= 0 && audioEos))
-        } catch (t: Throwable) {
-            android.util.Log.e(TAG, "Screen recording failed", t)
-            postFailureNotification(t.message ?: "Unknown recording error")
-        } finally {
+                DisplayManager.VIRTUAL_DIS
