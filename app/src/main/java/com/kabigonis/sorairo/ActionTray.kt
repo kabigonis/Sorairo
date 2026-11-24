@@ -82,9 +82,9 @@ internal fun MainActivity.createOmarchyActionTray(): View {
                 icon.animate().scaleX(1.18f).scaleY(1.18f).setDuration(85L)
                     .withEndAction { icon.animate().scaleX(1f).scaleY(1f).setDuration(110L).start() }.start()
                 onClick()
-                if (glyph != OmarchyGlyph.EXPANDER) scheduleOmarchyActionTrayCollapse(2500L)
+                scheduleOmarchyActionTrayCollapse(2500L)
             }
-            if (glyph != OmarchyGlyph.EXPANDER) {
+            {
                 setOnLongClickListener {
                     showOmarchyTooltip(this, label())
                     true
@@ -130,7 +130,7 @@ internal fun MainActivity.createOmarchyActionTray(): View {
     add(OmarchyGlyph.SUDO, red, {
         if (sudoActive()) "Sudo unlocked" else "Sudo locked"
     }) { showSudoPanel() }
-expander add    ScreenRecordService.listener = WeakReference(this)
+    ScreenRecordService.listener = WeakReference(this)
     refreshOmarchyActionTray()
     return row
 }
@@ -189,7 +189,7 @@ internal fun MainActivity.refreshOmarchyActionTray() {
         icon?.active = isActive
         if (glyph == OmarchyGlyph.RECORD) icon?.pulsing = isActive
     }
-chevron animation}
+}
 
 private fun MainActivity.animateTrayIn(hit: View, delay: Long) {
     hit.animate().cancel()

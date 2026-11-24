@@ -91,7 +91,7 @@ internal class OmarchyActionIconView(
         fill.color = animatedTint
         line.color = animatedTint
         when (glyph) {
-chevron drawing            OmarchyGlyph.MUTED_BELL -> {
+            OmarchyGlyph.MUTED_BELL -> {
                 canvas.drawPath(shape, fill)
                 line.strokeWidth = 2.6f
                 canvas.drawLine(3.2f, 3.2f, 20.8f, 20.8f, line)
@@ -128,7 +128,7 @@ chevron drawing            OmarchyGlyph.MUTED_BELL -> {
             OmarchyGlyph.REMINDER -> parse(ALARM_PATH)
             OmarchyGlyph.RECORD -> parse(RECORD_PATH)
             OmarchyGlyph.SUDO -> parse(SUDO_PATH)
-expander path            OmarchyGlyph.MUTED_BELL -> {
+            OmarchyGlyph.MUTED_BELL -> {
                 // Cut a gap around the slash so the bell reads as "broken" like the Omarchy glyph.
                 val bell = parse(BELL_PATH)
                 try {
