@@ -171,7 +171,8 @@ internal fun MainActivity.refreshOmarchyActionTray() {
     order.forEachIndexed { index, glyph ->
         val hit = st.icons[glyph] ?: return@forEachIndexed
         val isActive = active[glyph] == true
-        val want = expanded || isActive
+        // Keep the sudo indicator visible even while locked; it is the entry point to the sudo panel.
+        val want = expanded || isActive || glyph == OmarchyGlyph.SUDO
         if (st.shown[glyph] != want) {
             st.shown[glyph] = want
             if (want) {
