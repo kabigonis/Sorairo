@@ -210,7 +210,7 @@ internal fun MainActivity.showNetworkPanel() {
     fun reopenAfterCustom() {
         handler.post { if (dialog?.isShowing != true) showNetworkPanel() }
     }
-    fun chooseDns(i: Int) {
+    fun chooseDnsNow(i: Int) {
         if (!hasSecureSettings()) {
             showSecureGrantHelp()
             return
@@ -231,6 +231,10 @@ internal fun MainActivity.showNetworkPanel() {
         } else {
             Toast.makeText(this, "Couldn't change DNS", Toast.LENGTH_SHORT).show()
         }
+    }
+    fun chooseDns(i: Int) {
+        if (!hasSecureSettings()) showSecureGrantHelp()
+        else requireSudo("Change Private DNS") { chooseDnsNow(i) }
     }
     val dnsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
     for ((i, n) in names.withIndex()) {

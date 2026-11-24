@@ -36,6 +36,13 @@ Sorairo is a keyboard-first Android home-screen launcher inspired by Omarchy and
 - **Audio panel:** mute switch and media volume. No special permission needed. Terminal: `audio`.
 - **Network panel:** Wi-Fi state and signal, ping, packet loss, speeds, totals, IP and gateway, plus a DNS provider switcher (DHCP, Cloudflare, Google, Custom). Terminal: `network`, `dns custom <host>`.
 - **Wi-Fi:** tap the network label in the top bar to open the Wi-Fi panel.
+- **Action tray (left of the clock):** like Waybar's tray-expander. Collapsed, only indicators that are on show (recording, reminder, Night Light, silenced, Stay Awake, sudo). Tap the chevron to reveal everything; long-press an icon for its name.
+  - **Screen recording:** real recording to `Movies/Sorairo` (video only). Android asks for permission every time. Terminal: `rec`, `rec stop`.
+  - **Reminder:** countdown notification with sound; the icon lights up while one is pending, tap it to clear. Terminal: `remind <min>`, `remind off`.
+  - **Night Light:** one-tap with the adb grant, otherwise opens Android's Night Light settings. Terminal: `sudo night`.
+  - **Silence notifications:** Do Not Disturb with media and alarms still allowed. Terminal: `dnd`.
+  - **Stay Awake:** keeps the screen on while Sorairo is in front; with "Modify system settings" it also raises the system screen timeout for every app. Terminal: `awake`.
+- **sudo:** the red password-field glyph. Privileged actions (Night Light, Battery Saver, Private DNS, system-wide Stay Awake) ask for your screen lock first, like a sudo password. Unlocking lasts 5 minutes. Tap the glyph for status, a permission checklist, `LOCK` and an opt-in `PASSWORDLESS` mode. Terminal: `sudo`, `sudo -k`, `sudo -v`, `sudo passwordless on|off`, `sudo <command>`.
 
 ## Future Updates
 
@@ -72,6 +79,9 @@ The visualizer beside the song name is decorative and does not perform real audi
 | Do Not Disturb access | Legacy silent-mode control (optional) |
 | Write secure settings | Switch Battery Saver and Private DNS from the panels (optional, granted over adb) |
 | Network and Wi-Fi state | Show connection type and link speed |
+| Screen capture (asked each time) and foreground service | Tray screen recording |
+| Notifications and exact alarms | Reminders (falls back to an approximate alarm if exact alarms are refused) |
+| Screen lock | The sudo prompt (no extra permission needed) |
 
 Permissions are requested when you use the matching feature.
 

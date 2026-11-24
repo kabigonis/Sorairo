@@ -180,6 +180,18 @@ class MainActivity : AppCompatActivity() {
 
     internal val prefs by lazy { getSharedPreferences("launcher", MODE_PRIVATE) }
 
+    /** Android's "start recording?" consent screen for the tray's record icon. */
+    internal val screenCaptureRequest =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+            onScreenCaptureResult(r.resultCode, r.data)
+        }
+
+    /** Screen-lock prompt that acts as the sudo password. */
+    internal val sudoAuth =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+            onSudoResult(r.resultCode == android.app.Activity.RESULT_OK)
+        }
+
     internal val wifiPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (granted) showWifiPanel() else
@@ -366,6 +378,10 @@ class MainActivity : AppCompatActivity() {
     internal lateinit var barAudio: AudioIconView
     internal lateinit var barWifi: WifiIconView
     internal val barButtons = HashMap<BarKind, BarIconButton>()
+    /** The single active top-bar panel/calendar popup. */
+    internal var activePopup: AlertDialog? = null
+    internal var activePopupKind: BarKind? = null
+    internal var popupHandoffInProgress = false
     internal val iconBarInitialized: Boolean get() = ::iconBar.isInitialized && ::barBattery.isInitialized
     internal var ctrl: MediaController? = null
     internal var listeningController: MediaController? = null
@@ -639,6 +655,20 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
+            // A top-bar tap outside the active popup switches directly to that panel.
+            popupHandoffInProgress = routePopupTap(ev)
+        }
+        if (popupHandoffInProgress) {
+            if (ev.actionMasked == MotionEvent.ACTION_UP || ev.actionMasked == MotionEvent.ACTION_CANCEL) {
+                popupHandoffInProgress = false
+            }
+            return true
+        }
+        return super.dispatchTouchEvent(ev)
+    }
+
     // ================= lifecycle =================
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -673,6 +703,8 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         wallpaperVideoView?.start()
         activityResumed = true
+        applyTrayStayAwake()
+        refreshOmarchyActionTray()
         refreshInstalledApps()
         handler.removeCallbacks(tick)
         tick.run()
@@ -793,7 +825,7 @@ class MainActivity : AppCompatActivity() {
             textSize = 13f * uiScale * (uiTextSize / 13f)
             setTextColor(p.cFg)
             typeface = font
-            visibility = if (prefs.getBoolean("dynamic_island", true)) View.GONE else View.VISIBLE
+            visibility = View.VISIBLE
             setPadding(dp(10), dp(8), dp(10), dp(8))
             setOnClickListener { showCalendarPopup() }
         }
@@ -831,8 +863,24 @@ class MainActivity : AppCompatActivity() {
         }
         right.addView(status)
         right.addView(iconBar)
+        // Match Omarchy: status actions sit immediately BEFORE the centered clock.
+        // The clock remains independently centered and never shifts with tray visibility.
+        val centerGroup = FrameLayout(this)
+        centerGroup.addView(clock, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+        val actionTray = createOmarchyActionTray()
+        // The tray row is wide enough for all seven cells but is not clickable itself, so its empty
+        // part lets touches through. Children are end-aligned, hugging the clock.
+        val trayWidth = dp(190)
+        centerGroup.addView(actionTray, FrameLayout.LayoutParams(trayWidth, dp(34), Gravity.CENTER))
+        fun positionActionTray() {
+            actionTray.translationX = -(clock.width / 2f - dp(4) + trayWidth / 2f)
+        }
+        centerGroup.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> positionActionTray() }
+        clock.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> positionActionTray() }
+        centerGroup.post { positionActionTray() }
+
         bar.addView(left, FrameLayout.LayoutParams(-2, -2, Gravity.START or Gravity.CENTER_VERTICAL))
-        bar.addView(clock, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+        bar.addView(centerGroup, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
         bar.addView(right, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.CENTER_VERTICAL))
         content.addView(bar, LinearLayout.LayoutParams(-1, dp(34)))
         content.addView(moveHint, LinearLayout.LayoutParams(-1, dp(22)))
@@ -865,21 +913,7 @@ class MainActivity : AppCompatActivity() {
         home.addView(content, FrameLayout.LayoutParams(-1, -1))
         root.addView(home, FrameLayout.LayoutParams(-1, -1))
 
-        // Fixed transparent host: only the pill inside it changes size.
-        val islandWidth = min(dp(480), (dm.widthPixels * 0.6f).toInt())
-        val island = islandView ?: IslandView(
-            this, islandWidth, dp(34), dp(120), pal.cDim, panelColor(),
-            onFill(pal.cFg, panelColor()), font,
-            onTap = { toggleIsland() },
-            onLongPress = { showSettings() }
-        ).also { islandView = it }
-        (island.parent as? ViewGroup)?.removeView(island)
-        island.updateStyle(islandWidth, dp(34), dp(120), pal.cDim,
-            panelColor(), onFill(pal.cFg, panelColor()), font)
-        root.addView(island, FrameLayout.LayoutParams(
-            islandWidth, dp(120), Gravity.TOP or Gravity.CENTER_HORIZONTAL
-        ).apply { topMargin = dp(4) })
-        island.visibility = if (prefs.getBoolean("dynamic_island", true)) View.VISIBLE else View.GONE
+        // Dynamic Island is disabled; the centered clock remains the normal top-bar element.
 
         // ---- drawer ----
         drawer = FrameLayout(this).apply {

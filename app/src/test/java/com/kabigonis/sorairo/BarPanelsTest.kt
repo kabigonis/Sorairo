@@ -5,6 +5,17 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class BarPanelsTest {
+    @Test fun steppedSliderStopsUseCornersAndGapCentres() {
+        val stops = 6
+        assertEquals(0f, stopX(0, 0f, 620f, stops, 4f), 0.001f)
+        assertEquals(122.8f, stopX(1, 0f, 620f, stops, 4f), 0.001f)
+        assertEquals(620f, stopX(stops - 1, 0f, 620f, stops, 4f), 0.001f)
+        for (i in 0 until stops) {
+            val x = stopX(i, 0f, 620f, stops, 4f)
+            assertEquals(i, stopIndexAt(x, 0f, 620f, stops, 4f))
+        }
+    }
+
     @Test fun ratesUseTheOmarchyStyle() {
         assertEquals("183 B/s", formatRate(183))
         assertEquals("11.2 KB/s", formatRate(11_200))

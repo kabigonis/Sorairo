@@ -245,6 +245,13 @@ internal fun MainActivity.runCommand(ws: Int, line: String) {
                 "  dns custom <h> set the custom DNS hostname",
                 "  scale <x>      UI scale, e.g. scale 1.25 (scale 1 resets)",
                 "  vpn            open your vpn / DNS app (e.g. DNSNet)",
+                "  sudo [cmd]     unlock privileged actions with your screen lock",
+                "  sudo -k        lock sudo now (sudo passwordless on|off)",
+                "  night [on|off] night light (needs sudo)",
+                "  awake [on|off] stay awake (sudo for system-wide)",
+                "  dnd [on|off]   silence notifications",
+                "  rec [stop]     screen recording to Movies/Sorairo",
+                "  remind <min>   set a reminder (remind off clears it)",
                 "  <app name>     launch (fuzzy match)"
             ).forEach { say(it) }
             "clear" -> sb.clear()
@@ -458,6 +465,8 @@ internal fun MainActivity.runCommand(ws: Int, line: String) {
                 say("without it the panel opens Android's Battery Saver settings", p.cDim)
             } else showBatteryPanel()
             "vpn" -> launchVpn()
+            "sudo" -> handleSudoCommand(ws, arg)
+            "night", "awake", "dnd", "rec", "remind" -> handleTrayCommand(ws, cmd, arg)
             "ls" -> say(apps.joinToString("  ") { it.label.lowercase() }, p.cDim)
             else -> {
                 val a = matches(line).firstOrNull()
