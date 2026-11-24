@@ -48,8 +48,7 @@ internal fun MainActivity.createOmarchyActionTray(): View {
     val icons = linkedMapOf<OmarchyGlyph, View>()
 
     fun add(glyph: OmarchyGlyph, label: () -> String, action: () -> Unit) {
-        val activeColor = if (glyph == OmarchyGlyph.RECORD) p.cAnsi[1] else p.cBlue
-        val icon = OmarchyActionIconView(this, glyph, p.cDim, activeColor, p.cAnsi[1])
+        val icon = OmarchyActionIconView(this, glyph, p.cDim, p.cBlue, p.cAnsi[1])
         val hit = android.widget.FrameLayout(this).apply {
             isClickable = true
             isFocusable = true
@@ -64,11 +63,11 @@ internal fun MainActivity.createOmarchyActionTray(): View {
                 showOmarchyTooltip(this, label())
                 true
             }
-            addView(icon, android.widget.FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER))
+            addView(icon, android.widget.FrameLayout.LayoutParams(dp(14), dp(16), Gravity.CENTER))
         }
         hit.tag = glyph
         icons[glyph] = hit
-        row.addView(hit, LinearLayout.LayoutParams(dp(28), dp(36)))
+        row.addView(hit, LinearLayout.LayoutParams(dp(22), dp(30)))
     }
 
     add(OmarchyGlyph.RECORD, {
@@ -77,7 +76,7 @@ internal fun MainActivity.createOmarchyActionTray(): View {
         if (prefs.getBoolean("screen_recording_active", false)) stopScreenRecording()
         else requestScreenRecording()
     }
-    add(OmarchyGlyph.REMINDER, { "Set Reminder" }) { showReminderInput() }
+    add(OmarchyGlyph.HAND, { "Set Reminder" }) { showReminderInput() }
     add(OmarchyGlyph.NIGHT_LIGHT, {
         when (isNightLightEnabled()) {
             true -> "Night Light On"
@@ -89,7 +88,7 @@ internal fun MainActivity.createOmarchyActionTray(): View {
     add(OmarchyGlyph.COFFEE, {
         if (prefs.getBoolean("tray_stay_awake", false)) "Allow Idle Lock & Screensaver" else "Stay Awake"
     }) { toggleStayAwake() }
-    add(OmarchyGlyph.ADMIN_TOOLS, { "Admin Tools" }) { showAdminTools() }
+    add(OmarchyGlyph.SUDO, { "Disable Passwordless Sudo" }) { showSudoUnavailable() }
 
     actionIconViews[this] = icons
     actionTrayExpanded[this] = false
@@ -122,11 +121,11 @@ internal fun MainActivity.refreshOmarchyActionTray() {
     val night = isNightLightEnabled() == true
     val visible = mapOf(
         OmarchyGlyph.RECORD to (expanded || recording),
-        OmarchyGlyph.REMINDER to expanded,
+        OmarchyGlyph.HAND to expanded,
         OmarchyGlyph.NIGHT_LIGHT to (expanded || night),
         OmarchyGlyph.MUTED_BELL to (expanded || dnd),
         OmarchyGlyph.COFFEE to (expanded || awake),
-        OmarchyGlyph.ADMIN_TOOLS to true
+        OmarchyGlyph.SUDO to true
     )
     icons.entries.forEachIndexed { index, (glyph, hit) ->
         val shouldShow = visible[glyph] == true
@@ -531,42 +530,12 @@ private fun MainActivity.stopScreenRecording() {
     }
 }
 
-private fun MainActivity.showAdminTools() {
+private fun MainActivity.showSudoUnavailable() {
     val p = pal
     val root = trayDialogRoot(p.cBg, p.cAnsi[1])
-    root.addView(txt(14f, p.cAnsi[1], "Admin Tools"))
-    root.addView(txt(11f, p.cDim,
-        "Android uses app permissions and system access controls instead of Linux sudo."
-    ).apply { setPadding(0, dp(5), 0, dp(10)) })
-    fun item(title: String, detail: String, intent: Intent) {
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(9), 0, dp(9))
-            setOnClickListener {
-                activeDialog?.dismiss()
-                try { startActivity(intent) }
-                catch (_: Exception) {
-                    Toast.makeText(this@showAdminTools, "That Android settings page isn't available on this device.", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-        row.addView(txt(13f, p.cFg, title))
-        row.addView(txt(10f, p.cDim, detail).apply { setPadding(0, dp(2), 0, 0) })
-        root.addView(row)
-        root.addView(View(this).apply { setBackgroundColor(p.cDim and 0x44FFFFFF) },
-            LinearLayout.LayoutParams(-1, dp(1)))
-    }
-    item("App info & permissions", "Manage Sorairo's Android app permissions.",
-        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:$packageName")))
-    item("Notification access", "Control access to media-session notifications.",
-        Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-    item("Modify system settings", "Manage brightness and Stay Awake access.",
-        Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, android.net.Uri.parse("package:$packageName")))
-    item("Do Not Disturb access", "Manage notification-policy access.",
-        Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
-    if (Build.VERSION.SDK_INT >= 31) item("Alarms & reminders", "Manage exact-alarm access for countdowns.",
-        Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, android.net.Uri.parse("package:$packageName")))
+    root.addView(txt(13f, p.cAnsi[1], "Disable Passwordless Sudo"))
+    root.addView(txt(12f, p.cFg, "Android does not use the Linux sudo authentication model, so this desktop-only action has no direct Android equivalent.")
+        .apply { setPadding(0, dp(8), 0, dp(12)) })
     root.addView(trayDialogActions("CLOSE" to { activeDialog?.dismiss() }))
-    showTrayDialog(root, 460)
+    showTrayDialog(root, 480)
 }
-
