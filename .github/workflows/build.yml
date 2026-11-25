@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - tray-sudo-fixes
     tags:
       - 'v*'
   pull_request:

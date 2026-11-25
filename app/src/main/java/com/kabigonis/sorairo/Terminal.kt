@@ -245,13 +245,13 @@ internal fun MainActivity.runCommand(ws: Int, line: String) {
                 "  dns custom <h> set the custom DNS hostname",
                 "  scale <x>      UI scale, e.g. scale 1.25 (scale 1 resets)",
                 "  vpn            open your vpn / DNS app (e.g. DNSNet)",
-                "  sudo [cmd]     unlock privileged actions with your screen lock",
+                "  sudo [cmd]     authenticate privileged actions with your screen lock",
                 "  sudo -k        lock sudo now (sudo passwordless on|off)",
-                "  night [on|off] night light (needs sudo)",
-                "  awake [on|off] stay awake (sudo for system-wide)",
-                "  dnd [on|off]   silence notifications",
+                "  night [on|off] Night Light (needs secure-settings grant for direct switching)",
+                "  awake [on|off] stay awake (sudo for system-wide change)",
+                "  dnd [on|off]   silence/allow notifications",
                 "  rec [stop]     screen recording to Movies/Sorairo",
-                "  remind <min>   set a reminder (remind off clears it)",
+                "  remind <min>   set a countdown (remind off clears it)",
                 "  <app name>     launch (fuzzy match)"
             ).forEach { say(it) }
             "clear" -> sb.clear()

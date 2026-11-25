@@ -9,21 +9,23 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 
-/** Delivers a local Sorairo reminder notification (with sound) when the countdown ends. */
+/** Delivers a quiet local Sorairo reminder notification when the countdown ends. */
 class ReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
+        context.getSharedPreferences("launcher", Context.MODE_PRIVATE)
+            .edit().remove("reminder_at").apply()
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channelId = CHANNEL_ID
-        context.getSharedPreferences("launcher", Context.MODE_PRIVATE).edit().remove("reminder_at").apply()
 
         if (Build.VERSION.SDK_INT >= 26) {
             val channel = NotificationChannel(
                 channelId,
                 "Sorairo reminders",
-                NotificationManager.IMPORTANCE_HIGH
+                NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
-                description = "Countdown reminders from Sorairo"
-                enableVibration(true)
+                description = "Quiet countdown reminders from Sorairo"
+                setSound(null, null)
+                enableVibration(false)
                 setShowBadge(true)
             }
             manager.createNotificationChannel(channel)
@@ -61,7 +63,7 @@ class ReminderReceiver : BroadcastReceiver() {
 
     companion object {
         const val ACTION_FIRE = "com.kabigonis.sorairo.REMINDER_FIRE"
-        private const val CHANNEL_ID = "sorairo_reminders_v2"
+        private const val CHANNEL_ID = "sorairo_quiet_reminders"
         private const val NOTIFICATION_ID = 8801
     }
 }

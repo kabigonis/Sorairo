@@ -180,16 +180,16 @@ class MainActivity : AppCompatActivity() {
 
     internal val prefs by lazy { getSharedPreferences("launcher", MODE_PRIVATE) }
 
-    /** Android's "start recording?" consent screen for the tray's record icon. */
+    /** Android's per-session consent for screen recording. */
     internal val screenCaptureRequest =
-        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
-            onScreenCaptureResult(r.resultCode, r.data)
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            onScreenCaptureResult(result.resultCode, result.data)
         }
 
-    /** Screen-lock prompt that acts as the sudo password. */
+    /** Device screen-lock authentication used by Sorairo's sudo gate. */
     internal val sudoAuth =
-        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
-            onSudoResult(r.resultCode == android.app.Activity.RESULT_OK)
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            onSudoResult(result.resultCode == android.app.Activity.RESULT_OK)
         }
 
     internal val wifiPermissionLauncher =
@@ -868,7 +868,8 @@ class MainActivity : AppCompatActivity() {
         val centerGroup = FrameLayout(this)
         centerGroup.addView(clock, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
         val actionTray = createOmarchyActionTray()
-        // Keep the compact tray tucked beside the clock; tapping its empty area expands the actions.
+        // Keep a generous invisible touch zone so tapping beside the clock reveals the tray.
+        // Children are end-aligned, so the visible pinned glyph remains close to the clock.
         val trayWidth = dp(150)
         centerGroup.addView(actionTray, FrameLayout.LayoutParams(trayWidth, dp(30), Gravity.CENTER))
         fun positionActionTray() {
