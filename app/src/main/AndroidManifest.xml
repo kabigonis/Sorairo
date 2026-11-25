@@ -11,6 +11,8 @@
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <!-- Optional: lets the battery panel switch Battery Saver. Granted by the user over adb, never at install. -->
@@ -57,6 +59,10 @@
                 android:name="android.service.wallpaper"
                 android:resource="@xml/sorairo_live_wallpaper" />
         </service>
+        <service
+            android:name=".ScreenRecordService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
         <receiver
             android:name=".ReminderReceiver"
             android:enabled="true"

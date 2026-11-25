@@ -36,6 +36,10 @@ Sorairo is a keyboard-first Android home-screen launcher inspired by Omarchy and
 - **Audio panel:** mute switch and media volume. No special permission needed. Terminal: `audio`.
 - **Network panel:** Wi-Fi state and signal, ping, packet loss, speeds, totals, IP and gateway, plus a DNS provider switcher (DHCP, Cloudflare, Google, Custom). Terminal: `network`, `dns custom <host>`.
 - **Wi-Fi:** tap the network label in the top bar to open the Wi-Fi panel.
+- **Action tray:** compact indicators beside the clock for recording, reminders, Night Light, Do Not Disturb, Stay Awake and sudo. Tap the empty tray area to expand the actions; long-press an icon for its label.
+- **Screen recording:** asks for Android's screen-capture consent each time and saves video-only recordings to `Movies/Sorairo`. Tap the recording indicator again or use `rec stop` to stop.
+- **Reminders:** set a local countdown from the tray or with `remind <minutes>`; use `remind off` to clear it.
+- **sudo:** privileged Sorairo changes can request the device's screen lock; the unlock lasts five minutes. Passwordless mode is an explicit opt-in. The tray keeps the original **Disable Passwordless Sudo** panel. Terminal: `sudo`, `sudo -k`, `sudo passwordless on|off`.
 
 ## Future Updates
 
@@ -61,6 +65,8 @@ Sorairo is still under development and may not work the same way on every device
 
 Android does not let ordinary third-party apps directly toggle every system setting. Android has no "performance" power profile, so the battery panel offers Power-saver and Balanced (Battery Saver off). Switching Battery Saver and the DNS provider (Android's Private DNS) directly needs a one-time `adb shell pm grant <package> android.permission.WRITE_SECURE_SETTINGS`; without it Power-saver opens Android's Battery Saver settings and the DNS buttons show the steps. The Wi-Fi network name is hidden by Android unless the optional location permission is granted; everything else in the Wi-Fi icon and panel works without it. Charge cycles and live power draw depend on what the device reports and show `n/a` otherwise. The `vpn` command opens the VPN app you choose; Sorairo is not itself a VPN.
 
+Night Light direct switching and Battery Saver/Private DNS changes require the optional secure-settings grant. The tray's sudo prompt is an additional screen-lock confirmation for privileged actions; it does not grant Android permissions or root access.
+
 The visualizer beside the song name is decorative and does not perform real audio analysis. Available system information and controls can vary by Android version and device.
 
 ## Permissions
@@ -69,6 +75,8 @@ The visualizer beside the song name is decorative and does not perform real audi
 |---|---|
 | Notification access | Read currently playing media information (optional) |
 | Modify system settings | Brightness slider (optional) |
+| Screen capture and media-projection foreground service | Screen recording (consent asked for every recording) |
+| Notifications and exact alarms | Countdown reminder notifications |
 | Do Not Disturb access | Legacy silent-mode control (optional) |
 | Write secure settings | Switch Battery Saver and Private DNS from the panels (optional, granted over adb) |
 | Network and Wi-Fi state | Show connection type and link speed |

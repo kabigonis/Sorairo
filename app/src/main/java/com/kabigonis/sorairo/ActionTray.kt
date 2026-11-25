@@ -1,6 +1,10 @@
 package com.kabigonis.sorairo
 
+import android.app.Activity
 import android.app.AlarmManager
+import android.content.Context
+import android.util.DisplayMetrics
+import android.media.projection.MediaProjectionManager
 import android.app.Dialog
 import android.app.PendingIntent
 import android.app.NotificationManager
@@ -19,6 +23,7 @@ import android.widget.LinearLayout
 import android.widget.PopupWindow
 import android.widget.TextView
 import android.widget.Toast
+import java.lang.ref.WeakReference
 import java.util.WeakHashMap
 
 private val actionIconViews = WeakHashMap<MainActivity, MutableMap<OmarchyGlyph, View>>()
@@ -70,17 +75,20 @@ internal fun MainActivity.createOmarchyActionTray(): View {
         row.addView(hit, LinearLayout.LayoutParams(dp(22), dp(30)))
     }
 
-    add(OmarchyGlyph.RECORD, { "Screen Recording" }) { requestScreenRecording() }
+    add(OmarchyGlyph.RECORD, {
+        if (ScreenRecordService.recording) "Stop Screen Recording" else "Start Screen Recording"
+    }) { toggleScreenRecording() }
     add(OmarchyGlyph.HAND, { "Set Reminder" }) { showReminderInput() }
     add(OmarchyGlyph.NIGHT_LIGHT, { if (isNightLightEnabled()) "Day Light" else "Night Light" }) { toggleNightLight() }
     add(OmarchyGlyph.MUTED_BELL, { "Silence Notifications" }) { toggleDoNotDisturb() }
     add(OmarchyGlyph.COFFEE, {
         if (prefs.getBoolean("tray_stay_awake", false)) "Allow Idle Lock & Screensaver" else "Stay Awake"
     }) { toggleStayAwake() }
-    add(OmarchyGlyph.SUDO, { "Disable Passwordless Sudo" }) { showSudoUnavailable() }
+    add(OmarchyGlyph.SUDO, { "Disable Passwordless Sudo" }) { showSudoPanel() }
 
     actionIconViews[this] = icons
     actionTrayExpanded[this] = false
+    ScreenRecordService.listener = WeakReference(this)
     refreshOmarchyActionTray()
     return row
 }
@@ -108,8 +116,8 @@ internal fun MainActivity.refreshOmarchyActionTray() {
     val dnd = isDoNotDisturbEnabled()
     val night = isNightLightEnabled()
     val visible = mapOf(
-        OmarchyGlyph.RECORD to expanded,
-        OmarchyGlyph.HAND to expanded,
+        OmarchyGlyph.RECORD to (expanded || ScreenRecordService.recording),
+        OmarchyGlyph.HAND to (expanded || reminderRemainingMs() > 0L),
         OmarchyGlyph.NIGHT_LIGHT to (expanded || night),
         OmarchyGlyph.MUTED_BELL to (expanded || dnd),
         OmarchyGlyph.COFFEE to (expanded || awake),
@@ -158,6 +166,9 @@ internal fun MainActivity.refreshOmarchyActionTray() {
             OmarchyGlyph.COFFEE -> icon?.active = awake
             OmarchyGlyph.MUTED_BELL -> icon?.active = dnd
             OmarchyGlyph.NIGHT_LIGHT -> icon?.active = night
+            OmarchyGlyph.RECORD -> icon?.active = ScreenRecordService.recording
+            OmarchyGlyph.HAND -> icon?.active = reminderRemainingMs() > 0L
+            OmarchyGlyph.SUDO -> icon?.active = sudoActive()
             else -> Unit
         }
     }
@@ -209,8 +220,10 @@ internal fun MainActivity.applyTrayStayAwake() {
     }
 }
 
-private fun MainActivity.toggleStayAwake() {
-    val enabled = !prefs.getBoolean("tray_stay_awake", false)
+internal fun MainActivity.isStayAwakeOn(): Boolean =
+    prefs.getBoolean("tray_stay_awake", false)
+
+internal fun MainActivity.setStayAwake(on: Boolean) {
     if (!Settings.System.canWrite(this)) {
         try {
             startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS).apply {
@@ -223,15 +236,17 @@ private fun MainActivity.toggleStayAwake() {
         return
     }
     try {
-        if (enabled) {
+        if (on) {
             val current = Settings.System.getInt(contentResolver, Settings.System.SCREEN_OFF_TIMEOUT, 30_000)
-            prefs.edit().putInt("tray_previous_screen_timeout", current).putBoolean("tray_stay_awake", true).apply()
+            if (current != Int.MAX_VALUE) prefs.edit().putInt("tray_previous_screen_timeout", current).apply()
             Settings.System.putInt(contentResolver, Settings.System.SCREEN_OFF_TIMEOUT, Int.MAX_VALUE)
         } else {
             val previous = prefs.getInt("tray_previous_screen_timeout", 30_000)
+                .let { if (it <= 0 || it == Int.MAX_VALUE) 30_000 else it }
             Settings.System.putInt(contentResolver, Settings.System.SCREEN_OFF_TIMEOUT, previous)
-            prefs.edit().putBoolean("tray_stay_awake", false).remove("tray_previous_screen_timeout").apply()
+            prefs.edit().remove("tray_previous_screen_timeout").apply()
         }
+        prefs.edit().putBoolean("tray_stay_awake", on).apply()
     } catch (_: Exception) {
         Toast.makeText(this, "Android couldn't change the system screen timeout.", Toast.LENGTH_LONG).show()
     }
@@ -239,7 +254,14 @@ private fun MainActivity.toggleStayAwake() {
     refreshOmarchyActionTray()
 }
 
-private fun MainActivity.isDoNotDisturbEnabled(): Boolean {
+private fun MainActivity.toggleStayAwake() {
+    val next = !isStayAwakeOn()
+    sudoIf(Settings.System.canWrite(this), "Change the system screen timeout") {
+        setStayAwake(next)
+    }
+}
+
+internal fun MainActivity.isDoNotDisturbEnabled(): Boolean {
     if (Build.VERSION.SDK_INT < 23) return false
     return try {
         val nm = getSystemService(android.content.Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -248,21 +270,19 @@ private fun MainActivity.isDoNotDisturbEnabled(): Boolean {
     } catch (_: Exception) { false }
 }
 
-private fun MainActivity.toggleDoNotDisturb() {
-    val nm = getSystemService(android.content.Context.NOTIFICATION_SERVICE) as NotificationManager
+internal fun MainActivity.setDoNotDisturb(on: Boolean) {
+    val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     if (!nm.isNotificationPolicyAccessGranted) {
-        startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
+        try { startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)) }
+        catch (_: Exception) { }
         Toast.makeText(this, "Allow Sorairo to manage Do Not Disturb, then tap again", Toast.LENGTH_LONG).show()
         return
     }
     try {
-        val enabling = nm.currentInterruptionFilter == NotificationManager.INTERRUPTION_FILTER_ALL
-        if (enabling) {
-            // Keep media, alarms and system sounds permitted while DND filters notification
-            // interruptions. This avoids turning the tray action into a media-volume mute.
+        if (on) {
             var allowedCategories =
                 NotificationManager.Policy.PRIORITY_CATEGORY_ALARMS or
-                NotificationManager.Policy.PRIORITY_CATEGORY_MEDIA
+                    NotificationManager.Policy.PRIORITY_CATEGORY_MEDIA
             if (Build.VERSION.SDK_INT >= 28) {
                 allowedCategories = allowedCategories or NotificationManager.Policy.PRIORITY_CATEGORY_SYSTEM
             }
@@ -284,20 +304,99 @@ private fun MainActivity.toggleDoNotDisturb() {
     }
 }
 
-private fun MainActivity.isNightLightEnabled(): Boolean = try {
+private fun MainActivity.toggleDoNotDisturb() {
+    setDoNotDisturb(!isDoNotDisturbEnabled())
+}
+
+internal fun MainActivity.isNightLightEnabled(): Boolean = try {
     Settings.Secure.getInt(contentResolver, "night_display_activated", 0) == 1
 } catch (_: Exception) { false }
 
-private fun MainActivity.toggleNightLight() {
-    val turnOn = !isNightLightEnabled()
+internal fun MainActivity.setNightLight(on: Boolean): Boolean {
+    if (hasSecureSettings()) {
+        try {
+            if (Settings.Secure.putInt(contentResolver, "night_display_activated", if (on) 1 else 0)) {
+                refreshOmarchyActionTray()
+                return true
+            }
+        } catch (_: Exception) { }
+    }
     try {
-        val changed = Settings.Secure.putInt(contentResolver, "night_display_activated", if (turnOn) 1 else 0)
-        if (!changed) throw SecurityException("Night Light is read-only")
-        refreshOmarchyActionTray()
+        startActivity(Intent(Settings.ACTION_NIGHT_DISPLAY_SETTINGS))
     } catch (_: Exception) {
-        try { startActivity(Intent(Settings.ACTION_NIGHT_DISPLAY_SETTINGS)) }
-        catch (_: Exception) { startActivity(Intent(Settings.ACTION_DISPLAY_SETTINGS)) }
-        Toast.makeText(this, "Switch Night Light in Android settings. Direct switching needs the optional secure-settings grant.", Toast.LENGTH_LONG).show()
+        try { startActivity(Intent(Settings.ACTION_DISPLAY_SETTINGS)) } catch (_: Exception) { }
+    }
+    Toast.makeText(
+        this,
+        "Switch Night Light in Android settings. Direct switching needs the optional secure-settings grant.",
+        Toast.LENGTH_LONG
+    ).show()
+    return false
+}
+
+private fun MainActivity.toggleNightLight() {
+    sudoIf(hasSecureSettings(), "Switch Night Light") {
+        setNightLight(!isNightLightEnabled())
+    }
+}
+
+private const val KEY_TRAY_REMINDER_AT = "reminder_at"
+private const val TRAY_REMINDER_REQUEST = 8801
+
+private fun MainActivity.trayReminderIntent(): PendingIntent = PendingIntent.getBroadcast(
+    this,
+    TRAY_REMINDER_REQUEST,
+    Intent(this, ReminderReceiver::class.java).apply { action = ReminderReceiver.ACTION_FIRE },
+    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+)
+
+internal fun MainActivity.reminderRemainingMs(): Long =
+    (prefs.getLong(KEY_TRAY_REMINDER_AT, 0L) - System.currentTimeMillis()).coerceAtLeast(0L)
+
+internal fun MainActivity.cancelReminder() {
+    (getSystemService(Context.ALARM_SERVICE) as AlarmManager).cancel(trayReminderIntent())
+    prefs.edit().remove(KEY_TRAY_REMINDER_AT).apply()
+    refreshOmarchyActionTray()
+}
+
+internal fun MainActivity.scheduleReminder(minutes: Int): Boolean {
+    if (minutes !in 1..1440) {
+        Toast.makeText(this, "Enter 1–1440 minutes", Toast.LENGTH_SHORT).show()
+        return false
+    }
+    if (Build.VERSION.SDK_INT >= 33 &&
+        checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+    ) {
+        Toast.makeText(this, "Allow notifications, then set the reminder again.", Toast.LENGTH_LONG).show()
+        requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 743)
+        return false
+    }
+    val alarm = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+    if (Build.VERSION.SDK_INT >= 31 && !alarm.canScheduleExactAlarms()) {
+        try {
+            startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                android.net.Uri.parse("package:$packageName")))
+            Toast.makeText(this, "Allow Sorairo to set exact alarms, then set the reminder again.", Toast.LENGTH_LONG).show()
+        } catch (_: Exception) {
+            Toast.makeText(this, "Enable Alarms & reminders access for Sorairo in Settings.", Toast.LENGTH_LONG).show()
+        }
+        return false
+    }
+    val triggerAt = System.currentTimeMillis() + minutes * 60_000L
+    return try {
+        if (Build.VERSION.SDK_INT >= 23) {
+            alarm.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, trayReminderIntent())
+        } else {
+            @Suppress("DEPRECATION")
+            alarm.setExact(AlarmManager.RTC_WAKEUP, triggerAt, trayReminderIntent())
+        }
+        prefs.edit().putLong(KEY_TRAY_REMINDER_AT, triggerAt).apply()
+        refreshOmarchyActionTray()
+        Toast.makeText(this, "Reminder set for $minutes minute(s).", Toast.LENGTH_SHORT).show()
+        true
+    } catch (_: SecurityException) {
+        Toast.makeText(this, "Exact alarm access is required for accurate reminders.", Toast.LENGTH_LONG).show()
+        false
     }
 }
 
@@ -365,6 +464,8 @@ private fun MainActivity.showReminderInput() {
                                 @Suppress("DEPRECATION")
                                 alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerAt, pending)
                             }
+                            prefs.edit().putLong(KEY_TRAY_REMINDER_AT, triggerAt).apply()
+                            refreshOmarchyActionTray()
                             Toast.makeText(this@showReminderInput, "Reminder set for $minutes minute(s).", Toast.LENGTH_SHORT).show()
                             activeDialog?.dismiss()
                         } catch (_: SecurityException) {
@@ -383,14 +484,18 @@ private var MainActivity.activeDialog: Dialog?
     set(value) { trayDialogs[this] = value }
 private val trayDialogs = WeakHashMap<MainActivity, Dialog>()
 
-private fun MainActivity.trayDialogRoot(bg: Int, border: Int): LinearLayout =
+internal fun MainActivity.dismissTrayDialog() {
+    activeDialog?.dismiss()
+}
+
+internal fun MainActivity.trayDialogRoot(bg: Int, border: Int): LinearLayout =
     LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(dp(18), dp(16), dp(18), dp(14))
         background = GradientDrawable().apply { setColor(bg or (0xFF shl 24)); setStroke(dp(1), border); cornerRadius = 0f }
     }
 
-private fun MainActivity.trayDialogActions(vararg actions: Pair<String, () -> Unit>): View =
+internal fun MainActivity.trayDialogActions(vararg actions: Pair<String, () -> Unit>): View =
     LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.END
@@ -403,7 +508,7 @@ private fun MainActivity.trayDialogActions(vararg actions: Pair<String, () -> Un
         }
     }
 
-private fun MainActivity.showTrayDialog(root: View, maxWidthDp: Int) {
+internal fun MainActivity.showTrayDialog(root: View, maxWidthDp: Int) {
     activeDialog?.dismiss()
     val dialog = Dialog(this)
     activeDialog = dialog
@@ -433,8 +538,64 @@ private fun MainActivity.showScreenRecordingMenu() {
     showTrayDialog(root, 480)
 }
 
-private fun MainActivity.requestScreenRecording() {
-    showScreenRecordingMenu()
+internal fun MainActivity.toggleScreenRecording() {
+    if (ScreenRecordService.recording) stopScreenRecording() else startScreenRecording()
+}
+
+internal fun MainActivity.startScreenRecording() {
+    if (ScreenRecordService.recording) return
+    try {
+        val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        screenCaptureRequest.launch(manager.createScreenCaptureIntent())
+    } catch (_: Exception) {
+        Toast.makeText(this, "This device can't start a screen recording", Toast.LENGTH_LONG).show()
+    }
+}
+
+internal fun MainActivity.stopScreenRecording() {
+    try {
+        startService(Intent(this, ScreenRecordService::class.java).setAction(ScreenRecordService.ACTION_STOP))
+    } catch (_: Exception) { }
+}
+
+internal fun MainActivity.onScreenCaptureResult(resultCode: Int, data: Intent?) {
+    if (resultCode != Activity.RESULT_OK || data == null) {
+        Toast.makeText(this, "Screen recording cancelled", Toast.LENGTH_SHORT).show()
+        return
+    }
+    var width: Int
+    var height: Int
+    if (Build.VERSION.SDK_INT >= 30) {
+        val bounds = windowManager.currentWindowMetrics.bounds
+        width = bounds.width()
+        height = bounds.height()
+    } else {
+        val metrics = DisplayMetrics()
+        @Suppress("DEPRECATION")
+        windowManager.defaultDisplay.getRealMetrics(metrics)
+        width = metrics.widthPixels
+        height = metrics.heightPixels
+    }
+    val longSide = maxOf(width, height)
+    if (longSide > 1920) {
+        val factor = 1920f / longSide
+        width = (width * factor).toInt()
+        height = (height * factor).toInt()
+    }
+    width = width / 2 * 2
+    height = height / 2 * 2
+    val service = Intent(this, ScreenRecordService::class.java)
+        .setAction(ScreenRecordService.ACTION_START)
+        .putExtra(ScreenRecordService.EXTRA_CODE, resultCode)
+        .putExtra(ScreenRecordService.EXTRA_DATA, data)
+        .putExtra(ScreenRecordService.EXTRA_W, width)
+        .putExtra(ScreenRecordService.EXTRA_H, height)
+        .putExtra(ScreenRecordService.EXTRA_DPI, resources.displayMetrics.densityDpi)
+    try {
+        startForegroundService(service)
+    } catch (_: Exception) {
+        Toast.makeText(this, "Couldn't start the recorder", Toast.LENGTH_LONG).show()
+    }
 }
 
 private fun MainActivity.showSudoUnavailable() {

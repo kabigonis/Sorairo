@@ -12,6 +12,8 @@ import android.os.Build
 /** Delivers a quiet local Sorairo reminder notification when the countdown ends. */
 class ReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
+        context.getSharedPreferences("launcher", Context.MODE_PRIVATE)
+            .edit().remove("reminder_at").apply()
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channelId = CHANNEL_ID
 

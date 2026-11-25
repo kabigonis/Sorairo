@@ -180,6 +180,18 @@ class MainActivity : AppCompatActivity() {
 
     internal val prefs by lazy { getSharedPreferences("launcher", MODE_PRIVATE) }
 
+    /** Android's per-session consent for screen recording. */
+    internal val screenCaptureRequest =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            onScreenCaptureResult(result.resultCode, result.data)
+        }
+
+    /** Device screen-lock authentication used by Sorairo's sudo gate. */
+    internal val sudoAuth =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            onSudoResult(result.resultCode == android.app.Activity.RESULT_OK)
+        }
+
     internal val wifiPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (granted) showWifiPanel() else
