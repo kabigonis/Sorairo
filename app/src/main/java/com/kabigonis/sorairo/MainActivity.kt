@@ -851,7 +851,9 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             val lp = { LinearLayout.LayoutParams(dp(38), dp(34)) }
-            // left to right: Wi-Fi, audio, display, battery (battery is the right-most)
+            // World clock lives beside the system status controls, matching the Omarchy top bar.
+            addView(barButton(BarKind.WORLDCLOCK, WorldClockGlobeView(this@MainActivity, p.cFg), 17, 17) { showWorldClock() }, lp())
+            // left to right: world clock, Wi-Fi, audio, display, battery
             addView(barButton(BarKind.WIFI, barWifi, 17, 15) { showNetworkPanel() }, lp())
             addView(barButton(BarKind.AUDIO, barAudio, 17, 15) { showAudioPanel() }, lp())
             addView(barButton(BarKind.DISPLAY, barDisplay, 17, 15) { showDisplayPanel() }, lp())
