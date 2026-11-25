@@ -30,6 +30,7 @@ Sorairo is a keyboard-first Android home-screen launcher inspired by Omarchy and
 - **Appearance controls:** themes (Tokyo Night, Catppuccin, Gruvbox, Nord, and Dracula), fonts, terminal colors, window opacity, and custom wallpaper.
 - **Top bar:** clock, Wi-Fi link speed, headphones, battery, now-playing information, and a small animated visualizer.
 - **Calendar popup:** tap the clock (when the Dynamic Island is off) for an Omarchy-style calendar with a year-progress bar and week numbers.
+- **World clock:** tap the globe beside the clock for a card per city with local time, weather, offset from your time zone and a day/night track (the dot turns sun-coloured while the sun is up). Add cities with the search box (Open-Meteo geocoding), hold a card to remove cities, tap a temperature to switch °F/°C. Needs internet for weather and search only.
 - **Top-bar icons:** battery, display, audio and Wi-Fi, left to right. Each icon gets an animated underline while its panel is open, and the popups sit under the icon like Omarchy's.
 - **Battery panel:** charge, state (`SPENDING JOULES` on battery), time left, power draw, estimated size, cycles, temperature and a Power-saver / Balanced switch.
 - **Display panel:** brightness (needs "modify system settings"), text size and UI scale (1x, 1.25x, 1.5x, 2x). Terminal: `display`, `scale <x>`.

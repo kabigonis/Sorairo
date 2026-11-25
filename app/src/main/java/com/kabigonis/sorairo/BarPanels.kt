@@ -22,7 +22,7 @@ import java.util.Locale
 
 // Shared pieces for the four top-bar icon panels: battery, display, audio and network.
 
-internal enum class BarKind { BATTERY, DISPLAY, AUDIO, WIFI, CALENDAR }
+internal enum class BarKind { BATTERY, DISPLAY, AUDIO, WIFI, CALENDAR, WORLD_CLOCK }
 
 // ---- pure helpers (unit tested) ----
 
@@ -169,6 +169,7 @@ internal fun MainActivity.openBarPanel(kind: BarKind) {
         BarKind.DISPLAY -> showDisplayPanel()
         BarKind.BATTERY -> showBatteryPanel()
         BarKind.CALENDAR -> showCalendarPopup()
+        BarKind.WORLD_CLOCK -> showWorldClockPanel()
     }
 }
 
