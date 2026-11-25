@@ -100,7 +100,7 @@ internal fun MainActivity.showWorldClockPanel() {
     fun save() = prefs.edit().putString(WORLD_CLOCK_PREF, encodeZones(zones)).apply()
 
     fun hideKeyboard() {
-        val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+        val imm = getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as InputMethodManager
         imm.hideSoftInputFromWindow(root.windowToken, 0)
     }
 
