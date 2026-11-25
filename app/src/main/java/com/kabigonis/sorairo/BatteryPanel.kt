@@ -252,8 +252,12 @@ internal fun MainActivity.showBatteryPanel() {
             }
         }
     }
-    saverBtn.tv.setOnClickListener { sudoIf(canSetBatterySaver(), "Switch Battery Saver") { switchTo(true) } }
-    balancedBtn.tv.setOnClickListener { sudoIf(canSetBatterySaver(), "Switch Battery Saver") { switchTo(false) } }
+    saverBtn.tv.setOnClickListener {
+        sudoIf(canSetBatterySaver(), "Switch Battery Saver") { switchTo(true) }
+    }
+    balancedBtn.tv.setOnClickListener {
+        sudoIf(canSetBatterySaver(), "Switch Battery Saver") { switchTo(false) }
+    }
     root.addView(LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         addView(saverBtn.tv, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(8) })

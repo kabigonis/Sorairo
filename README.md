@@ -35,14 +35,12 @@ Sorairo is a keyboard-first Android home-screen launcher inspired by Omarchy and
 - **Display panel:** brightness (needs "modify system settings"), text size and UI scale (1x, 1.25x, 1.5x, 2x). Terminal: `display`, `scale <x>`.
 - **Audio panel:** mute switch and media volume. No special permission needed. Terminal: `audio`.
 - **Network panel:** Wi-Fi state and signal, ping, packet loss, speeds, totals, IP and gateway, plus a DNS provider switcher (DHCP, Cloudflare, Google, Custom). Terminal: `network`, `dns custom <host>`.
+- **World Clock:** tap the globe beside the clock for cities with local time, date, offset from here and a 24-hour strip. Add a city with the button, long-press a city to remove it. Defaults are Los Angeles, Paris and Tokyo.
 - **Wi-Fi:** tap the network label in the top bar to open the Wi-Fi panel.
-- **Action tray (left of the clock):** like Waybar's tray-expander. Collapsed, only indicators that are on show (recording, reminder, Night Light, silenced, Stay Awake, sudo). Tap the chevron to reveal everything; long-press an icon for its name.
-  - **Screen recording:** real recording to `Movies/Sorairo` (video only). Android asks for permission every time. Terminal: `rec`, `rec stop`.
-  - **Reminder:** countdown notification with sound; the icon lights up while one is pending, tap it to clear. Terminal: `remind <min>`, `remind off`.
-  - **Night Light:** one-tap with the adb grant, otherwise opens Android's Night Light settings. Terminal: `sudo night`.
-  - **Silence notifications:** Do Not Disturb with media and alarms still allowed. Terminal: `dnd`.
-  - **Stay Awake:** keeps the screen on while Sorairo is in front; with "Modify system settings" it also raises the system screen timeout for every app. Terminal: `awake`.
-- **sudo:** the red password-field glyph. Privileged actions (Night Light, Battery Saver, Private DNS, system-wide Stay Awake) ask for your screen lock first, like a sudo password. Unlocking lasts 5 minutes. Tap the glyph for status, a permission checklist, `LOCK` and an opt-in `PASSWORDLESS` mode. Terminal: `sudo`, `sudo -k`, `sudo -v`, `sudo passwordless on|off`, `sudo <command>`.
+- **Action tray:** compact indicators beside the clock for recording, reminders, Night Light, Do Not Disturb, Stay Awake and sudo. Tap the empty tray area to expand the actions; long-press an icon for its label.
+- **Screen recording:** asks for Android's screen-capture consent each time and saves video-only recordings to `Movies/Sorairo`. Tap the recording indicator again or use `rec stop` to stop.
+- **Reminders:** set a local countdown from the tray or with `remind <minutes>`; use `remind off` to clear it.
+- **sudo:** privileged Sorairo changes can request the device's screen lock; the unlock lasts five minutes. Passwordless mode is an explicit opt-in. The tray keeps the original **Disable Passwordless Sudo** panel. Terminal: `sudo`, `sudo -k`, `sudo passwordless on|off`.
 
 ## Future Updates
 
@@ -68,6 +66,8 @@ Sorairo is still under development and may not work the same way on every device
 
 Android does not let ordinary third-party apps directly toggle every system setting. Android has no "performance" power profile, so the battery panel offers Power-saver and Balanced (Battery Saver off). Switching Battery Saver and the DNS provider (Android's Private DNS) directly needs a one-time `adb shell pm grant <package> android.permission.WRITE_SECURE_SETTINGS`; without it Power-saver opens Android's Battery Saver settings and the DNS buttons show the steps. The Wi-Fi network name is hidden by Android unless the optional location permission is granted; everything else in the Wi-Fi icon and panel works without it. Charge cycles and live power draw depend on what the device reports and show `n/a` otherwise. The `vpn` command opens the VPN app you choose; Sorairo is not itself a VPN.
 
+Night Light direct switching and Battery Saver/Private DNS changes require the optional secure-settings grant. The tray's sudo prompt is an additional screen-lock confirmation for privileged actions; it does not grant Android permissions or root access.
+
 The visualizer beside the song name is decorative and does not perform real audio analysis. Available system information and controls can vary by Android version and device.
 
 ## Permissions
@@ -76,12 +76,11 @@ The visualizer beside the song name is decorative and does not perform real audi
 |---|---|
 | Notification access | Read currently playing media information (optional) |
 | Modify system settings | Brightness slider (optional) |
+| Screen capture and media-projection foreground service | Screen recording (consent asked for every recording) |
+| Notifications and exact alarms | Countdown reminder notifications |
 | Do Not Disturb access | Legacy silent-mode control (optional) |
 | Write secure settings | Switch Battery Saver and Private DNS from the panels (optional, granted over adb) |
 | Network and Wi-Fi state | Show connection type and link speed |
-| Screen capture (asked each time) and foreground service | Tray screen recording |
-| Notifications and exact alarms | Reminders (falls back to an approximate alarm if exact alarms are refused) |
-| Screen lock | The sudo prompt (no extra permission needed) |
 
 Permissions are requested when you use the matching feature.
 

@@ -370,3 +370,53 @@ class ClockView(context: Context, lineColor: Int) : TextView(context) {
         }
     }
 }
+
+/** Globe glyph for the World Clock: outline, equator, a meridian ellipse and two latitude lines. */
+class GlobeIconView(context: Context, private val color: Int) : View(context) {
+    private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = this@GlobeIconView.color }
+
+    override fun onDraw(canvas: Canvas) {
+        val s = minOf(width, height).toFloat()
+        line.strokeWidth = s * 0.09f
+        val cx = width / 2f
+        val cy = height / 2f
+        val r = s * 0.44f
+        canvas.drawCircle(cx, cy, r, line)
+        canvas.drawLine(cx - r, cy, cx + r, cy, line)
+        canvas.drawOval(RectF(cx - r * 0.42f, cy - r, cx + r * 0.42f, cy + r), line)
+        for (dy in floatArrayOf(-0.5f, 0.5f)) {
+            val half = kotlin.math.sqrt(1f - dy * dy) * r
+            canvas.drawLine(cx - half, cy + dy * r, cx + half, cy + dy * r, line)
+        }
+    }
+}
+
+/** A 24-hour strip for one city: a faint track, a brighter daylight span and a knob at the local time. */
+class DayTrackView(
+    context: Context,
+    private val track: Int,
+    private val daylight: Int,
+    private val knobDay: Int,
+    private val knobNight: Int
+) : View(context) {
+    var fraction = 0f
+        set(v) { field = v.coerceIn(0f, 1f); invalidate() }
+    var daytime = false
+        set(v) { field = v; invalidate() }
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+
+    override fun onDraw(canvas: Canvas) {
+        val pad = uiDp(7).toFloat()
+        val left = pad
+        val right = width - pad
+        val cy = height / 2f
+        val t = uiDp(3).toFloat()
+        paint.color = track
+        canvas.drawRoundRect(RectF(left, cy - t / 2, right, cy + t / 2), t / 2, t / 2, paint)
+        paint.color = daylight
+        val span = right - left
+        canvas.drawRoundRect(RectF(left + span * 6f / 24f, cy - t / 2, left + span * 18f / 24f, cy + t / 2), t / 2, t / 2, paint)
+        paint.color = if (daytime) knobDay else knobNight
+        canvas.drawCircle(left + span * fraction, cy, uiDp(7).toFloat(), paint)
+    }
+}
