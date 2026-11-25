@@ -131,7 +131,7 @@ internal fun MainActivity.showWorldClock() {
     body.addView(cards,LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(10)})
     val search=EditText(this).apply{
         hint="Search cities…";textSize=13f*uiScale;typeface=font;setTextColor(p.cFg);setHintTextColor(p.cDim)
-        singleLine=true;setPadding(dp(12),0,dp(12),0);background=box(p.cSel,p.cDim and 0x00FFFFFF or (0x55 shl 24))
+        setSingleLine(true);setPadding(dp(12),0,dp(12),0);background=box(p.cSel,p.cDim and 0x00FFFFFF or (0x55 shl 24))
     }
     body.addView(search,LinearLayout.LayoutParams(-1,dp(42)).apply{topMargin=dp(12)})
     val suggestions=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};body.addView(suggestions)
