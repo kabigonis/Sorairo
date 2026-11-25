@@ -35,6 +35,7 @@ Sorairo is a keyboard-first Android home-screen launcher inspired by Omarchy and
 - **Display panel:** brightness (needs "modify system settings"), text size and UI scale (1x, 1.25x, 1.5x, 2x). Terminal: `display`, `scale <x>`.
 - **Audio panel:** mute switch and media volume. No special permission needed. Terminal: `audio`.
 - **Network panel:** Wi-Fi state and signal, ping, packet loss, speeds, totals, IP and gateway, plus a DNS provider switcher (DHCP, Cloudflare, Google, Custom). Terminal: `network`, `dns custom <host>`.
+- **World Clock:** tap the globe beside the clock for cities with local time, date, offset from here and a 24-hour strip. Add a city with the button, long-press a city to remove it. Defaults are Los Angeles, Paris and Tokyo.
 - **Wi-Fi:** tap the network label in the top bar to open the Wi-Fi panel.
 - **Action tray:** compact indicators beside the clock for recording, reminders, Night Light, Do Not Disturb, Stay Awake and sudo. Tap the empty tray area to expand the actions; long-press an icon for its label.
 - **Screen recording:** asks for Android's screen-capture consent each time and saves video-only recordings to `Movies/Sorairo`. Tap the recording indicator again or use `rec stop` to stop.
