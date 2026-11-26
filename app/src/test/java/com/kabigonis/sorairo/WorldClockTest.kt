@@ -142,4 +142,45 @@ class WorldClockTest {
         assertEquals("CET", zoneAbbrev(ZoneId.of("Europe/Paris"), at))
         assertEquals("JST", zoneAbbrev(ZoneId.of("Asia/Tokyo"), at))
     }
+
+    @Test fun shiftFormatting() {
+        assertEquals("+3h 15m", formatShift(3 * 3_600_000L + 15 * 60_000L))
+        assertEquals("-45m", formatShift(-45 * 60_000L))
+        assertEquals("+2h", formatShift(2 * 3_600_000L))
+        assertEquals("+0m", formatShift(0L))
+    }
+
+    @Test fun subsolarPointFollowsTheSeasonsAndTheClock() {
+        val dec = subsolarPoint(Instant.parse("2026-12-21T12:00:00Z"))
+        assertEquals(-23.4, dec.first, 0.6)
+        assertEquals(0.0, dec.second, 4.0)
+        val jun = subsolarPoint(Instant.parse("2026-06-21T12:00:00Z"))
+        assertEquals(23.4, jun.first, 0.6)
+        // six hours earlier the sun is a quarter turn east
+        val morning = subsolarPoint(Instant.parse("2026-09-23T06:00:00Z"))
+        assertEquals(90.0, morning.second, 5.0)
+    }
+
+    @Test fun mapKnowsLandFromSea() {
+        assertTrue(WorldMap.isLand(2.35, 48.85))      // Paris
+        assertTrue(WorldMap.isLand(139.7, 36.0))      // Honshu
+        assertTrue(WorldMap.isLand(-100.0, 40.0))     // central USA
+        assertTrue(WorldMap.isLand(15.0, 15.0))       // Sahel
+        assertTrue(WorldMap.isLand(135.0, -25.0))     // Australia
+        assertFalse(WorldMap.isLand(-150.0, 0.0))     // Pacific
+        assertFalse(WorldMap.isLand(-30.0, 30.0))     // Atlantic
+        assertFalse(WorldMap.isLand(75.0, -30.0))     // Indian Ocean
+    }
+
+    @Test fun dotGridIsPopulated() {
+        val d = WorldMap.dots
+        assertTrue(d.size > 1000)
+        assertTrue(d.land.count { it } > 100)
+    }
+
+    @Test fun commonZonesGetNamesNotOffsets() {
+        val at = Instant.parse("2026-11-22T12:00:00Z")
+        assertEquals("IST", zoneAbbrev(ZoneId.of("Asia/Kolkata"), at))
+        assertEquals("JST", zoneAbbrev(ZoneId.of("Asia/Tokyo"), at))
+    }
 }

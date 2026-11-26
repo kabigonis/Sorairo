@@ -88,32 +88,83 @@ internal fun relativeDayLabel(cityDate: LocalDate, homeDate: LocalDate): String?
 internal fun dayFraction(t: ZonedDateTime): Double =
     (t.hour * 3600 + t.minute * 60 + t.second) / 86400.0
 
-private val ZONE_NAME_FALLBACK = mapOf(
-    "CET" to listOf(
-        "Europe/Paris", "Europe/Berlin", "Europe/Madrid", "Europe/Rome", "Europe/Amsterdam",
+private val ZONE_ABBR: Map<String, Pair<String, String>> = HashMap<String, Pair<String, String>>().apply {
+    fun put(std: String, dst: String, vararg ids: String) {
+        for (id in ids) this[id] = Pair(std, dst)
+    }
+    put(
+        "CET", "CEST", "Europe/Paris", "Europe/Berlin", "Europe/Madrid", "Europe/Rome", "Europe/Amsterdam",
         "Europe/Brussels", "Europe/Vienna", "Europe/Zurich", "Europe/Stockholm", "Europe/Oslo",
         "Europe/Copenhagen", "Europe/Prague", "Europe/Warsaw", "Europe/Budapest"
-    ),
-    "EET" to listOf(
-        "Europe/Athens", "Europe/Helsinki", "Europe/Kiev", "Europe/Kyiv", "Europe/Bucharest", "Europe/Sofia"
     )
-)
+    put("EET", "EEST", "Europe/Athens", "Europe/Helsinki", "Europe/Kiev", "Europe/Kyiv", "Europe/Bucharest", "Europe/Sofia")
+    put("GMT", "BST", "Europe/London")
+    put("WET", "WEST", "Europe/Lisbon")
+    put("MSK", "MSK", "Europe/Moscow", "Europe/Minsk")
+    put("JST", "JST", "Asia/Tokyo")
+    put("KST", "KST", "Asia/Seoul")
+    put("IST", "IST", "Asia/Kolkata", "Asia/Calcutta")
+    put("CST", "CST", "Asia/Shanghai", "Asia/Taipei")
+    put("HKT", "HKT", "Asia/Hong_Kong")
+    put("SGT", "SGT", "Asia/Singapore")
+    put("ICT", "ICT", "Asia/Bangkok", "Asia/Ho_Chi_Minh", "Asia/Saigon")
+    put("WIB", "WIB", "Asia/Jakarta")
+    put("PHT", "PHT", "Asia/Manila")
+    put("PKT", "PKT", "Asia/Karachi")
+    put("GST", "GST", "Asia/Dubai")
+    put("AEST", "AEDT", "Australia/Sydney", "Australia/Melbourne", "Australia/Canberra")
+    put("AEST", "AEST", "Australia/Brisbane")
+    put("ACST", "ACDT", "Australia/Adelaide")
+    put("AWST", "AWST", "Australia/Perth")
+    put("NZST", "NZDT", "Pacific/Auckland")
+    put("SAST", "SAST", "Africa/Johannesburg")
+    put("WAT", "WAT", "Africa/Lagos")
+    put("EAT", "EAT", "Africa/Nairobi")
+    put("EET", "EEST", "Africa/Cairo")
+    put("BRT", "BRT", "America/Sao_Paulo")
+    put("ART", "ART", "America/Argentina/Buenos_Aires", "America/Buenos_Aires")
+    put("CST", "CDT", "America/Mexico_City")
+}
 
-/** Short zone name (PST, CET, JST). Falls back to UTC+5:30 style when the system has no short name. */
+/** Short zone name (PST, CET, JST). Falls back to UTC+5:30 style when nothing better is known. */
 internal fun zoneAbbrev(zone: ZoneId, at: Instant): String {
     val daylight = zone.rules.isDaylightSavings(at)
     val name = TimeZone.getTimeZone(zone.id).getDisplayName(daylight, TimeZone.SHORT, Locale.US)
     if (name.isNotEmpty() && !name.startsWith("GMT") && !name.startsWith("UTC")) return name
-    for ((abbr, ids) in ZONE_NAME_FALLBACK) {
-        if (zone.id in ids) {
-            return if (!daylight) abbr else if (abbr == "CET") "CEST" else "EEST"
-        }
-    }
+    ZONE_ABBR[zone.id]?.let { return if (daylight) it.second else it.first }
     val secs = zone.rules.getOffset(at).totalSeconds
     val h = abs(secs) / 3600
     val m = (abs(secs) % 3600) / 60
     val sign = if (secs < 0) "-" else "+"
     return if (m == 0) "UTC$sign$h" else String.format(Locale.US, "UTC%s%d:%02d", sign, h, m)
+}
+
+/** "+3h 15m", "-45m", "+2h": how far the clocks have been scrubbed from now. */
+internal fun formatShift(ms: Long): String {
+    val sign = if (ms < 0) "-" else "+"
+    val mins = abs(ms) / 60000L
+    val h = mins / 60L
+    val m = mins % 60L
+    return when {
+        h == 0L -> "$sign${m}m"
+        m == 0L -> "$sign${h}h"
+        else -> "$sign${h}h ${m}m"
+    }
+}
+
+/** Where the sun is straight overhead at [at], as (latitude, longitude) in degrees. */
+internal fun subsolarPoint(at: Instant): Pair<Double, Double> {
+    val t = at.atZone(ZoneId.of("UTC"))
+    val hour = t.hour + t.minute / 60.0 + t.second / 3600.0
+    val g = 2.0 * Math.PI / 365.0 * (t.dayOfYear - 1 + (hour - 12.0) / 24.0)
+    val eq = 229.18 * (0.000075 + 0.001868 * cos(g) - 0.032077 * sin(g) -
+        0.014615 * cos(2 * g) - 0.040849 * sin(2 * g))
+    val decl = 0.006918 - 0.399912 * cos(g) + 0.070257 * sin(g) - 0.006758 * cos(2 * g) +
+        0.000907 * sin(2 * g) - 0.002697 * cos(3 * g) + 0.00148 * sin(3 * g)
+    var lon = -((hour * 60.0 + eq) - 720.0) / 4.0
+    while (lon > 180.0) lon -= 360.0
+    while (lon < -180.0) lon += 360.0
+    return Pair(Math.toDegrees(decl), lon)
 }
 
 // ---- daylight ----

@@ -15,6 +15,7 @@ import android.text.InputType
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -33,7 +34,9 @@ import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.min
 import kotlin.math.sin
 
@@ -42,35 +45,40 @@ import kotlin.math.sin
 
 // ---------------------------------------------------------------- views
 
-/** Globe glyph: a disc with the continents cut out. [ring] adds the outer ring used in the popup header. */
-internal class GlobeIconView(context: Context, private val tint: Int, private val ring: Boolean = false) : View(context) {
+/** Globe glyph: a ring with the Americas, Africa and Europe filled in. */
+internal class GlobeIconView(context: Context, private val tint: Int) : View(context) {
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = tint }
-    private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = tint; strokeWidth = 3.4f }
-    private val shape = Path()
+    private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = tint; strokeWidth = 5f }
+    private val land = Path()
 
     init {
-        val disc = Path().apply { addCircle(50f, 50f, 48f, Path.Direction.CW) }
-        val land = Path().apply {
-            // western landmass
-            moveTo(18f, 24f)
-            cubicTo(30f, 14f, 42f, 20f, 40f, 30f)
-            cubicTo(38f, 38f, 30f, 38f, 32f, 48f)
-            cubicTo(34f, 58f, 42f, 60f, 40f, 72f)
-            cubicTo(38f, 82f, 30f, 84f, 26f, 76f)
-            cubicTo(24f, 64f, 18f, 56f, 14f, 46f)
-            cubicTo(10f, 36f, 12f, 30f, 18f, 24f)
-            close()
-            // eastern landmass
-            moveTo(56f, 26f)
-            cubicTo(66f, 18f, 80f, 24f, 86f, 36f)
-            cubicTo(88f, 46f, 78f, 48f, 74f, 56f)
-            cubicTo(70f, 66f, 64f, 76f, 58f, 70f)
-            cubicTo(52f, 60f, 56f, 52f, 52f, 44f)
-            cubicTo(48f, 36f, 50f, 30f, 56f, 26f)
-            close()
+        val lat0 = Math.toRadians(15.0)
+        val lon0 = Math.toRadians(-40.0)
+        val raw = Path()
+        for (poly in WorldMap.polygons) {
+            val n = poly.size / 2
+            for (i in 0 until n) {
+                val lo = Math.toRadians(poly[2 * i].toDouble())
+                val la = Math.toRadians(poly[2 * i + 1].toDouble())
+                val cosc = sin(lat0) * sin(la) + cos(lat0) * cos(la) * cos(lo - lon0)
+                var x = cos(la) * sin(lo - lon0)
+                var y = cos(lat0) * sin(la) - sin(lat0) * cos(la) * cos(lo - lon0)
+                if (cosc < 0.0) {
+                    val len = hypot(x, y)
+                    if (len > 1e-6) {
+                        x /= len
+                        y /= len
+                    }
+                }
+                val px = (50.0 + 38.0 * x).toFloat()
+                val py = (50.0 - 38.0 * y).toFloat()
+                if (i == 0) raw.moveTo(px, py) else raw.lineTo(px, py)
+            }
+            raw.close()
         }
-        shape.set(disc)
-        shape.op(land, Path.Op.DIFFERENCE)
+        val disc = Path().apply { addCircle(50f, 50f, 38f, Path.Direction.CW) }
+        land.set(raw)
+        land.op(disc, Path.Op.INTERSECT)
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -79,13 +87,8 @@ internal class GlobeIconView(context: Context, private val tint: Int, private va
         canvas.save()
         canvas.translate((width - s) / 2f, (height - s) / 2f)
         canvas.scale(s / 100f, s / 100f)
-        if (ring) {
-            canvas.drawCircle(50f, 50f, 47f, line)
-            canvas.translate(50f, 50f)
-            canvas.scale(0.74f, 0.74f)
-            canvas.translate(-50f, -50f)
-        }
-        canvas.drawPath(shape, fill)
+        canvas.drawCircle(50f, 50f, 45f, line)
+        canvas.drawPath(land, fill)
         canvas.restore()
     }
 }
@@ -228,6 +231,10 @@ internal class DayTrackView(
     private var shown = 0f
     private var anim: ValueAnimator? = null
     private var sweeping = false
+    private var dragging = false
+
+    /** Called with the knob position (0..1, snapped to 15 minutes) while the user drags it. */
+    var onScrub: ((Float) -> Unit)? = null
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val rect = RectF()
 
@@ -235,7 +242,7 @@ internal class DayTrackView(
     fun setFraction(fraction: Float, durationMs: Long = 0L, delayMs: Long = 0L, fromStart: Boolean = false) {
         val target = fraction.coerceIn(0f, 1f)
         if (durationMs <= 0L) {
-            if (sweeping) return
+            if (sweeping || dragging) return
             if (shown != target) {
                 shown = target
                 invalidate()
@@ -265,6 +272,36 @@ internal class DayTrackView(
         }
     }
 
+    private fun scrubTo(x: Float) {
+        val pad = uiDp(7).toFloat()
+        val f = ((x - pad) / (width - 2 * pad)).coerceIn(0f, 1f)
+        shown = Math.round(f * 96f) / 96f
+        invalidate()
+    }
+
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        val cb = onScrub ?: return false
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                parent?.requestDisallowInterceptTouchEvent(true)
+                anim?.cancel()
+                sweeping = false
+                dragging = true
+                scrubTo(e.x)
+                cb(shown)
+            }
+            MotionEvent.ACTION_MOVE -> if (dragging) {
+                scrubTo(e.x)
+                cb(shown)
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                dragging = false
+                parent?.requestDisallowInterceptTouchEvent(false)
+            }
+        }
+        return true
+    }
+
     override fun onDetachedFromWindow() {
         anim?.cancel()
         sweeping = false
@@ -289,6 +326,172 @@ internal class DayTrackView(
         }
         paint.color = if (sun.isUp(shown * 24.0)) dayKnob else nightKnob
         canvas.drawCircle(left + (right - left) * shown, cy, uiDp(6).toFloat(), paint)
+    }
+}
+
+/** A dotted, draggable globe: land lights up on the day side and every city is pinned on it. */
+internal class GlobeModelView(
+    context: Context,
+    private val landColor: Int,
+    private val oceanColor: Int,
+    ringColor: Int,
+    private val markerColor: Int,
+    labelColor: Int,
+    labelFont: Typeface
+) : View(context) {
+    class Marker(val name: String, val lat: Double, val lon: Double)
+
+    var markers: List<Marker> = emptyList()
+        set(v) {
+            field = v
+            invalidate()
+        }
+    var focusIndex: Int = -1
+        set(v) {
+            field = v
+            invalidate()
+        }
+
+    private var lat0 = 20.0
+    private var lon0 = 0.0
+    private var sunLat = 0.0
+    private var sunLon = 0.0
+    private var anim: ValueAnimator? = null
+    private var lastX = 0f
+    private var lastY = 0f
+    private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = ringColor }
+    private val pinPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = markerColor }
+    private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = labelColor; typeface = labelFont }
+
+    private fun tiltFor(lat: Double) = (lat * 0.6).coerceIn(-55.0, 55.0)
+
+    private fun normLon(l: Double): Double {
+        var x = l
+        while (x > 180.0) x -= 360.0
+        while (x < -180.0) x += 360.0
+        return x
+    }
+
+    fun setSun(lat: Double, lon: Double) {
+        if (abs(lat - sunLat) > 0.02 || abs(lon - sunLon) > 0.02) {
+            sunLat = lat
+            sunLon = lon
+            invalidate()
+        }
+    }
+
+    fun jumpTo(lat: Double, lon: Double) {
+        anim?.cancel()
+        lat0 = tiltFor(lat)
+        lon0 = normLon(lon)
+        invalidate()
+    }
+
+    /** Spins the globe so that (lat, lon) faces the viewer. */
+    fun focusOn(lat: Double, lon: Double, durationMs: Long = 650L) {
+        anim?.cancel()
+        val startLat = lat0
+        val startLon = lon0
+        val targetLat = tiltFor(lat)
+        val dLon = ((lon - startLon + 540.0) % 360.0 + 360.0) % 360.0 - 180.0
+        anim = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = durationMs
+            interpolator = DecelerateInterpolator(1.6f)
+            addUpdateListener {
+                val t = (it.animatedValue as Float).toDouble()
+                lat0 = startLat + (targetLat - startLat) * t
+                lon0 = normLon(startLon + dLon * t)
+                invalidate()
+            }
+            start()
+        }
+    }
+
+    private fun radius(): Float = min(width, height) / 2f - uiDp(8)
+
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                parent?.requestDisallowInterceptTouchEvent(true)
+                anim?.cancel()
+                lastX = e.x
+                lastY = e.y
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val r = radius().coerceAtLeast(1f)
+                lon0 = normLon(lon0 - Math.toDegrees(((e.x - lastX) / r).toDouble()))
+                lat0 = (lat0 + Math.toDegrees(((e.y - lastY) / r).toDouble())).coerceIn(-70.0, 70.0)
+                lastX = e.x
+                lastY = e.y
+                invalidate()
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> parent?.requestDisallowInterceptTouchEvent(false)
+        }
+        return true
+    }
+
+    override fun onDetachedFromWindow() {
+        anim?.cancel()
+        super.onDetachedFromWindow()
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        val r = radius()
+        if (r <= 0f) return
+        val cx = width / 2f
+        val cy = height / 2f
+        ringPaint.strokeWidth = maxOf(1f, uiDp(1).toFloat())
+        canvas.drawCircle(cx, cy, r, ringPaint)
+
+        val la0 = Math.toRadians(lat0)
+        val lo0 = Math.toRadians(lon0)
+        val sl0 = sin(la0)
+        val cl0 = cos(la0)
+        val sunLa = Math.toRadians(sunLat)
+        val sunLo = Math.toRadians(sunLon)
+        val sunSin = sin(sunLa)
+        val sunCos = cos(sunLa)
+        val d = WorldMap.dots
+        val landR = uiDp(2) * 0.9f
+        val seaR = uiDp(1) * 0.8f
+        for (i in 0 until d.size) {
+            val dl = d.lon[i] - lo0
+            val cdl = cos(dl)
+            val cosc = sl0 * d.sinLat[i] + cl0 * d.cosLat[i] * cdl
+            if (cosc <= 0.03) continue
+            val x = d.cosLat[i] * sin(dl)
+            val y = cl0 * d.sinLat[i] - sl0 * d.cosLat[i] * cdl
+            val sunDot = sunSin * d.sinLat[i] + sunCos * d.cosLat[i] * cos(d.lon[i] - sunLo)
+            val day = ((sunDot + 0.1) / 0.3).coerceIn(0.0, 1.0).toFloat()
+            val squash = (0.45 + 0.55 * cosc).toFloat()
+            val rad: Float
+            if (d.land[i]) {
+                dotPaint.color = withAlpha(landColor, (70 + 185 * day).toInt())
+                rad = landR * squash
+            } else {
+                dotPaint.color = withAlpha(oceanColor, (20 + 80 * day).toInt())
+                rad = seaR * squash
+            }
+            canvas.drawCircle(cx + (r * x).toFloat(), cy - (r * y).toFloat(), rad, dotPaint)
+        }
+
+        labelPaint.textSize = uiDp(10).toFloat()
+        pinPaint.strokeWidth = maxOf(1f, uiDp(1).toFloat())
+        markers.forEachIndexed { i, m ->
+            val la = Math.toRadians(m.lat)
+            val dl = Math.toRadians(m.lon) - lo0
+            val cosc = sl0 * sin(la) + cl0 * cos(la) * cos(dl)
+            if (cosc > 0.05) {
+                val px = cx + (r * cos(la) * sin(dl)).toFloat()
+                val py = cy - (r * (cl0 * sin(la) - sl0 * cos(la) * cos(dl))).toFloat()
+                val focused = i == focusIndex
+                dotPaint.color = markerColor
+                canvas.drawCircle(px, py, uiDp(if (focused) 4 else 3).toFloat(), dotPaint)
+                canvas.drawCircle(px, py, uiDp(if (focused) 8 else 6).toFloat(), pinPaint)
+                canvas.drawText(m.name, px + uiDp(11), py + labelPaint.textSize / 3f, labelPaint)
+            }
+        }
     }
 }
 
@@ -336,7 +539,13 @@ internal fun MainActivity.showWorldClockPanel() {
     val act = this
     val p = pal
     val home = ZoneId.systemDefault()
-    val is24 = android.text.format.DateFormat.is24HourFormat(this)
+    var is24 = if (prefs.contains("world_24h")) {
+        prefs.getBoolean("world_24h", false)
+    } else {
+        android.text.format.DateFormat.is24HourFormat(this)
+    }
+    var shiftMs = 0L
+    var showGlobe = prefs.getBoolean("world_globe", true)
     val dateFmt = DateTimeFormatter.ofPattern("EEE MMM d", Locale.getDefault())
     var fahrenheit = if (prefs.contains("world_fahrenheit")) {
         prefs.getBoolean("world_fahrenheit", false)
@@ -364,9 +573,18 @@ internal fun MainActivity.showWorldClockPanel() {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER
     }
-    titleRow.addView(GlobeIconView(act, p.cFg, true), lp(dp(32), dp(32)).apply { marginEnd = dp(12) })
+    titleRow.addView(GlobeIconView(act, p.cFg), lp(dp(32), dp(32)).apply { marginEnd = dp(12) })
     titleRow.addView(txt(20f, p.cFg, "World Clock").apply { setTypeface(typeface, Typeface.BOLD) })
-    root.addView(titleRow, lp(-1, -2).apply { topMargin = dp(4); bottomMargin = dp(12) })
+    root.addView(titleRow, lp(-1, -2).apply { topMargin = dp(4); bottomMargin = dp(8) })
+
+    val globe = GlobeModelView(this, p.cFg, p.cDim, withAlpha(p.cDim, 0x90), p.cAnsi[3], p.cDim, font)
+    globe.visibility = if (showGlobe) View.VISIBLE else View.GONE
+    root.addView(globe, lp(-1, dp(190)).apply { bottomMargin = dp(10) })
+    titleRow.setOnClickListener {
+        showGlobe = !showGlobe
+        prefs.edit().putBoolean("world_globe", showGlobe).apply()
+        globe.visibility = if (showGlobe) View.VISIBLE else View.GONE
+    }
 
     val cardsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
     val scroll = BoundedScrollView(this, (resources.displayMetrics.heightPixels * 0.55f).toInt()).apply {
@@ -430,6 +648,15 @@ internal fun MainActivity.showWorldClockPanel() {
         prefs.edit().putString("world_cities", encodeWorldCities(rows.map { it.city })).apply()
     }
 
+    fun syncMarkers() {
+        globe.markers = rows.map { GlobeModelView.Marker(it.city.name, it.city.lat, it.city.lon) }
+    }
+
+    fun focusRow(r: WorldRow) {
+        globe.focusIndex = rows.indexOf(r)
+        globe.focusOn(r.city.lat, r.city.lon)
+    }
+
     fun refreshChrome() {
         emptyTv.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
         val full = rows.size >= WORLD_MAX_CITIES
@@ -484,13 +711,34 @@ internal fun MainActivity.showWorldClockPanel() {
     }
 
     fun updateAll(animate: Boolean) {
-        val instant = Instant.now()
+        val instant = Instant.now().plusMillis(shiftMs)
         val localNow = ZonedDateTime.ofInstant(instant, home)
         val (hm, ap) = worldTimeParts(localNow, is24)
-        hereText = "It's $hm" + (if (ap.isEmpty()) "" else " $ap") + " here"
+        val clockText = hm + (if (ap.isEmpty()) "" else " $ap")
+        hereText = if (shiftMs == 0L) {
+            "It's $clockText here"
+        } else {
+            "$clockText here  ·  ${formatShift(shiftMs)}  ·  tap to reset"
+        }
         if (!editMode) smoothText(hereTv, hereText, animate)
         for (r in rows) renderRow(r, localNow, instant, animate)
+        val sun = subsolarPoint(instant)
+        globe.setSun(sun.first, sun.second)
     }
+
+    fun resetShift() {
+        if (shiftMs == 0L) return
+        ValueAnimator.ofFloat(shiftMs.toFloat(), 0f).apply {
+            duration = 450L
+            interpolator = DecelerateInterpolator(1.6f)
+            addUpdateListener {
+                shiftMs = (it.animatedValue as Float).toLong()
+                updateAll(false)
+            }
+            start()
+        }
+    }
+    hereTv.setOnClickListener { resetShift() }
 
     fun setEditMode(on: Boolean) {
         editMode = on
@@ -510,6 +758,8 @@ internal fun MainActivity.showWorldClockPanel() {
         rows.remove(r)
         persist()
         cardsBox.removeView(r.card)
+        globe.focusIndex = -1
+        syncMarkers()
         refreshChrome()
         if (rows.isEmpty() && editMode) setEditMode(false)
     }
@@ -584,14 +834,25 @@ internal fun MainActivity.showWorldClockPanel() {
 
         card.addView(top, lp(-1, -2))
         card.addView(sub, lp(-1, -2).apply { topMargin = dp(1) })
-        card.addView(track, lp(-1, dp(22)).apply { topMargin = dp(4) })
+        card.addView(track, lp(-1, dp(28)).apply { topMargin = dp(2) })
 
         val row = WorldRow(city, z, card, dateTv, tempTv, weatherIcon, weatherBox, removeBtn, timeTv, ampmTv, zoneTv, track)
         card.setOnLongClickListener {
             setEditMode(!editMode)
             true
         }
-        weatherBox.setOnClickListener {
+        track.onScrub = { f ->
+            val now0 = dayFraction(ZonedDateTime.now(z))
+            shiftMs = ((f - now0) * 86_400_000.0).toLong()
+            updateAll(false)
+        }
+        card.setOnClickListener { focusRow(row) }
+        timeBox.setOnClickListener {
+            is24 = !is24
+            prefs.edit().putBoolean("world_24h", is24).apply()
+            updateAll(false)
+        }
+        slot.setOnClickListener {
             if (!editMode && row.weather != null) {
                 fahrenheit = !fahrenheit
                 prefs.edit().putBoolean("world_fahrenheit", fahrenheit).apply()
@@ -617,8 +878,10 @@ internal fun MainActivity.showWorldClockPanel() {
         rows.add(r)
         cardsBox.addView(r.card, lp(-1, -2).apply { bottomMargin = dp(8) })
     }
+    syncMarkers()
     refreshChrome()
     updateAll(false)
+    rows.firstOrNull()?.let { globe.jumpTo(it.city.lat, it.city.lon - 70.0) }
 
     // start hidden, then stagger in once the popup is up
     rows.forEach {
@@ -658,8 +921,10 @@ internal fun MainActivity.showWorldClockPanel() {
         rows.add(r)
         cardsBox.addView(r.card, lp(-1, -2).apply { bottomMargin = dp(8) })
         persist()
+        syncMarkers()
         refreshChrome()
-        renderRow(r, ZonedDateTime.now(home), Instant.now(), false)
+        updateAll(false)
+        focusRow(r)
         loadWeather(r)
         sweepIn(r, 120L)
         closeSearch()
@@ -757,6 +1022,10 @@ internal fun MainActivity.showWorldClockPanel() {
     }
     dialog?.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
 
+    rows.firstOrNull()?.let {
+        globe.focusIndex = 0
+        globe.focusOn(it.city.lat, it.city.lon, 1100L)
+    }
     rows.forEachIndexed { i, r ->
         val delay = 80L + i * 55L
         r.card.animate()
