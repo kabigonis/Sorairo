@@ -139,6 +139,15 @@ internal fun zoneAbbrev(zone: ZoneId, at: Instant): String {
     return if (m == 0) "UTC$sign$h" else String.format(Locale.US, "UTC%s%d:%02d", sign, h, m)
 }
 
+/** "UTC+4", "UTC-7", "UTC+5:30". */
+internal fun formatUtcOffset(totalSeconds: Int): String {
+    val sign = if (totalSeconds < 0) "-" else "+"
+    val a = abs(totalSeconds)
+    val h = a / 3600
+    val m = (a % 3600) / 60
+    return if (m == 0) "UTC$sign$h" else String.format(Locale.US, "UTC%s%d:%02d", sign, h, m)
+}
+
 /** "+3h 15m", "-45m", "+2h": how far the clocks have been scrubbed from now. */
 internal fun formatShift(ms: Long): String {
     val sign = if (ms < 0) "-" else "+"

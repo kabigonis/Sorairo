@@ -10,6 +10,7 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.text.InputType
 import android.text.TextUtils
@@ -17,14 +18,17 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.animation.DecelerateInterpolator
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
+import android.widget.BaseAdapter
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.ListView
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
@@ -35,6 +39,8 @@ import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.asin
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.min
@@ -45,41 +51,14 @@ import kotlin.math.sin
 
 // ---------------------------------------------------------------- views
 
-/** Globe glyph: a ring with the Americas, Africa and Europe filled in. */
-internal class GlobeIconView(context: Context, private val tint: Int) : View(context) {
-    private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = tint }
-    private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = tint; strokeWidth = 5f }
-    private val land = Path()
-
-    init {
-        val lat0 = Math.toRadians(15.0)
-        val lon0 = Math.toRadians(-40.0)
-        val raw = Path()
-        for (poly in WorldMap.polygons) {
-            val n = poly.size / 2
-            for (i in 0 until n) {
-                val lo = Math.toRadians(poly[2 * i].toDouble())
-                val la = Math.toRadians(poly[2 * i + 1].toDouble())
-                val cosc = sin(lat0) * sin(la) + cos(lat0) * cos(la) * cos(lo - lon0)
-                var x = cos(la) * sin(lo - lon0)
-                var y = cos(lat0) * sin(la) - sin(lat0) * cos(la) * cos(lo - lon0)
-                if (cosc < 0.0) {
-                    val len = hypot(x, y)
-                    if (len > 1e-6) {
-                        x /= len
-                        y /= len
-                    }
-                }
-                val px = (50.0 + 38.0 * x).toFloat()
-                val py = (50.0 - 38.0 * y).toFloat()
-                if (i == 0) raw.moveTo(px, py) else raw.lineTo(px, py)
-            }
-            raw.close()
-        }
-        val disc = Path().apply { addCircle(50f, 50f, 38f, Path.Direction.CW) }
-        land.set(raw)
-        land.op(disc, Path.Op.INTERSECT)
+/** Classic line globe: ring, meridians, equator and two parallels. */
+internal class GlobeIconView(context: Context, tint: Int) : View(context) {
+    private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        color = tint
+        strokeCap = Paint.Cap.ROUND
     }
+    private val oval = RectF()
 
     override fun onDraw(canvas: Canvas) {
         val s = min(width, height).toFloat()
@@ -87,8 +66,16 @@ internal class GlobeIconView(context: Context, private val tint: Int) : View(con
         canvas.save()
         canvas.translate((width - s) / 2f, (height - s) / 2f)
         canvas.scale(s / 100f, s / 100f)
-        canvas.drawCircle(50f, 50f, 45f, line)
-        canvas.drawPath(land, fill)
+        line.strokeWidth = 7f
+        canvas.drawCircle(50f, 50f, 44f, line)
+        line.strokeWidth = 5.5f
+        oval.set(30f, 6f, 70f, 94f)
+        canvas.drawOval(oval, line)
+        canvas.drawLine(6f, 50f, 94f, 50f, line)
+        line.strokeWidth = 5f
+        val hw = Math.sqrt(44.0 * 44.0 - 26.0 * 26.0).toFloat()
+        canvas.drawLine(50f - hw, 24f, 50f + hw, 24f, line)
+        canvas.drawLine(50f - hw, 76f, 50f + hw, 76f, line)
         canvas.restore()
     }
 }
@@ -352,6 +339,20 @@ internal class GlobeModelView(
             invalidate()
         }
 
+    /** A tentative pin (a tapped city that has not been added yet). */
+    var preview: Marker? = null
+        set(v) {
+            field = v
+            invalidate()
+        }
+
+    /** Called when the globe is tapped: the (lat, lon) under the finger, or null for a tap off the globe. */
+    var onPick: ((Pair<Double, Double>?) -> Unit)? = null
+
+    private val slop = ViewConfiguration.get(context).scaledTouchSlop
+    private var downX = 0f
+    private var downY = 0f
+    private var moved = false
     private var lat0 = 20.0
     private var lon0 = 0.0
     private var sunLat = 0.0
@@ -410,23 +411,59 @@ internal class GlobeModelView(
 
     private fun radius(): Float = min(width, height) / 2f - uiDp(8)
 
+    private fun pickAt(x: Float, y: Float) {
+        val r = radius()
+        if (r <= 0f) return
+        val px = ((x - width / 2f) / r).toDouble()
+        val py = ((height / 2f - y) / r).toDouble()
+        val rho = Math.hypot(px, py)
+        if (rho > 1.0) {
+            onPick?.invoke(null)
+            return
+        }
+        val la0 = Math.toRadians(lat0)
+        val lo0 = Math.toRadians(lon0)
+        if (rho < 1e-9) {
+            onPick?.invoke(Pair(lat0, lon0))
+            return
+        }
+        val c = asin(rho)
+        val lat = asin(cos(c) * sin(la0) + py * sin(c) * cos(la0) / rho)
+        val lon = lo0 + atan2(px * sin(c), rho * cos(la0) * cos(c) - py * sin(la0) * sin(c))
+        onPick?.invoke(Pair(Math.toDegrees(lat), normLon(Math.toDegrees(lon))))
+    }
+
     override fun onTouchEvent(e: MotionEvent): Boolean {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 parent?.requestDisallowInterceptTouchEvent(true)
                 anim?.cancel()
+                downX = e.x
+                downY = e.y
                 lastX = e.x
                 lastY = e.y
+                moved = false
             }
             MotionEvent.ACTION_MOVE -> {
-                val r = radius().coerceAtLeast(1f)
-                lon0 = normLon(lon0 - Math.toDegrees(((e.x - lastX) / r).toDouble()))
-                lat0 = (lat0 + Math.toDegrees(((e.y - lastY) / r).toDouble())).coerceIn(-70.0, 70.0)
-                lastX = e.x
-                lastY = e.y
-                invalidate()
+                if (!moved && Math.hypot((e.x - downX).toDouble(), (e.y - downY).toDouble()) > slop) {
+                    moved = true
+                    lastX = e.x
+                    lastY = e.y
+                }
+                if (moved) {
+                    val r = radius().coerceAtLeast(1f)
+                    lon0 = normLon(lon0 - Math.toDegrees(((e.x - lastX) / r).toDouble()))
+                    lat0 = (lat0 + Math.toDegrees(((e.y - lastY) / r).toDouble())).coerceIn(-70.0, 70.0)
+                    lastX = e.x
+                    lastY = e.y
+                    invalidate()
+                }
             }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> parent?.requestDisallowInterceptTouchEvent(false)
+            MotionEvent.ACTION_UP -> {
+                parent?.requestDisallowInterceptTouchEvent(false)
+                if (!moved) pickAt(e.x, e.y)
+            }
+            MotionEvent.ACTION_CANCEL -> parent?.requestDisallowInterceptTouchEvent(false)
         }
         return true
     }
@@ -490,6 +527,20 @@ internal class GlobeModelView(
                 canvas.drawCircle(px, py, uiDp(if (focused) 4 else 3).toFloat(), dotPaint)
                 canvas.drawCircle(px, py, uiDp(if (focused) 8 else 6).toFloat(), pinPaint)
                 canvas.drawText(m.name, px + uiDp(11), py + labelPaint.textSize / 3f, labelPaint)
+            }
+        }
+        preview?.let { m ->
+            val la = Math.toRadians(m.lat)
+            val dl = Math.toRadians(m.lon) - lo0
+            val cosc = sl0 * sin(la) + cl0 * cos(la) * cos(dl)
+            if (cosc > 0.05) {
+                val px = cx + (r * cos(la) * sin(dl)).toFloat()
+                val py = cy - (r * (cl0 * sin(la) - sl0 * cos(la) * cos(dl))).toFloat()
+                pinPaint.color = withAlpha(markerColor, 0xB0)
+                canvas.drawCircle(px, py, uiDp(5).toFloat(), pinPaint)
+                canvas.drawCircle(px, py, uiDp(9).toFloat(), pinPaint)
+                canvas.drawText(m.name, px + uiDp(12), py + labelPaint.textSize / 3f, labelPaint)
+                pinPaint.color = markerColor
             }
         }
     }
@@ -578,12 +629,25 @@ internal fun MainActivity.showWorldClockPanel() {
     root.addView(titleRow, lp(-1, -2).apply { topMargin = dp(4); bottomMargin = dp(8) })
 
     val globe = GlobeModelView(this, p.cFg, p.cDim, withAlpha(p.cDim, 0x90), p.cAnsi[3], p.cDim, font)
-    globe.visibility = if (showGlobe) View.VISIBLE else View.GONE
-    root.addView(globe, lp(-1, dp(190)).apply { bottomMargin = dp(10) })
+    val pill = txt(12f, p.cFg, "").apply {
+        setPadding(dp(14), dp(8), dp(14), dp(8))
+        background = box(p.cBg or (0xFF shl 24), p.cBlue)
+        isClickable = true
+        alpha = 0f
+        visibility = View.GONE
+    }
+    val globeBox = FrameLayout(this)
+    globeBox.visibility = if (showGlobe) View.VISIBLE else View.GONE
+    globeBox.addView(globe, FrameLayout.LayoutParams(-1, -1))
+    globeBox.addView(
+        pill,
+        FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(4) }
+    )
+    root.addView(globeBox, lp(-1, dp(190)).apply { bottomMargin = dp(10) })
     titleRow.setOnClickListener {
         showGlobe = !showGlobe
         prefs.edit().putBoolean("world_globe", showGlobe).apply()
-        globe.visibility = if (showGlobe) View.VISIBLE else View.GONE
+        globeBox.visibility = if (showGlobe) View.VISIBLE else View.GONE
     }
 
     val cardsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -614,16 +678,16 @@ internal fun MainActivity.showWorldClockPanel() {
     }
     val inputSize = 14f * uiScale * (uiTextSize / 13f)
     val input = EditText(this).apply {
-        hint = "search for a city"
+        hint = "Search cities…"
         setHintTextColor(p.cDim)
         setTextColor(p.cFg)
         typeface = font
         textSize = inputSize
         setSingleLine(true)
         inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS
-        imeOptions = EditorInfo.IME_ACTION_SEARCH
+        imeOptions = EditorInfo.IME_ACTION_DONE
         background = null
-        setPadding(dp(12), dp(10), dp(6), dp(10))
+        setPadding(dp(14), dp(11), dp(6), dp(11))
     }
     val cancelBtn = txt(20f, p.cDim, "×").apply {
         setPadding(dp(12), dp(2), dp(14), dp(4))
@@ -632,15 +696,71 @@ internal fun MainActivity.showWorldClockPanel() {
     val searchRow = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        background = box(Color.TRANSPARENT, p.cBlue)
+        background = GradientDrawable().apply {
+            setColor(withAlpha(p.cSel, 0x40))
+            setStroke(dp(1), p.cDim)
+        }
         visibility = View.GONE
     }
     searchRow.addView(input, lp(0, -2).apply { weight = 1f })
     searchRow.addView(cancelBtn, lp(-2, -2))
-    val resultsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+    val statusTv = txt(11f, p.cDim, "").apply {
+        setPadding(dp(4), dp(8), dp(4), dp(2))
+        visibility = View.GONE
+    }
+
+    var results: List<DbCity> = emptyList()
+    var highlighted = 0
+    val resultsList = ListView(this).apply {
+        divider = null
+        dividerHeight = 0
+        isVerticalScrollBarEnabled = false
+        overScrollMode = View.OVER_SCROLL_NEVER
+        selector = ColorDrawable(Color.TRANSPARENT)
+        visibility = View.GONE
+    }
+    val cityAdapter = object : BaseAdapter() {
+        override fun getCount(): Int = results.size
+        override fun getItem(position: Int): Any = results[position]
+        override fun getItemId(position: Int): Long = position.toLong()
+        override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
+            val c = results[position]
+            val row = (convertView as? LinearLayout) ?: LinearLayout(act).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+                addView(txt(13f, p.cFg, "").apply {
+                    maxLines = 1
+                    ellipsize = TextUtils.TruncateAt.END
+                }, lp(0, -2).apply { weight = 1f })
+                addView(txt(10f, p.cDim, "").apply {
+                    maxLines = 1
+                    ellipsize = TextUtils.TruncateAt.END
+                }, lp(-2, -2).apply { marginStart = dp(8); marginEnd = dp(10) })
+                addView(txt(11f, p.cDim, "").apply { gravity = Gravity.END }, lp(dp(70), -2))
+            }
+            (row.getChildAt(0) as TextView).text = c.name
+            (row.getChildAt(1) as TextView).text = c.zoneId
+            val secs = runCatching { ZoneId.of(c.zoneId).rules.getOffset(Instant.now()).totalSeconds }.getOrDefault(0)
+            (row.getChildAt(2) as TextView).text = formatUtcOffset(secs)
+            row.background = if (position == highlighted) {
+                GradientDrawable().apply {
+                    setColor(withAlpha(p.cSel, 0x55))
+                    setStroke(dp(1), p.cDim)
+                }
+            } else {
+                null
+            }
+            return row
+        }
+    }
+    resultsList.adapter = cityAdapter
+    val listHeight = min(dp(250), (resources.displayMetrics.heightPixels * 0.34f).toInt())
+
     addArea.addView(addBtn, lp(-1, -2))
     addArea.addView(searchRow, lp(-1, -2))
-    addArea.addView(resultsBox, lp(-1, -2))
+    addArea.addView(statusTv, lp(-1, -2))
+    addArea.addView(resultsList, lp(-1, listHeight).apply { topMargin = dp(4) })
     root.addView(addArea, lp(-1, -2).apply { topMargin = dp(4) })
 
     // ---- helpers ----
@@ -892,32 +1012,54 @@ internal fun MainActivity.showWorldClockPanel() {
     // ---- search ----
     var searchSeq = 0
     var pendingSearch: Runnable? = null
+    var suppressQuery = false
 
-    fun showStatus(text: String) {
-        resultsBox.removeAllViews()
-        resultsBox.addView(txt(11f, p.cDim, text).apply { setPadding(dp(4), dp(10), dp(4), dp(4)) }, lp(-1, -2))
+    fun setStatus(text: String?) {
+        if (text == null) {
+            statusTv.visibility = View.GONE
+        } else {
+            statusTv.text = text
+            statusTv.visibility = View.VISIBLE
+        }
+    }
+
+    fun applyResults(list: List<DbCity>, status: String?) {
+        results = list
+        highlighted = 0
+        cityAdapter.notifyDataSetChanged()
+        resultsList.setSelection(0)
+        resultsList.visibility = if (list.isEmpty()) View.GONE else View.VISIBLE
+        setStatus(status)
     }
 
     fun closeSearch() {
         searchSeq++
         pendingSearch?.let { handler.removeCallbacks(it) }
         imm.hideSoftInputFromWindow(input.windowToken, 0)
+        suppressQuery = true
         input.setText("")
-        resultsBox.removeAllViews()
+        suppressQuery = false
+        results = emptyList()
+        cityAdapter.notifyDataSetChanged()
+        resultsList.visibility = View.GONE
+        setStatus(null)
         searchRow.visibility = View.GONE
         addBtn.visibility = View.VISIBLE
+        if (showGlobe) globeBox.visibility = View.VISIBLE
     }
 
-    fun addCity(s: CitySuggestion) {
+    fun addCity(c: WorldCity) {
         if (rows.size >= WORLD_MAX_CITIES) {
-            showStatus("city limit reached")
+            setStatus("city limit reached")
             return
         }
-        if (rows.any { it.city.zoneId == s.zoneId && it.city.name.equals(s.name, ignoreCase = true) }) {
+        val dup = rows.firstOrNull { it.city.zoneId == c.zoneId && it.city.name.equals(c.name, ignoreCase = true) }
+        if (dup != null) {
             closeSearch()
+            focusRow(dup)
             return
         }
-        val r = buildRow(s.toCity()) ?: return
+        val r = buildRow(c) ?: return
         rows.add(r)
         cardsBox.addView(r.card, lp(-1, -2).apply { bottomMargin = dp(8) })
         persist()
@@ -931,76 +1073,134 @@ internal fun MainActivity.showWorldClockPanel() {
         scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
     }
 
-    fun showResults(list: List<CitySuggestion>) {
-        resultsBox.removeAllViews()
-        if (list.isEmpty()) {
-            showStatus("no match")
-            return
-        }
-        for (s in list) {
-            val line = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(12), dp(9), dp(12), dp(9))
-                isClickable = true
-                setBackgroundColor(withAlpha(p.cSel, 0x33))
-            }
-            line.addView(txt(13f, p.cFg, s.name).apply {
-                maxLines = 1
-                ellipsize = TextUtils.TruncateAt.END
-            }, lp(-2, -2))
-            line.addView(txt(11f, p.cDim, s.detail).apply {
-                maxLines = 1
-                ellipsize = TextUtils.TruncateAt.END
-                setPadding(dp(10), 0, 0, 0)
-            }, lp(0, -2).apply { weight = 1f })
-            line.setOnClickListener { addCity(s) }
-            resultsBox.addView(line, lp(-1, -2).apply { topMargin = dp(3) })
-        }
-    }
-
-    fun runSearch(q: String) {
+    fun runOnlineSearch(q: String) {
         val seq = ++searchSeq
-        showStatus("searching…")
+        applyResults(emptyList(), "no offline match  ·  searching online…")
         netPool.execute {
-            val found = searchCities(q)
+            val found = searchCities(q).map { DbCity(it.name, it.detail, it.zoneId, it.lat, it.lon) }
             handler.post {
-                if (seq == searchSeq && dialog?.isShowing == true) showResults(found)
+                if (seq == searchSeq && dialog?.isShowing == true) {
+                    applyResults(found, if (found.isEmpty()) "no match" else null)
+                }
             }
         }
     }
 
-    fun scheduleSearch() {
+    fun onQueryChanged() {
         pendingSearch?.let { handler.removeCallbacks(it) }
+        searchSeq++
         val q = input.text.toString().trim()
-        if (q.length < 2) {
-            searchSeq++
-            resultsBox.removeAllViews()
-            return
+        val found = CityDb.search(q)
+        applyResults(found, if (found.isEmpty() && q.isNotEmpty()) "no match" else null)
+        if (found.isEmpty() && q.length >= 3) {
+            val job = Runnable { runOnlineSearch(q) }
+            pendingSearch = job
+            handler.postDelayed(job, 500L)
         }
-        val job = Runnable { runSearch(q) }
-        pendingSearch = job
-        handler.postDelayed(job, 350L)
     }
 
-    input.doAfterTextChanged { scheduleSearch() }
-    input.setOnEditorActionListener { _, actionId, event ->
-        val enter = event != null && event.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN
-        if (actionId == EditorInfo.IME_ACTION_SEARCH || enter) {
-            pendingSearch?.let { handler.removeCallbacks(it) }
-            val q = input.text.toString().trim()
-            if (q.length >= 2) runSearch(q)
+    // tapping a city on the globe offers to add it
+    var pendingPick: DbCity? = null
+    var pickHide: Runnable? = null
+
+    fun hidePick() {
+        pickHide?.let { handler.removeCallbacks(it) }
+        pendingPick = null
+        globe.preview = null
+        if (pill.visibility == View.VISIBLE) {
+            pill.animate().cancel()
+            pill.animate().alpha(0f).translationY(dp(8).toFloat()).setDuration(160L).withEndAction {
+                if (pendingPick == null) pill.visibility = View.GONE
+            }.start()
+        }
+    }
+
+    fun showPick(c: DbCity) {
+        pickHide?.let { handler.removeCallbacks(it) }
+        val existing = rows.indexOfFirst { it.city.zoneId == c.zoneId && it.city.name.equals(c.name, ignoreCase = true) }
+        val full = rows.size >= WORLD_MAX_CITIES
+        pendingPick = if (existing >= 0 || full) null else c
+        globe.preview = if (existing >= 0) null else GlobeModelView.Marker(c.name, c.lat, c.lon)
+        if (existing >= 0) globe.focusIndex = existing
+        globe.focusOn(c.lat, c.lon, 450L)
+        val secs = runCatching { ZoneId.of(c.zoneId).rules.getOffset(Instant.now()).totalSeconds }.getOrDefault(0)
+        pill.text = when {
+            existing >= 0 -> "${c.name} is already on your list"
+            full -> "city limit reached"
+            else -> "+  Add ${c.name}  ·  ${formatUtcOffset(secs)}"
+        }
+        pill.animate().cancel()
+        if (pill.visibility != View.VISIBLE || pill.alpha < 1f) {
+            pill.visibility = View.VISIBLE
+            pill.translationY = dp(8).toFloat()
+            pill.animate().alpha(1f).translationY(0f).setDuration(220L).start()
+        }
+        val job = Runnable { hidePick() }
+        pickHide = job
+        handler.postDelayed(job, 6000L)
+    }
+
+    pill.setOnClickListener {
+        val c = pendingPick
+        hidePick()
+        if (c != null) addCity(c.toCity())
+    }
+    globe.onPick = { spot ->
+        val c = if (spot == null) null else CityDb.nearest(spot.first, spot.second, 1300.0)
+        if (c == null) hidePick() else showPick(c)
+    }
+
+    resultsList.setOnItemClickListener { _, _, position, _ ->
+        results.getOrNull(position)?.let { addCity(it.toCity()) }
+    }
+    input.doAfterTextChanged { if (!suppressQuery) onQueryChanged() }
+    input.setOnEditorActionListener { _, actionId, _ ->
+        if (actionId == EditorInfo.IME_ACTION_DONE || actionId == EditorInfo.IME_ACTION_SEARCH) {
+            results.getOrNull(highlighted)?.let { addCity(it.toCity()) }
             true
         } else {
             false
+        }
+    }
+    // hardware keyboard: arrows move the highlight, Enter adds it
+    input.setOnKeyListener { _, keyCode, event ->
+        if (event.action != KeyEvent.ACTION_DOWN) {
+            false
+        } else {
+            when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_DOWN -> {
+                    if (results.isNotEmpty()) {
+                        highlighted = min(highlighted + 1, results.size - 1)
+                        cityAdapter.notifyDataSetChanged()
+                        resultsList.smoothScrollToPosition(highlighted)
+                    }
+                    true
+                }
+                KeyEvent.KEYCODE_DPAD_UP -> {
+                    if (results.isNotEmpty()) {
+                        highlighted = maxOf(highlighted - 1, 0)
+                        cityAdapter.notifyDataSetChanged()
+                        resultsList.smoothScrollToPosition(highlighted)
+                    }
+                    true
+                }
+                KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                    results.getOrNull(highlighted)?.let { addCity(it.toCity()) }
+                    true
+                }
+                else -> false
+            }
         }
     }
     cancelBtn.setOnClickListener { closeSearch() }
     addBtn.setOnClickListener {
         if (rows.size >= WORLD_MAX_CITIES) return@setOnClickListener
         if (editMode) setEditMode(false)
+        hidePick()
         addBtn.visibility = View.GONE
         searchRow.visibility = View.VISIBLE
+        globeBox.visibility = View.GONE
+        onQueryChanged()
         input.requestFocus()
         input.postDelayed({ imm.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT) }, 160L)
     }
@@ -1017,6 +1217,7 @@ internal fun MainActivity.showWorldClockPanel() {
     dialog = showBarDialog(BarKind.WORLD_CLOCK, root, 440) {
         handler.removeCallbacks(tick)
         pendingSearch?.let { handler.removeCallbacks(it) }
+        pickHide?.let { handler.removeCallbacks(it) }
         searchSeq++
         imm.hideSoftInputFromWindow(input.windowToken, 0)
     }
@@ -1040,7 +1241,7 @@ internal fun MainActivity.showWorldClockPanel() {
     }
 
     // soften later changes (rows added or removed, search opening) once the first paint is done
-    for (vg in listOf<ViewGroup>(root, cardsBox, addArea, resultsBox)) {
+    for (vg in listOf<ViewGroup>(root, cardsBox, addArea)) {
         vg.layoutTransition = LayoutTransition().apply {
             enableTransitionType(LayoutTransition.CHANGING)
             setDuration(220L)

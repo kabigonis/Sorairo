@@ -870,7 +870,7 @@ class MainActivity : AppCompatActivity() {
         val actionTray = createOmarchyActionTray()
         // World clock: a globe right after the clock (mirrors the tray on the left).
         val worldW = dp(30)
-        val worldBtn = BarIconButton(this, GlobeIconView(this, p.cFg), p.cBlue, dp(15), dp(15)).apply {
+        val worldBtn = BarIconButton(this, GlobeIconView(this, p.cFg), p.cBlue, dp(17), dp(17)).apply {
             contentDescription = "World clock"
             setOnClickListener { showWorldClockPanel() }
         }
