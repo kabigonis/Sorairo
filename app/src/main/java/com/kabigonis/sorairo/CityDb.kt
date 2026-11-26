@@ -22,7 +22,9 @@ internal class DbCity(
     val country: String,
     val zoneId: String,
     val lat: Double,
-    val lon: Double
+    val lon: Double,
+    /** 2 = big city labelled on the globe, 1 = popular city shown as a dot, 0 = just a zone's town. */
+    val tier: Int = 0
 ) {
     val key: String = normalizeCityKey(name)
     val countryKey: String = normalizeCityKey(country)
@@ -44,16 +46,16 @@ internal fun resolveZoneId(id: String): String? {
     return if (alt != null && runCatching { ZoneId.of(alt) }.isSuccess) alt else null
 }
 
-/** One city per line: name|country|zoneId|lat|lon. Bad lines and unknown zones are skipped. */
+/** One city per line: name|country|zoneId|lat|lon[|tier]. Bad lines and unknown zones are skipped. */
 internal fun parseCityDb(blob: String): List<DbCity> {
     val out = ArrayList<DbCity>()
     for (line in blob.lines()) {
         val f = line.split('|')
-        if (f.size != 5) continue
+        if (f.size != 5 && f.size != 6) continue
         val lat = f[3].toDoubleOrNull() ?: continue
         val lon = f[4].toDoubleOrNull() ?: continue
         val zone = resolveZoneId(f[2]) ?: continue
-        out.add(DbCity(f[0], f[1], zone, lat, lon))
+        out.add(DbCity(f[0], f[1], zone, lat, lon, f.getOrNull(5)?.toIntOrNull() ?: 0))
     }
     return out.sortedBy { it.key }
 }
@@ -70,6 +72,13 @@ internal fun scoreCity(c: DbCity, q: String): Int = when {
 
 internal object CityDb {
     val all: List<DbCity> by lazy { parseCityDb(CITY_DB_ALL) }
+
+    /** The well-known cities (tier 1 and 2), drawn on the globe and preferred when tapping it. */
+    val popular: List<DbCity> by lazy { all.filter { it.tier >= 1 } }
+
+    /** What a tap on the map means: a popular city nearby, else any listed town very close by. */
+    fun pick(lat: Double, lon: Double): DbCity? =
+        nearest(lat, lon, 1500.0, popular) ?: nearest(lat, lon, 700.0, all)
 
     /** Empty query returns everything alphabetically. */
     fun search(query: String, limit: Int = 800, source: List<DbCity> = all): List<DbCity> {

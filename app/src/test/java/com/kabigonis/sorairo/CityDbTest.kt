@@ -63,4 +63,28 @@ class CityDbTest {
         assertEquals("UTC-9:30", formatUtcOffset(-(9 * 3600 + 1800)))
         assertEquals("UTC+0", formatUtcOffset(0))
     }
+
+    @Test fun popularCitiesAreFlagged() {
+        assertTrue(CityDb.popular.size > 200)
+        assertTrue(CityDb.popular.any { it.name == "Mumbai" })
+        assertTrue(CityDb.popular.any { it.name == "Lagos" })
+        assertTrue(CityDb.all.any { it.name == "Majuro" && it.tier == 0 })
+        assertTrue(CityDb.all.count { it.tier == 2 } in 40..120)
+    }
+
+    @Test fun tappingPrefersPopularCities() {
+        assertEquals("Tokyo", CityDb.pick(35.68, 139.65)?.name)
+        // a spot between Bangalore, Chennai and Hyderabad snaps to one of the popular three
+        assertTrue(CityDb.pick(14.0, 78.0)?.tier ?: 0 >= 1)
+        // a lone atoll still resolves to its own town when nothing popular is near
+        assertEquals("Majuro", CityDb.pick(7.1, 171.3)?.name)
+        assertNull(CityDb.pick(-45.0, -130.0))
+    }
+
+    @Test fun parserReadsOptionalTier() {
+        val list = parseCityDb("A|X|Europe/Paris|1.0|2.0|2\nB|X|Europe/Paris|3.0|4.0")
+        assertEquals(2, list.size)
+        assertEquals(2, list.first { it.name == "A" }.tier)
+        assertEquals(0, list.first { it.name == "B" }.tier)
+    }
 }

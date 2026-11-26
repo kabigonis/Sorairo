@@ -515,6 +515,26 @@ internal class GlobeModelView(
 
         labelPaint.textSize = uiDp(10).toFloat()
         pinPaint.strokeWidth = maxOf(1f, uiDp(1).toFloat())
+
+        // every popular city, so there is always something to tap; the biggest ones get names
+        val dotR = uiDp(2) * 0.9f
+        val nameAlpha = labelPaint.alpha
+        labelPaint.alpha = 0x90
+        for (c in CityDb.popular) {
+            val dl = c.lonR - lo0
+            val cdl = cos(dl)
+            val cosc = sl0 * sin(c.latR) + cl0 * cos(c.latR) * cdl
+            if (cosc <= 0.08) continue
+            val px = cx + (r * cos(c.latR) * sin(dl)).toFloat()
+            val py = cy - (r * (cl0 * sin(c.latR) - sl0 * cos(c.latR) * cdl)).toFloat()
+            dotPaint.color = withAlpha(markerColor, 0xB0)
+            canvas.drawCircle(px, py, dotR * (0.6f + 0.4f * cosc.toFloat()), dotPaint)
+            if (c.tier >= 2 && cosc > 0.4 && markers.none { it.name == c.name }) {
+                canvas.drawText(c.name, px + uiDp(5), py + labelPaint.textSize / 3f, labelPaint)
+            }
+        }
+        labelPaint.alpha = nameAlpha
+
         markers.forEachIndexed { i, m ->
             val la = Math.toRadians(m.lat)
             val dl = Math.toRadians(m.lon) - lo0
@@ -588,6 +608,7 @@ private fun smoothText(tv: TextView, s: String, animate: Boolean) {
 
 internal fun MainActivity.showWorldClockPanel() {
     val act = this
+    netPool.execute { CityDb.popular } // parse the built-in city list off the UI thread
     val p = pal
     val home = ZoneId.systemDefault()
     var is24 = if (prefs.contains("world_24h")) {
@@ -1146,7 +1167,7 @@ internal fun MainActivity.showWorldClockPanel() {
         if (c != null) addCity(c.toCity())
     }
     globe.onPick = { spot ->
-        val c = if (spot == null) null else CityDb.nearest(spot.first, spot.second, 1300.0)
+        val c = if (spot == null) null else CityDb.pick(spot.first, spot.second)
         if (c == null) hidePick() else showPick(c)
     }
 
