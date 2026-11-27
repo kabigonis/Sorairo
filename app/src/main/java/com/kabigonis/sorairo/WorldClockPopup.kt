@@ -3,12 +3,7 @@ package com.kabigonis.sorairo
 import android.animation.LayoutTransition
 import android.animation.ValueAnimator
 import android.content.Context
-import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Matrix
-import android.graphics.Paint
-import android.graphics.Path
-import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
@@ -16,9 +11,7 @@ import android.text.InputType
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.KeyEvent
-import android.view.MotionEvent
 import android.view.View
-import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.animation.DecelerateInterpolator
@@ -29,7 +22,6 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ListView
-import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.core.widget.doAfterTextChanged
@@ -38,562 +30,30 @@ import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import kotlin.math.abs
-import kotlin.math.asin
-import kotlin.math.atan2
-import kotlin.math.cos
-import kotlin.math.hypot
 import kotlin.math.min
-import kotlin.math.sin
 
-// World clock popup: a globe icon beside the top-bar clock opens a card per city with local time,
-// weather, offset from home and a day/night track. Matches the other top-bar panels (showBarDialog).
-
-// ---------------------------------------------------------------- views
-
-/** Classic line globe: ring, meridians, equator and two parallels. */
-internal class GlobeIconView(context: Context, tint: Int) : View(context) {
-    private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        color = tint
-        strokeCap = Paint.Cap.ROUND
-    }
-    private val oval = RectF()
-
-    override fun onDraw(canvas: Canvas) {
-        val s = min(width, height).toFloat()
-        if (s <= 0f) return
-        canvas.save()
-        canvas.translate((width - s) / 2f, (height - s) / 2f)
-        canvas.scale(s / 100f, s / 100f)
-        line.strokeWidth = 7f
-        canvas.drawCircle(50f, 50f, 44f, line)
-        line.strokeWidth = 5.5f
-        oval.set(30f, 6f, 70f, 94f)
-        canvas.drawOval(oval, line)
-        canvas.drawLine(6f, 50f, 94f, 50f, line)
-        line.strokeWidth = 5f
-        val hw = Math.sqrt(44.0 * 44.0 - 26.0 * 26.0).toFloat()
-        canvas.drawLine(50f - hw, 24f, 50f + hw, 24f, line)
-        canvas.drawLine(50f - hw, 76f, 50f + hw, 76f, line)
-        canvas.restore()
-    }
-}
-
-/** Small thin-line weather glyph. Night swaps the sun for a moon. */
-internal class WeatherIconView(context: Context, tint: Int) : View(context) {
-    private var kind = WeatherKind.CLOUDY
-    private var day = true
-    private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE; color = tint; strokeWidth = 1.7f
-        strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
-    }
-    private val solid = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = tint }
-
-    private val cloud = Path().apply {
-        val parts = listOf(
-            Path().apply { addCircle(7.2f, 14f, 3.5f, Path.Direction.CW) },
-            Path().apply { addCircle(12f, 11.5f, 4.6f, Path.Direction.CW) },
-            Path().apply { addCircle(16.8f, 14.2f, 3.3f, Path.Direction.CW) },
-            Path().apply { addRect(7.2f, 14f, 16.8f, 17.5f, Path.Direction.CW) }
-        )
-        set(parts[0])
-        for (i in 1 until parts.size) op(parts[i], Path.Op.UNION)
-    }
-    private val moon = Path().apply {
-        set(Path().apply { addCircle(11f, 12f, 6.5f, Path.Direction.CW) })
-        op(Path().apply { addCircle(15f, 9.5f, 5.6f, Path.Direction.CW) }, Path.Op.DIFFERENCE)
-    }
-
-    fun set(kind: WeatherKind, day: Boolean) {
-        if (this.kind != kind || this.day != day) {
-            this.kind = kind
-            this.day = day
-            invalidate()
-        }
-    }
-
-    private fun drawCloud(c: Canvas, dx: Float, dy: Float, sc: Float) {
-        c.save()
-        c.translate(dx, dy)
-        c.scale(sc, sc)
-        c.drawPath(cloud, stroke)
-        c.restore()
-    }
-
-    private fun cloudAt(dx: Float, dy: Float, sc: Float): Path =
-        Path(cloud).apply { transform(Matrix().apply { setScale(sc, sc); postTranslate(dx, dy) }) }
-
-    private fun sunOrMoon(c: Canvas, cx: Float, cy: Float, sc: Float) {
-        if (day) {
-            c.drawCircle(cx, cy, 4.2f * sc, stroke)
-            for (i in 0 until 8) {
-                val a = Math.toRadians(i * 45.0)
-                val ca = cos(a).toFloat()
-                val sa = sin(a).toFloat()
-                c.drawLine(cx + ca * 6.3f * sc, cy + sa * 6.3f * sc, cx + ca * 8.6f * sc, cy + sa * 8.6f * sc, stroke)
-            }
-        } else {
-            c.save()
-            c.translate(cx, cy)
-            c.scale(sc, sc)
-            c.translate(-11f, -12f)
-            c.drawPath(moon, stroke)
-            c.restore()
-        }
-    }
-
-    override fun onDraw(canvas: Canvas) {
-        val s = min(width, height) / 24f
-        if (s <= 0f) return
-        canvas.save()
-        canvas.translate((width - 24f * s) / 2f, (height - 24f * s) / 2f)
-        canvas.scale(s, s)
-        when (kind) {
-            WeatherKind.CLEAR -> sunOrMoon(canvas, 12f, 12f, 1f)
-            WeatherKind.PARTLY -> {
-                canvas.save()
-                canvas.clipOutPath(cloudAt(2f, 4f, 0.82f))
-                sunOrMoon(canvas, 8f, 8f, 0.62f)
-                canvas.restore()
-                drawCloud(canvas, 2f, 4f, 0.82f)
-            }
-            WeatherKind.CLOUDY -> drawCloud(canvas, 0f, 0f, 1f)
-            WeatherKind.FOG -> {
-                drawCloud(canvas, 0f, -3.5f, 1f)
-                canvas.drawLine(5f, 17.5f, 19f, 17.5f, stroke)
-                canvas.drawLine(8f, 20.5f, 16f, 20.5f, stroke)
-            }
-            WeatherKind.DRIZZLE -> {
-                drawCloud(canvas, 0f, -3.5f, 1f)
-                canvas.drawLine(8.5f, 17f, 8.5f, 19f, stroke)
-                canvas.drawLine(12f, 18.4f, 12f, 20.4f, stroke)
-                canvas.drawLine(15.5f, 17f, 15.5f, 19f, stroke)
-            }
-            WeatherKind.RAIN -> {
-                drawCloud(canvas, 0f, -3.5f, 1f)
-                canvas.drawLine(9f, 16.2f, 7.8f, 20f, stroke)
-                canvas.drawLine(12.5f, 16.2f, 11.3f, 20f, stroke)
-                canvas.drawLine(16f, 16.2f, 14.8f, 20f, stroke)
-            }
-            WeatherKind.SNOW -> {
-                drawCloud(canvas, 0f, -3.5f, 1f)
-                canvas.drawCircle(8.5f, 17.6f, 1f, solid)
-                canvas.drawCircle(12f, 20.6f, 1f, solid)
-                canvas.drawCircle(15.5f, 17.6f, 1f, solid)
-            }
-            WeatherKind.STORM -> {
-                drawCloud(canvas, 0f, -3.5f, 1f)
-                val bolt = Path().apply {
-                    moveTo(13f, 15.6f)
-                    lineTo(10.5f, 19.4f)
-                    lineTo(13.2f, 19.4f)
-                    lineTo(11f, 23f)
-                }
-                canvas.drawPath(bolt, stroke)
-            }
-        }
-        canvas.restore()
-    }
-}
-
-/**
- * A 24 hour track: the daylight stretch is brighter, the knob sits at the city's time of day and
- * turns sun-coloured while the sun is up. The knob can glide in from the left edge.
- */
-internal class DayTrackView(
-    context: Context,
-    private val trackColor: Int,
-    private val daylightColor: Int,
-    private val dayKnob: Int,
-    private val nightKnob: Int
-) : View(context) {
-    var sun: SunWindow = SunWindow(6.0, 18.0)
-        set(v) {
-            if (field != v) {
-                field = v
-                invalidate()
-            }
-        }
-    private var shown = 0f
-    private var anim: ValueAnimator? = null
-    private var sweeping = false
-    private var dragging = false
-
-    /** Called with the knob position (0..1, snapped to 15 minutes) while the user drags it. */
-    var onScrub: ((Float) -> Unit)? = null
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-    private val rect = RectF()
-
-    /** Moves the knob to [fraction] (0..1). With [durationMs] > 0 it glides there smoothly. */
-    fun setFraction(fraction: Float, durationMs: Long = 0L, delayMs: Long = 0L, fromStart: Boolean = false) {
-        val target = fraction.coerceIn(0f, 1f)
-        if (durationMs <= 0L) {
-            if (sweeping || dragging) return
-            if (shown != target) {
-                shown = target
-                invalidate()
-            }
-            return
-        }
-        anim?.cancel()
-        sweeping = true
-        if (fromStart) {
-            shown = 0f
-            invalidate()
-        }
-        anim = ValueAnimator.ofFloat(shown, target).apply {
-            duration = durationMs
-            startDelay = delayMs
-            interpolator = DecelerateInterpolator(1.8f)
-            addUpdateListener {
-                shown = it.animatedValue as Float
-                invalidate()
-            }
-            addListener(object : android.animation.AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: android.animation.Animator) {
-                    sweeping = false
-                }
-            })
-            start()
-        }
-    }
-
-    private fun scrubTo(x: Float) {
-        val pad = uiDp(7).toFloat()
-        val f = ((x - pad) / (width - 2 * pad)).coerceIn(0f, 1f)
-        shown = Math.round(f * 96f) / 96f
-        invalidate()
-    }
-
-    override fun onTouchEvent(e: MotionEvent): Boolean {
-        val cb = onScrub ?: return false
-        when (e.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                parent?.requestDisallowInterceptTouchEvent(true)
-                anim?.cancel()
-                sweeping = false
-                dragging = true
-                scrubTo(e.x)
-                cb(shown)
-            }
-            MotionEvent.ACTION_MOVE -> if (dragging) {
-                scrubTo(e.x)
-                cb(shown)
-            }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                dragging = false
-                parent?.requestDisallowInterceptTouchEvent(false)
-            }
-        }
-        return true
-    }
-
-    override fun onDetachedFromWindow() {
-        anim?.cancel()
-        sweeping = false
-        super.onDetachedFromWindow()
-    }
-
-    override fun onDraw(canvas: Canvas) {
-        val pad = uiDp(7).toFloat()
-        val left = pad
-        val right = width - pad
-        val cy = height / 2f
-        val th = uiDp(3).toFloat()
-        paint.color = trackColor
-        rect.set(left, cy - th / 2, right, cy + th / 2)
-        canvas.drawRoundRect(rect, th / 2, th / 2, paint)
-        paint.color = daylightColor
-        for ((from, to) in sun.segments()) {
-            val x0 = left + (right - left) * (from / 24.0).toFloat()
-            val x1 = left + (right - left) * (to / 24.0).toFloat()
-            rect.set(x0, cy - th / 2, x1, cy + th / 2)
-            canvas.drawRoundRect(rect, th / 2, th / 2, paint)
-        }
-        paint.color = if (sun.isUp(shown * 24.0)) dayKnob else nightKnob
-        canvas.drawCircle(left + (right - left) * shown, cy, uiDp(6).toFloat(), paint)
-    }
-}
-
-/** A dotted, draggable globe: land lights up on the day side and every city is pinned on it. */
-internal class GlobeModelView(
-    context: Context,
-    private val landColor: Int,
-    private val oceanColor: Int,
-    ringColor: Int,
-    private val markerColor: Int,
-    labelColor: Int,
-    labelFont: Typeface
-) : View(context) {
-    class Marker(val name: String, val lat: Double, val lon: Double)
-
-    var markers: List<Marker> = emptyList()
-        set(v) {
-            field = v
-            invalidate()
-        }
-    var focusIndex: Int = -1
-        set(v) {
-            field = v
-            invalidate()
-        }
-
-    /** A tentative pin (a tapped city that has not been added yet). */
-    var preview: Marker? = null
-        set(v) {
-            field = v
-            invalidate()
-        }
-
-    /** Called when the globe is tapped: the (lat, lon) under the finger, or null for a tap off the globe. */
-    var onPick: ((Pair<Double, Double>?) -> Unit)? = null
-
-    private val slop = ViewConfiguration.get(context).scaledTouchSlop
-    private var downX = 0f
-    private var downY = 0f
-    private var moved = false
-    private var lat0 = 20.0
-    private var lon0 = 0.0
-    private var sunLat = 0.0
-    private var sunLon = 0.0
-    private var anim: ValueAnimator? = null
-    private var lastX = 0f
-    private var lastY = 0f
-    private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-    private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = ringColor }
-    private val pinPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = markerColor }
-    private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = labelColor; typeface = labelFont }
-
-    private fun tiltFor(lat: Double) = (lat * 0.6).coerceIn(-55.0, 55.0)
-
-    private fun normLon(l: Double): Double {
-        var x = l
-        while (x > 180.0) x -= 360.0
-        while (x < -180.0) x += 360.0
-        return x
-    }
-
-    fun setSun(lat: Double, lon: Double) {
-        if (abs(lat - sunLat) > 0.02 || abs(lon - sunLon) > 0.02) {
-            sunLat = lat
-            sunLon = lon
-            invalidate()
-        }
-    }
-
-    fun jumpTo(lat: Double, lon: Double) {
-        anim?.cancel()
-        lat0 = tiltFor(lat)
-        lon0 = normLon(lon)
-        invalidate()
-    }
-
-    /** Spins the globe so that (lat, lon) faces the viewer. */
-    fun focusOn(lat: Double, lon: Double, durationMs: Long = 650L) {
-        anim?.cancel()
-        val startLat = lat0
-        val startLon = lon0
-        val targetLat = tiltFor(lat)
-        val dLon = ((lon - startLon + 540.0) % 360.0 + 360.0) % 360.0 - 180.0
-        anim = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = durationMs
-            interpolator = DecelerateInterpolator(1.6f)
-            addUpdateListener {
-                val t = (it.animatedValue as Float).toDouble()
-                lat0 = startLat + (targetLat - startLat) * t
-                lon0 = normLon(startLon + dLon * t)
-                invalidate()
-            }
-            start()
-        }
-    }
-
-    private fun radius(): Float = min(width, height) / 2f - uiDp(8)
-
-    private fun pickAt(x: Float, y: Float) {
-        val r = radius()
-        if (r <= 0f) return
-        val px = ((x - width / 2f) / r).toDouble()
-        val py = ((height / 2f - y) / r).toDouble()
-        val rho = Math.hypot(px, py)
-        if (rho > 1.0) {
-            onPick?.invoke(null)
-            return
-        }
-        val la0 = Math.toRadians(lat0)
-        val lo0 = Math.toRadians(lon0)
-        if (rho < 1e-9) {
-            onPick?.invoke(Pair(lat0, lon0))
-            return
-        }
-        val c = asin(rho)
-        val lat = asin(cos(c) * sin(la0) + py * sin(c) * cos(la0) / rho)
-        val lon = lo0 + atan2(px * sin(c), rho * cos(la0) * cos(c) - py * sin(la0) * sin(c))
-        onPick?.invoke(Pair(Math.toDegrees(lat), normLon(Math.toDegrees(lon))))
-    }
-
-    override fun onTouchEvent(e: MotionEvent): Boolean {
-        when (e.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                parent?.requestDisallowInterceptTouchEvent(true)
-                anim?.cancel()
-                downX = e.x
-                downY = e.y
-                lastX = e.x
-                lastY = e.y
-                moved = false
-            }
-            MotionEvent.ACTION_MOVE -> {
-                if (!moved && Math.hypot((e.x - downX).toDouble(), (e.y - downY).toDouble()) > slop) {
-                    moved = true
-                    lastX = e.x
-                    lastY = e.y
-                }
-                if (moved) {
-                    val r = radius().coerceAtLeast(1f)
-                    lon0 = normLon(lon0 - Math.toDegrees(((e.x - lastX) / r).toDouble()))
-                    lat0 = (lat0 + Math.toDegrees(((e.y - lastY) / r).toDouble())).coerceIn(-70.0, 70.0)
-                    lastX = e.x
-                    lastY = e.y
-                    invalidate()
-                }
-            }
-            MotionEvent.ACTION_UP -> {
-                parent?.requestDisallowInterceptTouchEvent(false)
-                if (!moved) pickAt(e.x, e.y)
-            }
-            MotionEvent.ACTION_CANCEL -> parent?.requestDisallowInterceptTouchEvent(false)
-        }
-        return true
-    }
-
-    override fun onDetachedFromWindow() {
-        anim?.cancel()
-        super.onDetachedFromWindow()
-    }
-
-    override fun onDraw(canvas: Canvas) {
-        val r = radius()
-        if (r <= 0f) return
-        val cx = width / 2f
-        val cy = height / 2f
-        ringPaint.strokeWidth = maxOf(1f, uiDp(1).toFloat())
-        canvas.drawCircle(cx, cy, r, ringPaint)
-
-        val la0 = Math.toRadians(lat0)
-        val lo0 = Math.toRadians(lon0)
-        val sl0 = sin(la0)
-        val cl0 = cos(la0)
-        val sunLa = Math.toRadians(sunLat)
-        val sunLo = Math.toRadians(sunLon)
-        val sunSin = sin(sunLa)
-        val sunCos = cos(sunLa)
-        val d = WorldMap.dots
-        val landR = uiDp(2) * 0.9f
-        val seaR = uiDp(1) * 0.8f
-        for (i in 0 until d.size) {
-            val dl = d.lon[i] - lo0
-            val cdl = cos(dl)
-            val cosc = sl0 * d.sinLat[i] + cl0 * d.cosLat[i] * cdl
-            if (cosc <= 0.03) continue
-            val x = d.cosLat[i] * sin(dl)
-            val y = cl0 * d.sinLat[i] - sl0 * d.cosLat[i] * cdl
-            val sunDot = sunSin * d.sinLat[i] + sunCos * d.cosLat[i] * cos(d.lon[i] - sunLo)
-            val day = ((sunDot + 0.1) / 0.3).coerceIn(0.0, 1.0).toFloat()
-            val squash = (0.45 + 0.55 * cosc).toFloat()
-            val rad: Float
-            if (d.land[i]) {
-                dotPaint.color = withAlpha(landColor, (70 + 185 * day).toInt())
-                rad = landR * squash
-            } else {
-                dotPaint.color = withAlpha(oceanColor, (20 + 80 * day).toInt())
-                rad = seaR * squash
-            }
-            canvas.drawCircle(cx + (r * x).toFloat(), cy - (r * y).toFloat(), rad, dotPaint)
-        }
-
-        labelPaint.textSize = uiDp(10).toFloat()
-        pinPaint.strokeWidth = maxOf(1f, uiDp(1).toFloat())
-
-        // every popular city, so there is always something to tap; the biggest ones get names
-        val dotR = uiDp(2) * 0.9f
-        val nameAlpha = labelPaint.alpha
-        labelPaint.alpha = 0x90
-        for (c in CityDb.popular) {
-            val dl = c.lonR - lo0
-            val cdl = cos(dl)
-            val cosc = sl0 * sin(c.latR) + cl0 * cos(c.latR) * cdl
-            if (cosc <= 0.08) continue
-            val px = cx + (r * cos(c.latR) * sin(dl)).toFloat()
-            val py = cy - (r * (cl0 * sin(c.latR) - sl0 * cos(c.latR) * cdl)).toFloat()
-            dotPaint.color = withAlpha(markerColor, 0xB0)
-            canvas.drawCircle(px, py, dotR * (0.6f + 0.4f * cosc.toFloat()), dotPaint)
-            if (c.tier >= 2 && cosc > 0.4 && markers.none { it.name == c.name }) {
-                canvas.drawText(c.name, px + uiDp(5), py + labelPaint.textSize / 3f, labelPaint)
-            }
-        }
-        labelPaint.alpha = nameAlpha
-
-        markers.forEachIndexed { i, m ->
-            val la = Math.toRadians(m.lat)
-            val dl = Math.toRadians(m.lon) - lo0
-            val cosc = sl0 * sin(la) + cl0 * cos(la) * cos(dl)
-            if (cosc > 0.05) {
-                val px = cx + (r * cos(la) * sin(dl)).toFloat()
-                val py = cy - (r * (cl0 * sin(la) - sl0 * cos(la) * cos(dl))).toFloat()
-                val focused = i == focusIndex
-                dotPaint.color = markerColor
-                canvas.drawCircle(px, py, uiDp(if (focused) 4 else 3).toFloat(), dotPaint)
-                canvas.drawCircle(px, py, uiDp(if (focused) 8 else 6).toFloat(), pinPaint)
-                canvas.drawText(m.name, px + uiDp(11), py + labelPaint.textSize / 3f, labelPaint)
-            }
-        }
-        preview?.let { m ->
-            val la = Math.toRadians(m.lat)
-            val dl = Math.toRadians(m.lon) - lo0
-            val cosc = sl0 * sin(la) + cl0 * cos(la) * cos(dl)
-            if (cosc > 0.05) {
-                val px = cx + (r * cos(la) * sin(dl)).toFloat()
-                val py = cy - (r * (cl0 * sin(la) - sl0 * cos(la) * cos(dl))).toFloat()
-                pinPaint.color = withAlpha(markerColor, 0xB0)
-                canvas.drawCircle(px, py, uiDp(5).toFloat(), pinPaint)
-                canvas.drawCircle(px, py, uiDp(9).toFloat(), pinPaint)
-                canvas.drawText(m.name, px + uiDp(12), py + labelPaint.textSize / 3f, labelPaint)
-                pinPaint.color = markerColor
-            }
-        }
-    }
-}
-
-/** A ScrollView that stops growing at [maxHeightPx] so the popup never outgrows the screen. */
-internal class BoundedScrollView(context: Context, private val maxHeightPx: Int) : ScrollView(context) {
-    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val cap = min(maxHeightPx, MeasureSpec.getSize(heightMeasureSpec).takeIf { it > 0 } ?: maxHeightPx)
-        super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(cap, MeasureSpec.AT_MOST))
-    }
-}
-
-// ---------------------------------------------------------------- popup
+// World clock popup. The globe icon beside the top-bar clock opens it on the list of clocks;
+// the globe in the title switches to a big dotted globe (and back). Views live in WorldClockViews.kt.
 
 private class WorldRow(
-    val city: WorldCity,
+    var city: WorldCity,
     val zone: ZoneId,
+    val country: String?,
     val card: LinearLayout,
     val dateTv: TextView,
+    val greetTv: TextView,
+    val noteTv: TextView,
     val tempTv: TextView,
     val weatherIcon: WeatherIconView,
     val weatherBox: LinearLayout,
-    val removeBtn: TextView,
     val timeTv: TextView,
     val ampmTv: TextView,
     val zoneTv: TextView,
     val track: DayTrackView
 ) {
     var weather: CityWeather? = null
+    var noteEdit: EditText? = null
 }
-
-private fun withAlpha(color: Int, a: Int): Int = (color and 0x00FFFFFF) or (a shl 24)
 
 /** Changes the text and, if [animate], dips the alpha so the change reads as a soft tick. */
 private fun smoothText(tv: TextView, s: String, animate: Boolean) {
@@ -608,23 +68,26 @@ private fun smoothText(tv: TextView, s: String, animate: Boolean) {
 
 internal fun MainActivity.showWorldClockPanel() {
     val act = this
-    netPool.execute { CityDb.popular } // parse the built-in city list off the UI thread
     val p = pal
+    netPool.execute {
+        // parse the built-in city list and build the globe's dot grid off the UI thread
+        CityDb.popular
+        WorldMap.dots
+    }
     val home = ZoneId.systemDefault()
+    val dateFmt = DateTimeFormatter.ofPattern("EEE MMM d", Locale.getDefault())
     var is24 = if (prefs.contains("world_24h")) {
         prefs.getBoolean("world_24h", false)
     } else {
         android.text.format.DateFormat.is24HourFormat(this)
     }
     var shiftMs = 0L
-    var showGlobe = prefs.getBoolean("world_globe", true)
-    val dateFmt = DateTimeFormatter.ofPattern("EEE MMM d", Locale.getDefault())
     var fahrenheit = if (prefs.contains("world_fahrenheit")) {
         prefs.getBoolean("world_fahrenheit", false)
     } else {
         usesFahrenheit(Locale.getDefault())
     }
-    var editMode = false
+    var globeMode = false // always opens on the clocks, never on the globe
     var hereText = ""
     var dialog: AlertDialog? = null
     val rows = ArrayList<WorldRow>()
@@ -638,18 +101,37 @@ internal fun MainActivity.showWorldClockPanel() {
         setPadding(dp(18), dp(14), dp(18), dp(16))
         background = box(p.cBg or (0xFF shl 24), p.cBlue)
     }
-    val hereTv = txt(11f, p.cDim, "").apply { gravity = Gravity.CENTER }
+    val hereTv = txt(11f, p.cDim, "").apply {
+        gravity = Gravity.CENTER
+        isClickable = true
+    }
     root.addView(hereTv, lp(-1, -2))
 
+    // title: World (globe | x) Clock
     val titleRow = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER
     }
-    titleRow.addView(GlobeIconView(act, p.cFg), lp(dp(32), dp(32)).apply { marginEnd = dp(12) })
-    titleRow.addView(txt(20f, p.cFg, "World Clock").apply { setTypeface(typeface, Typeface.BOLD) })
-    root.addView(titleRow, lp(-1, -2).apply { topMargin = dp(4); bottomMargin = dp(8) })
+    titleRow.addView(txt(20f, p.cFg, "World").apply { setTypeface(typeface, Typeface.BOLD) })
+    val iconFrame = FrameLayout(this)
+    iconFrame.isClickable = true
+    val globeIcon = GlobeIconView(act, p.cFg)
+    val closeIcon = CardActionIconView(act, CardActionIconView.Kind.CLOSE, p.cFg).apply {
+        alpha = 0f
+        rotation = 90f
+        setPadding(dp(5), dp(5), dp(5), dp(5))
+    }
+    iconFrame.addView(globeIcon, FrameLayout.LayoutParams(-1, -1))
+    iconFrame.addView(closeIcon, FrameLayout.LayoutParams(-1, -1))
+    titleRow.addView(iconFrame, lp(dp(34), dp(34)).apply { marginStart = dp(12); marginEnd = dp(12) })
+    titleRow.addView(txt(20f, p.cFg, "Clock").apply { setTypeface(typeface, Typeface.BOLD) })
+    root.addView(titleRow, lp(-1, -2).apply { topMargin = dp(4); bottomMargin = dp(10) })
 
-    val globe = GlobeModelView(this, p.cFg, p.cDim, withAlpha(p.cDim, 0x90), p.cAnsi[3], p.cDim, font)
+    // the big globe (only shown in globe mode)
+    val globe = GlobeModelView(
+        this, p.cFg, p.cDim, withAlpha(p.cDim, 0xA0), p.cBlue, p.cAnsi[3], p.cAnsi[3], p.cFg,
+        p.cBg or (0xFF shl 24), font
+    )
     val pill = txt(12f, p.cFg, "").apply {
         setPadding(dp(14), dp(8), dp(14), dp(8))
         background = box(p.cBg or (0xFF shl 24), p.cBlue)
@@ -658,21 +140,18 @@ internal fun MainActivity.showWorldClockPanel() {
         visibility = View.GONE
     }
     val globeBox = FrameLayout(this)
-    globeBox.visibility = if (showGlobe) View.VISIBLE else View.GONE
+    globeBox.visibility = View.GONE
     globeBox.addView(globe, FrameLayout.LayoutParams(-1, -1))
     globeBox.addView(
         pill,
         FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(4) }
     )
-    root.addView(globeBox, lp(-1, dp(190)).apply { bottomMargin = dp(10) })
-    titleRow.setOnClickListener {
-        showGlobe = !showGlobe
-        prefs.edit().putBoolean("world_globe", showGlobe).apply()
-        globeBox.visibility = if (showGlobe) View.VISIBLE else View.GONE
-    }
+    val globeHeight = min(dp(390), (resources.displayMetrics.heightPixels * 0.55f).toInt())
+    root.addView(globeBox, lp(-1, globeHeight).apply { bottomMargin = dp(10) })
 
-    val cardsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-    val scroll = BoundedScrollView(this, (resources.displayMetrics.heightPixels * 0.55f).toInt()).apply {
+    // the clocks
+    val cardsBox = ReorderLayout(this)
+    val scroll = BoundedScrollView(this, (resources.displayMetrics.heightPixels * 0.58f).toInt()).apply {
         isVerticalScrollBarEnabled = false
         overScrollMode = View.OVER_SCROLL_NEVER
         addView(cardsBox, FrameLayout.LayoutParams(-1, -2))
@@ -686,7 +165,7 @@ internal fun MainActivity.showWorldClockPanel() {
     }
     root.addView(emptyTv, lp(-1, -2))
 
-    // ---- add a city ----
+    // ---- add a city / jump to a city ----
     val addArea = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
     val addBtn = txt(13f, p.cFg, "+   Add a city").apply {
         gravity = Gravity.CENTER
@@ -799,17 +278,21 @@ internal fun MainActivity.showWorldClockPanel() {
     }
 
     fun refreshChrome() {
-        emptyTv.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
         val full = rows.size >= WORLD_MAX_CITIES
-        addBtn.alpha = if (full) 0.4f else 1f
-        addBtn.text = if (full) "city limit reached" else "+   Add a city"
+        emptyTv.visibility = if (rows.isEmpty() && !globeMode) View.VISIBLE else View.GONE
+        addBtn.alpha = if (full && !globeMode) 0.4f else 1f
+        addBtn.text = when {
+            globeMode -> "Jump to a city"
+            full -> "city limit reached"
+            else -> "+   Add a city"
+        }
     }
 
     fun renderWeather(r: WorldRow) {
         val w = r.weather ?: return
         r.weatherIcon.set(weatherKindFor(w.code), w.isDay)
         r.tempTv.text = formatTemp(w.tempC, fahrenheit)
-        if (!editMode && r.weatherBox.alpha < 1f) {
+        if (r.weatherBox.alpha < 1f) {
             r.weatherBox.animate().cancel()
             r.weatherBox.scaleX = 0.85f
             r.weatherBox.scaleY = 0.85f
@@ -845,6 +328,7 @@ internal fun MainActivity.showWorldClockPanel() {
         r.ampmTv.visibility = if (ap.isEmpty()) View.GONE else View.VISIBLE
         val rel = relativeDayLabel(t.toLocalDate(), localNow.toLocalDate())
         smoothText(r.dateTv, dateFmt.format(t) + (if (rel != null) " · $rel" else ""), animate)
+        smoothText(r.greetTv, capitalizeFirst(greetingFor(r.country, t.hour)), animate)
         val offset = formatOffsetHours(offsetBetweenHours(r.zone, home, instant))
         smoothText(r.zoneTv, zoneAbbrev(r.zone, instant) + "  " + offset, false)
         r.track.sun = sunWindow(r.city.lat, r.city.lon, t.toLocalDate(), r.zone)
@@ -861,7 +345,7 @@ internal fun MainActivity.showWorldClockPanel() {
         } else {
             "$clockText here  ·  ${formatShift(shiftMs)}  ·  tap to reset"
         }
-        if (!editMode) smoothText(hereTv, hereText, animate)
+        smoothText(hereTv, hereText, animate)
         for (r in rows) renderRow(r, localNow, instant, animate)
         val sun = subsolarPoint(instant)
         globe.setSun(sun.first, sun.second)
@@ -881,33 +365,85 @@ internal fun MainActivity.showWorldClockPanel() {
     }
     hereTv.setOnClickListener { resetShift() }
 
-    fun setEditMode(on: Boolean) {
-        editMode = on
-        for (r in rows) {
-            r.removeBtn.visibility = View.VISIBLE
-            r.removeBtn.animate().cancel()
-            r.removeBtn.animate().alpha(if (on) 1f else 0f).setDuration(180L).withEndAction {
-                if (!editMode) r.removeBtn.visibility = View.INVISIBLE
-            }.start()
-            r.weatherBox.animate().cancel()
-            r.weatherBox.animate().alpha(if (!on && r.weather != null) 1f else 0f).setDuration(180L).start()
+    // ---- notes ----
+    val noteSize = 12f * uiScale * (uiTextSize / 13f)
+
+    fun saveNote(r: WorldRow, text: String) {
+        val clean = text.replace(Regex("[\t\r\n]+"), " ").trim().take(140)
+        r.city = r.city.copy(note = clean)
+        persist()
+        r.noteTv.text = clean
+        r.noteTv.visibility = if (clean.isEmpty()) View.GONE else View.VISIBLE
+    }
+
+    fun finishNote(r: WorldRow) {
+        val e = r.noteEdit ?: return
+        if (e.visibility != View.VISIBLE) return
+        saveNote(r, e.text.toString())
+        imm.hideSoftInputFromWindow(e.windowToken, 0)
+        e.visibility = View.GONE
+    }
+
+    fun noteEditFor(r: WorldRow): EditText {
+        r.noteEdit?.let { return it }
+        val e = EditText(act).apply {
+            hint = "Names or @github handles, comma separated"
+            setHintTextColor(p.cDim)
+            setTextColor(p.cFg)
+            typeface = font
+            textSize = noteSize
+            setSingleLine(true)
+            inputType = InputType.TYPE_CLASS_TEXT
+            imeOptions = EditorInfo.IME_ACTION_DONE
+            background = GradientDrawable().apply {
+                setColor(withAlpha(p.cBg, 0x66))
+                setStroke(dp(1), p.cDim)
+            }
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            visibility = View.GONE
         }
-        smoothText(hereTv, if (on) "tap × to remove  ·  hold a city to finish" else hereText, true)
+        e.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_DONE) {
+                finishNote(r)
+                true
+            } else {
+                false
+            }
+        }
+        r.noteEdit = e
+        r.card.addView(e, r.card.indexOfChild(r.track), lp(-1, -2).apply { topMargin = dp(6) })
+        return e
+    }
+
+    fun toggleNote(r: WorldRow) {
+        val current = r.noteEdit
+        if (current != null && current.visibility == View.VISIBLE) {
+            finishNote(r)
+            return
+        }
+        val e = noteEditFor(r)
+        e.setText(r.city.note)
+        e.setSelection(e.text.length)
+        e.visibility = View.VISIBLE
+        r.noteTv.visibility = View.GONE
+        e.requestFocus()
+        e.postDelayed({ imm.showSoftInput(e, InputMethodManager.SHOW_IMPLICIT) }, 120L)
     }
 
     fun removeRow(r: WorldRow) {
+        r.noteEdit?.let { imm.hideSoftInputFromWindow(it.windowToken, 0) }
         rows.remove(r)
         persist()
         cardsBox.removeView(r.card)
         globe.focusIndex = -1
         syncMarkers()
         refreshChrome()
-        if (rows.isEmpty() && editMode) setEditMode(false)
     }
 
     fun buildRow(city: WorldCity): WorldRow? {
         val z = city.zone ?: return null
-        val card = LinearLayout(this).apply {
+        val country = CityDb.countryOf(city.name, city.zoneId)
+        val card = LinearLayout(act).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(10), dp(14), dp(10))
             background = GradientDrawable().apply {
@@ -920,81 +456,96 @@ internal fun MainActivity.showWorldClockPanel() {
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
         }
+        val dateTv = txt(11f, p.cDim, "")
+        val greetTv = txt(11f, withAlpha(p.cFg, 0xB8), "")
+        val noteTv = txt(10f, p.cDim, city.note).apply {
+            visibility = if (city.note.isEmpty()) View.GONE else View.VISIBLE
+        }
+        val leftCol = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        leftCol.addView(nameTv, lp(-1, -2))
+        leftCol.addView(dateTv, lp(-1, -2).apply { topMargin = dp(2) })
+        leftCol.addView(greetTv, lp(-1, -2).apply { topMargin = dp(1) })
+        leftCol.addView(noteTv, lp(-1, -2).apply { topMargin = dp(1) })
+
         val tempTv = txt(11f, p.cDim, "")
-        val weatherIcon = WeatherIconView(this, p.cDim)
-        val weatherBox = LinearLayout(this).apply {
+        val weatherIcon = WeatherIconView(act, p.cDim)
+        val weatherBox = LinearLayout(act).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             alpha = 0f
         }
         weatherBox.addView(tempTv, lp(-2, -2).apply { marginEnd = dp(6) })
         weatherBox.addView(weatherIcon, lp(dp(14), dp(14)))
-        val removeBtn = txt(20f, p.cAnsi[1], "×").apply {
-            setPadding(dp(10), 0, dp(2), dp(2))
-            alpha = 0f
-            visibility = View.INVISIBLE
+        val noteBtn = CardActionIconView(act, CardActionIconView.Kind.NOTE, p.cDim).apply {
+            setPadding(dp(4), dp(4), dp(4), dp(4))
             isClickable = true
+            contentDescription = "Add a note"
         }
-        val slot = FrameLayout(this)
-        slot.addView(weatherBox, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
-        slot.addView(removeBtn, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+        val closeBtn = CardActionIconView(act, CardActionIconView.Kind.CLOSE, p.cDim).apply {
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+            isClickable = true
+            contentDescription = "Remove this clock"
+        }
+        val actions = LinearLayout(act).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL or Gravity.END
+        }
+        actions.addView(weatherBox, lp(-2, -2).apply { marginEnd = dp(6) })
+        actions.addView(noteBtn, lp(dp(26), dp(26)))
+        actions.addView(closeBtn, lp(dp(26), dp(26)))
 
         val timeTv = txt(22f, p.cFg, "").apply { setTypeface(typeface, Typeface.BOLD) }
         val ampmTv = txt(11f, p.cDim, "").apply { setPadding(dp(3), 0, 0, 0) }
-        val timeBox = LinearLayout(this).apply {
+        val timeBox = LinearLayout(act).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.END
         }
         timeBox.addView(timeTv, lp(-2, -2))
         timeBox.addView(ampmTv, lp(-2, -2))
-
-        val top = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        top.addView(nameTv, lp(0, -2).apply { weight = 1f })
-        top.addView(slot, lp(-2, -2).apply { marginStart = dp(8) })
-        top.addView(timeBox, lp(-2, -2).apply { marginStart = dp(14) })
-
-        val dateTv = txt(11f, p.cDim, "")
         val zoneTv = txt(10f, p.cDim, "").apply { gravity = Gravity.END }
-        val sub = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
+
+        val rightCol = LinearLayout(act).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.END
         }
-        sub.addView(dateTv, lp(0, -2).apply { weight = 1f })
-        sub.addView(zoneTv, lp(-2, -2))
+        rightCol.addView(actions, lp(-2, -2))
+        rightCol.addView(timeBox, lp(-2, -2))
+        rightCol.addView(zoneTv, lp(-2, -2))
+
+        val top = LinearLayout(act).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        top.addView(leftCol, lp(0, -2).apply { weight = 1f })
+        top.addView(rightCol, lp(-2, -2).apply { marginStart = dp(8) })
 
         val track = DayTrackView(
-            this,
+            act,
             withAlpha(p.cDim, 0x40),
             withAlpha(p.cDim, 0xD0),
             p.cAnsi[3],
             p.cFg
         )
-
         card.addView(top, lp(-1, -2))
-        card.addView(sub, lp(-1, -2).apply { topMargin = dp(1) })
         card.addView(track, lp(-1, dp(28)).apply { topMargin = dp(2) })
 
-        val row = WorldRow(city, z, card, dateTv, tempTv, weatherIcon, weatherBox, removeBtn, timeTv, ampmTv, zoneTv, track)
-        card.setOnLongClickListener {
-            setEditMode(!editMode)
-            true
-        }
+        val row = WorldRow(
+            city, z, country, card, dateTv, greetTv, noteTv, tempTv, weatherIcon, weatherBox,
+            timeTv, ampmTv, zoneTv, track
+        )
+        noteBtn.setOnClickListener { toggleNote(row) }
+        closeBtn.setOnClickListener { removeRow(row) }
         track.onScrub = { f ->
             val now0 = dayFraction(ZonedDateTime.now(z))
             shiftMs = ((f - now0) * 86_400_000.0).toLong()
             updateAll(false)
         }
-        card.setOnClickListener { focusRow(row) }
         timeBox.setOnClickListener {
             is24 = !is24
             prefs.edit().putBoolean("world_24h", is24).apply()
             updateAll(false)
         }
-        slot.setOnClickListener {
-            if (!editMode && row.weather != null) {
+        weatherBox.setOnClickListener {
+            if (row.weather != null) {
                 fahrenheit = !fahrenheit
                 prefs.edit().putBoolean("world_fahrenheit", fahrenheit).apply()
                 for (other in rows) {
@@ -1003,13 +554,15 @@ internal fun MainActivity.showWorldClockPanel() {
                 }
             }
         }
-        removeBtn.setOnClickListener { removeRow(row) }
+        card.layoutTransition = LayoutTransition().apply {
+            enableTransitionType(LayoutTransition.CHANGING)
+            setDuration(200L)
+        }
         return row
     }
 
     fun sweepIn(r: WorldRow, delayMs: Long) {
-        val z = r.zone
-        val t = ZonedDateTime.now(z)
+        val t = ZonedDateTime.now(r.zone)
         r.track.setFraction(dayFraction(t).toFloat(), 800L, delayMs, true)
     }
 
@@ -1028,6 +581,18 @@ internal fun MainActivity.showWorldClockPanel() {
     rows.forEach {
         it.card.alpha = 0f
         it.card.translationY = dp(14).toFloat()
+    }
+
+    cardsBox.canStartDrag = { card, rawX, rawY ->
+        val r = rows.firstOrNull { it.card === card }
+        r != null && !r.track.containsRaw(rawX, rawY) && r.noteEdit?.visibility != View.VISIBLE
+    }
+    cardsBox.onReordered = { from, to ->
+        if (from in rows.indices && to in rows.indices) {
+            rows.add(to, rows.removeAt(from))
+            persist()
+            syncMarkers()
+        }
     }
 
     // ---- search ----
@@ -1066,7 +631,7 @@ internal fun MainActivity.showWorldClockPanel() {
         setStatus(null)
         searchRow.visibility = View.GONE
         addBtn.visibility = View.VISIBLE
-        if (showGlobe) globeBox.visibility = View.VISIBLE
+        if (globeMode) globeBox.visibility = View.VISIBLE
     }
 
     fun addCity(c: WorldCity) {
@@ -1161,6 +726,40 @@ internal fun MainActivity.showWorldClockPanel() {
         handler.postDelayed(job, 6000L)
     }
 
+    fun setGlobeMode(on: Boolean) {
+        if (globeMode == on) return
+        if (searchRow.visibility == View.VISIBLE) closeSearch()
+        hidePick()
+        globeMode = on
+        globeBox.visibility = if (on) View.VISIBLE else View.GONE
+        scroll.visibility = if (on) View.GONE else View.VISIBLE
+        refreshChrome()
+        globeIcon.animate().cancel()
+        closeIcon.animate().cancel()
+        globeIcon.animate().alpha(if (on) 0f else 1f).rotation(if (on) -90f else 0f).setDuration(240L).start()
+        closeIcon.animate().alpha(if (on) 1f else 0f).rotation(if (on) 0f else 90f).setDuration(240L).start()
+        if (on) {
+            val first = rows.firstOrNull()
+            if (first != null) {
+                globe.focusIndex = 0
+                globe.jumpTo(first.city.lat, first.city.lon - 70.0)
+                globe.focusOn(first.city.lat, first.city.lon, 1000L)
+            } else {
+                globe.jumpTo(20.0, 0.0)
+            }
+        }
+    }
+
+    /** A city picked from the list: added on the clocks screen, offered on the globe screen. */
+    fun choose(c: DbCity) {
+        if (globeMode) {
+            closeSearch()
+            showPick(c)
+        } else {
+            addCity(c.toCity())
+        }
+    }
+
     pill.setOnClickListener {
         val c = pendingPick
         hidePick()
@@ -1170,20 +769,21 @@ internal fun MainActivity.showWorldClockPanel() {
         val c = if (spot == null) null else CityDb.pick(spot.first, spot.second)
         if (c == null) hidePick() else showPick(c)
     }
+    iconFrame.setOnClickListener { setGlobeMode(!globeMode) }
 
     resultsList.setOnItemClickListener { _, _, position, _ ->
-        results.getOrNull(position)?.let { addCity(it.toCity()) }
+        results.getOrNull(position)?.let { choose(it) }
     }
     input.doAfterTextChanged { if (!suppressQuery) onQueryChanged() }
     input.setOnEditorActionListener { _, actionId, _ ->
         if (actionId == EditorInfo.IME_ACTION_DONE || actionId == EditorInfo.IME_ACTION_SEARCH) {
-            results.getOrNull(highlighted)?.let { addCity(it.toCity()) }
+            results.getOrNull(highlighted)?.let { choose(it) }
             true
         } else {
             false
         }
     }
-    // hardware keyboard: arrows move the highlight, Enter adds it
+    // hardware keyboard: arrows move the highlight, Enter picks it
     input.setOnKeyListener { _, keyCode, event ->
         if (event.action != KeyEvent.ACTION_DOWN) {
             false
@@ -1206,7 +806,7 @@ internal fun MainActivity.showWorldClockPanel() {
                     true
                 }
                 KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
-                    results.getOrNull(highlighted)?.let { addCity(it.toCity()) }
+                    results.getOrNull(highlighted)?.let { choose(it) }
                     true
                 }
                 else -> false
@@ -1215,12 +815,12 @@ internal fun MainActivity.showWorldClockPanel() {
     }
     cancelBtn.setOnClickListener { closeSearch() }
     addBtn.setOnClickListener {
-        if (rows.size >= WORLD_MAX_CITIES) return@setOnClickListener
-        if (editMode) setEditMode(false)
+        if (!globeMode && rows.size >= WORLD_MAX_CITIES) return@setOnClickListener
         hidePick()
+        for (r in rows) finishNote(r)
         addBtn.visibility = View.GONE
         searchRow.visibility = View.VISIBLE
-        globeBox.visibility = View.GONE
+        if (globeMode) globeBox.visibility = View.GONE
         onQueryChanged()
         input.requestFocus()
         input.postDelayed({ imm.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT) }, 160L)
@@ -1240,14 +840,14 @@ internal fun MainActivity.showWorldClockPanel() {
         pendingSearch?.let { handler.removeCallbacks(it) }
         pickHide?.let { handler.removeCallbacks(it) }
         searchSeq++
+        for (r in rows) {
+            val e = r.noteEdit
+            if (e != null && e.visibility == View.VISIBLE) saveNote(r, e.text.toString())
+        }
         imm.hideSoftInputFromWindow(input.windowToken, 0)
     }
     dialog?.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
 
-    rows.firstOrNull()?.let {
-        globe.focusIndex = 0
-        globe.focusOn(it.city.lat, it.city.lon, 1100L)
-    }
     rows.forEachIndexed { i, r ->
         val delay = 80L + i * 55L
         r.card.animate()
@@ -1261,7 +861,7 @@ internal fun MainActivity.showWorldClockPanel() {
         loadWeather(r)
     }
 
-    // soften later changes (rows added or removed, search opening) once the first paint is done
+    // soften later changes (rows added or removed, switching between clocks and globe, search opening)
     for (vg in listOf<ViewGroup>(root, cardsBox, addArea)) {
         vg.layoutTransition = LayoutTransition().apply {
             enableTransitionType(LayoutTransition.CHANGING)

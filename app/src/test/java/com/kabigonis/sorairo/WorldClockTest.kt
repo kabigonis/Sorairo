@@ -125,6 +125,15 @@ class WorldClockTest {
         assertEquals("Odd Name", back[1].name)
     }
 
+    @Test fun notesSurviveSavingAndOldFilesStillLoad() {
+        val saved = encodeWorldCities(listOf(WorldCity("Tokyo", "Asia/Tokyo", 35.68, 139.65, "Aiko, @sora")))
+        assertEquals("Aiko, @sora", decodeWorldCities(saved)[0].note)
+        val old = decodeWorldCities("Paris\tEurope/Paris\t48.86\t2.35")
+        assertEquals("", old[0].note)
+        val messy = encodeWorldCities(listOf(WorldCity("A", "Asia/Tokyo", 1.0, 2.0, "x\ty\nz")))
+        assertEquals("x y z", decodeWorldCities(messy)[0].note)
+    }
+
     @Test fun neverSavedGivesDefaultsButEmptyStaysEmpty() {
         assertEquals(DEFAULT_WORLD_CITIES, decodeWorldCities(null))
         assertTrue(decodeWorldCities("").isEmpty())

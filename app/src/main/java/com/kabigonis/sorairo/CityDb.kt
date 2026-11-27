@@ -76,9 +76,17 @@ internal object CityDb {
     /** The well-known cities (tier 1 and 2), drawn on the globe and preferred when tapping it. */
     val popular: List<DbCity> by lazy { all.filter { it.tier >= 1 } }
 
+    /** The cities that are named on the globe (the ones in the Omarchy reference views). */
+    val globeCities: List<DbCity> by lazy { all.filter { it.tier >= 2 } }
+
     /** What a tap on the map means: a popular city nearby, else any listed town very close by. */
     fun pick(lat: Double, lon: Double): DbCity? =
-        nearest(lat, lon, 1500.0, popular) ?: nearest(lat, lon, 700.0, all)
+        nearest(lat, lon, 1200.0, popular) ?: nearest(lat, lon, 500.0, all)
+
+    /** Country of a saved clock, used to choose its greeting. */
+    fun countryOf(name: String, zoneId: String): String? =
+        all.firstOrNull { it.zoneId == zoneId && it.name.equals(name, ignoreCase = true) }?.country
+            ?: all.firstOrNull { it.zoneId == zoneId }?.country
 
     /** Empty query returns everything alphabetically. */
     fun search(query: String, limit: Int = 800, source: List<DbCity> = all): List<DbCity> {

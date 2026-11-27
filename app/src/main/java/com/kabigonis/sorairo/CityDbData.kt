@@ -9,7 +9,7 @@ Abu Dhabi|United Arab Emirates|Asia/Dubai|24.4500|54.3800|1
 Abuja|Nigeria|Africa/Lagos|9.0800|7.4000|1
 Accra|Ghana|Africa/Accra|5.6000|-0.1900|1
 Adak|United States|America/Adak|51.8800|-176.6581|0
-Addis Ababa|Ethiopia|Africa/Addis_Ababa|9.0300|38.7400|2
+Addis Ababa|Ethiopia|Africa/Addis_Ababa|9.0300|38.7400|1
 Adelaide|Australia|Australia/Adelaide|-34.9300|138.6000|1
 Aden|Yemen|Asia/Aden|12.7800|45.0400|1
 Ahmedabad|India|Asia/Kolkata|23.0200|72.5700|1
@@ -17,7 +17,7 @@ Albuquerque|United States|America/Denver|35.0800|-106.6500|1
 Aleppo|Syria|Asia/Damascus|36.2000|37.1600|1
 Alexandria|Egypt|Africa/Cairo|31.2000|29.9200|1
 Algiers|Algeria|Africa/Algiers|36.7500|3.0600|1
-Almaty|Kazakhstan|Asia/Almaty|43.2400|76.8900|2
+Almaty|Kazakhstan|Asia/Almaty|43.2400|76.8900|1
 Amman|Jordan|Asia/Amman|31.9500|35.9300|1
 Amsterdam|Netherlands|Europe/Amsterdam|52.3700|4.9000|1
 Anadyr|Russia|Asia/Anadyr|64.7500|177.4833|0
@@ -36,7 +36,7 @@ Ashgabat|Turkmenistan|Asia/Ashgabat|37.9600|58.3300|1
 Asmara|Eritrea|Africa/Asmara|15.3333|38.8833|0
 Astrakhan|Russia|Europe/Astrakhan|46.3500|48.0500|0
 Asuncion|Paraguay|America/Asuncion|-25.2600|-57.5800|1
-Athens|Greece|Europe/Athens|37.9800|23.7300|2
+Athens|Greece|Europe/Athens|37.9800|23.7300|1
 Atikokan|Canada|America/Atikokan|48.7586|-91.6217|0
 Atlanta|United States|America/New_York|33.7500|-84.3900|1
 Atyrau|Kazakhstan|Asia/Atyrau|47.1167|51.9333|0
@@ -57,12 +57,12 @@ Banjul|Gambia|Africa/Banjul|13.4667|-16.6500|0
 Barbados|Barbados|America/Barbados|13.1000|-59.6167|0
 Barcelona|Spain|Europe/Madrid|41.3900|2.1700|1
 Barnaul|Russia|Asia/Barnaul|53.3667|83.7500|0
-Beijing|China|Asia/Shanghai|39.9000|116.4100|2
+Beijing|China|Asia/Shanghai|39.9000|116.4100|1
 Beirut|Lebanon|Asia/Beirut|33.8900|35.5000|1
 Belem|Brazil|America/Belem|-1.4500|-48.4833|0
 Belgrade|Serbia|Europe/Belgrade|44.7900|20.4500|1
 Belize|Belize|America/Belize|17.5000|-88.2000|0
-Berlin|Germany|Europe/Berlin|52.5200|13.4000|2
+Berlin|Germany|Europe/Berlin|52.5200|13.4000|1
 Bermuda|Bermuda|Atlantic/Bermuda|32.2833|-64.7667|0
 Beulah|United States|America/North_Dakota/Beulah|47.2642|-101.7778|0
 Birmingham|United Kingdom|Europe/London|52.4900|-1.8900|1
@@ -85,7 +85,7 @@ Brunei|Brunei|Asia/Brunei|4.9333|114.9167|0
 Brussels|Belgium|Europe/Brussels|50.8500|4.3500|1
 Bucharest|Romania|Europe/Bucharest|44.4300|26.1000|1
 Budapest|Hungary|Europe/Budapest|47.5000|19.0400|1
-Buenos Aires|Argentina|America/Argentina/Buenos_Aires|-34.6000|-58.3800|2
+Buenos Aires|Argentina|America/Argentina/Buenos_Aires|-34.6000|-58.3800|1
 Bujumbura|Burundi|Africa/Bujumbura|-3.3833|29.3667|0
 Busan|South Korea|Asia/Seoul|35.1800|129.0800|1
 Busingen|Germany|Europe/Busingen|47.7000|8.6833|0
@@ -96,10 +96,10 @@ Campo Grande|Brazil|America/Campo_Grande|-20.4500|-54.6167|0
 Canary|Spain|Atlantic/Canary|28.1000|-15.4000|0
 Canberra|Australia|Australia/Sydney|-35.2800|149.1300|1
 Cancun|Mexico|America/Cancun|21.1600|-86.8500|1
-Cape Town|South Africa|Africa/Johannesburg|-33.9200|18.4200|2
+Cape Town|South Africa|Africa/Johannesburg|-33.9200|18.4200|1
 Cape Verde|Cape Verde|Atlantic/Cape_Verde|14.9167|-23.5167|0
-Caracas|Venezuela|America/Caracas|10.4800|-66.9000|2
-Casablanca|Morocco|Africa/Casablanca|33.5700|-7.5900|2
+Caracas|Venezuela|America/Caracas|10.4800|-66.9000|1
+Casablanca|Morocco|Africa/Casablanca|33.5700|-7.5900|1
 Casey|Antarctica|Antarctica/Casey|-66.2833|110.5167|0
 Catamarca|Argentina|America/Argentina/Catamarca|-28.4667|-65.7833|0
 Cayenne|French Guiana|America/Cayenne|4.9333|-52.3333|0
@@ -111,7 +111,7 @@ Charlotte|United States|America/New_York|35.2300|-80.8400|1
 Chatham|New Zealand|Pacific/Chatham|-43.9500|-176.5500|0
 Chengdu|China|Asia/Shanghai|30.5700|104.0700|1
 Chennai|India|Asia/Kolkata|13.0800|80.2700|1
-Chicago|United States|America/Chicago|41.8800|-87.6300|2
+Chicago|United States|America/Chicago|41.8800|-87.6300|1
 Chihuahua|Mexico|America/Chihuahua|28.6333|-106.0833|0
 Chisinau|Moldova|Europe/Chisinau|47.0100|28.8600|1
 Chita|Russia|Asia/Chita|52.0500|113.4667|0
@@ -142,7 +142,7 @@ Dawson|Canada|America/Dawson|64.0667|-139.4167|0
 Dawson Creek|Canada|America/Dawson_Creek|55.7667|-120.2333|0
 Delhi|India|Asia/Kolkata|28.6100|77.2100|2
 Denpasar|Indonesia|Asia/Makassar|-8.6500|115.2200|1
-Denver|United States|America/Denver|39.7400|-104.9900|2
+Denver|United States|America/Denver|39.7400|-104.9900|1
 Detroit|United States|America/Detroit|42.3300|-83.0500|1
 Dhaka|Bangladesh|Asia/Dhaka|23.8100|90.4100|2
 Dili|Timor-Leste|Asia/Dili|-8.5600|125.5700|1
@@ -151,7 +151,7 @@ Doha|Qatar|Asia/Qatar|25.2900|51.5300|1
 Dominica|Dominica|America/Dominica|15.3000|-61.4000|0
 Douala|Cameroon|Africa/Douala|4.0500|9.7000|0
 Dubai|United Arab Emirates|Asia/Dubai|25.2000|55.2700|2
-Dublin|Ireland|Europe/Dublin|53.3500|-6.2600|2
+Dublin|Ireland|Europe/Dublin|53.3500|-6.2600|1
 DumontDUrville|Antarctica|Antarctica/DumontDUrville|-66.6667|140.0167|0
 Durban|South Africa|Africa/Johannesburg|-29.8600|31.0200|1
 Dushanbe|Tajikistan|Asia/Dushanbe|38.5600|68.7700|1
@@ -199,16 +199,16 @@ Halifax|Canada|America/Halifax|44.6500|-63.5700|1
 Hamburg|Germany|Europe/Berlin|53.5500|9.9900|1
 Hanoi|Vietnam|Asia/Bangkok|21.0300|105.8500|1
 Harare|Zimbabwe|Africa/Harare|-17.8300|31.0500|1
-Havana|Cuba|America/Havana|23.1100|-82.3700|2
+Havana|Cuba|America/Havana|23.1100|-82.3700|1
 Hebron|Palestine|Asia/Hebron|31.5333|35.0950|0
 Helsinki|Finland|Europe/Helsinki|60.1700|24.9400|1
 Hermosillo|Mexico|America/Hermosillo|29.0667|-110.9667|0
 Ho Chi Minh|Vietnam|Asia/Ho_Chi_Minh|10.7500|106.6667|0
-Ho Chi Minh City|Vietnam|Asia/Ho_Chi_Minh|10.8200|106.6300|2
+Ho Chi Minh City|Vietnam|Asia/Ho_Chi_Minh|10.8200|106.6300|1
 Hobart|Australia|Australia/Hobart|-42.8800|147.3300|1
 Hong Kong|Hong Kong|Asia/Hong_Kong|22.3200|114.1700|2
 Honolulu|United States|Pacific/Honolulu|21.3100|-157.8600|2
-Houston|United States|America/Chicago|29.7600|-95.3700|2
+Houston|United States|America/Chicago|29.7600|-95.3700|1
 Hovd|Mongolia|Asia/Hovd|48.0167|91.6500|0
 Hyderabad|India|Asia/Kolkata|17.3900|78.4900|1
 Indianapolis|United States|America/Indiana/Indianapolis|39.7683|-86.1581|0
@@ -235,33 +235,33 @@ Kamchatka|Russia|Asia/Kamchatka|53.0167|158.6500|0
 Kampala|Uganda|Africa/Kampala|0.3500|32.5800|1
 Kansas City|United States|America/Chicago|39.1000|-94.5800|1
 Kanton|Kiribati|Pacific/Kanton|-2.7833|-171.7167|0
-Karachi|Pakistan|Asia/Karachi|24.8600|67.0100|2
+Karachi|Pakistan|Asia/Karachi|24.8600|67.0100|1
 Kathmandu|Nepal|Asia/Kathmandu|27.7200|85.3200|1
 Kerguelen|French S. Terr.|Indian/Kerguelen|-49.3528|70.2175|0
 Khandyga|Russia|Asia/Khandyga|62.6564|135.5539|0
 Khartoum|Sudan|Africa/Khartoum|15.5000|32.5600|1
 Kigali|Rwanda|Africa/Kigali|-1.9400|30.0600|1
 Kingston|Jamaica|America/Jamaica|17.9700|-76.7900|1
-Kinshasa|DR Congo|Africa/Kinshasa|-4.4400|15.2700|2
+Kinshasa|DR Congo|Africa/Kinshasa|-4.4400|15.2700|1
 Kiritimati|Kiribati|Pacific/Kiritimati|1.8667|-157.3333|0
 Kirov|Russia|Europe/Kirov|58.6000|49.6500|0
 Knox|United States|America/Indiana/Knox|41.2958|-86.6250|0
-Kolkata|India|Asia/Kolkata|22.5700|88.3600|2
+Kolkata|India|Asia/Kolkata|22.5700|88.3600|1
 Kosrae|Micronesia|Pacific/Kosrae|5.3167|162.9833|0
 Krakow|Poland|Europe/Warsaw|50.0600|19.9400|1
 Kralendijk|Caribbean NL|America/Kralendijk|12.1508|-68.2767|0
 Krasnoyarsk|Russia|Asia/Krasnoyarsk|56.0167|92.8333|0
-Kuala Lumpur|Malaysia|Asia/Kuala_Lumpur|3.1400|101.6900|2
+Kuala Lumpur|Malaysia|Asia/Kuala_Lumpur|3.1400|101.6900|1
 Kuching|Malaysia|Asia/Kuching|1.5500|110.3333|0
 Kuwait|Kuwait|Asia/Kuwait|29.3333|47.9833|0
 Kuwait City|Kuwait|Asia/Kuwait|29.3800|47.9900|1
 Kwajalein|Marshall Islands|Pacific/Kwajalein|9.0833|167.3333|0
-Kyiv|Ukraine|Europe/Kyiv|50.4500|30.5200|2
+Kyiv|Ukraine|Europe/Kyiv|50.4500|30.5200|1
 Kyoto|Japan|Asia/Tokyo|35.0100|135.7700|1
 La Paz|Bolivia|America/La_Paz|-16.5000|-68.1500|1
 La Rioja|Argentina|America/Argentina/La_Rioja|-29.4333|-66.8500|0
 Lagos|Nigeria|Africa/Lagos|6.5200|3.3800|2
-Lahore|Pakistan|Asia/Karachi|31.5500|74.3400|2
+Lahore|Pakistan|Asia/Karachi|31.5500|74.3400|1
 Las Vegas|United States|America/Los_Angeles|36.1700|-115.1400|1
 Libreville|Gabon|Africa/Libreville|0.3833|9.4500|0
 Lima|Peru|America/Lima|-12.0500|-77.0400|2
@@ -269,7 +269,7 @@ Lindeman|Australia|Australia/Lindeman|-20.2667|149.0000|0
 Lisbon|Portugal|Europe/Lisbon|38.7200|-9.1400|2
 Ljubljana|Slovenia|Europe/Ljubljana|46.0600|14.5100|1
 Lome|Togo|Africa/Lome|6.1300|1.2200|1
-London|United Kingdom|Europe/London|51.5100|-0.1300|2
+London|United Kingdom|Europe/London|51.5100|-0.1300|1
 Longyearbyen|Svalbard & Jan Mayen|Arctic/Longyearbyen|78.0000|16.0000|0
 Lord Howe|Australia|Australia/Lord_Howe|-31.5500|159.0833|0
 Los Angeles|United States|America/Los_Angeles|34.0500|-118.2400|2
@@ -285,7 +285,7 @@ Macau|Macau|Asia/Macau|22.1972|113.5417|0
 Maceio|Brazil|America/Maceio|-9.6667|-35.7167|0
 Macquarie|Australia|Antarctica/Macquarie|-54.5000|158.9500|0
 Madeira|Portugal|Atlantic/Madeira|32.6333|-16.9000|0
-Madrid|Spain|Europe/Madrid|40.4200|-3.7000|2
+Madrid|Spain|Europe/Madrid|40.4200|-3.7000|1
 Magadan|Russia|Asia/Magadan|59.5667|150.8000|0
 Mahe|Seychelles|Indian/Mahe|-4.6667|55.4667|0
 Majuro|Marshall Islands|Pacific/Majuro|7.1500|171.2000|0
@@ -298,7 +298,7 @@ Managua|Nicaragua|America/Managua|12.1100|-86.2400|1
 Manama|Bahrain|Asia/Bahrain|26.2300|50.5900|1
 Manaus|Brazil|America/Manaus|-3.1200|-60.0200|1
 Manchester|United Kingdom|Europe/London|53.4800|-2.2400|1
-Manila|Philippines|Asia/Manila|14.6000|120.9800|2
+Manila|Philippines|Asia/Manila|14.6000|120.9800|1
 Maputo|Mozambique|Africa/Maputo|-25.9700|32.5700|1
 Marengo|United States|America/Indiana/Marengo|38.3756|-86.3447|0
 Mariehamn|Åland Islands|Europe/Mariehamn|60.1000|19.9500|0
@@ -322,7 +322,7 @@ Menominee|United States|America/Menominee|45.1078|-87.6142|0
 Merida|Mexico|America/Merida|20.9667|-89.6167|0
 Metlakatla|United States|America/Metlakatla|55.1269|-131.5764|0
 Mexico City|Mexico|America/Mexico_City|19.4300|-99.1300|2
-Miami|United States|America/New_York|25.7600|-80.1900|2
+Miami|United States|America/New_York|25.7600|-80.1900|1
 Midway|US minor outlying islands|Pacific/Midway|28.2167|-177.3667|0
 Milan|Italy|Europe/Rome|45.4600|9.1900|1
 Minneapolis|United States|America/Chicago|44.9800|-93.2700|1
@@ -335,10 +335,10 @@ Monrovia|Liberia|Africa/Monrovia|6.3000|-10.7833|0
 Monterrey|Mexico|America/Monterrey|25.6900|-100.3200|1
 Montevideo|Uruguay|America/Montevideo|-34.9000|-56.1900|1
 Monticello|United States|America/Kentucky/Monticello|36.8297|-84.8492|0
-Montreal|Canada|America/Toronto|45.5000|-73.5700|2
+Montreal|Canada|America/Toronto|45.5000|-73.5700|1
 Montserrat|Montserrat|America/Montserrat|16.7167|-62.2167|0
 Moscow|Russia|Europe/Moscow|55.7600|37.6200|2
-Mumbai|India|Asia/Kolkata|19.0800|72.8800|2
+Mumbai|India|Asia/Kolkata|19.0800|72.8800|1
 Munich|Germany|Europe/Berlin|48.1400|11.5800|1
 Muscat|Oman|Asia/Muscat|23.5900|58.4100|1
 Nairobi|Kenya|Africa/Nairobi|-1.2900|36.8200|2
@@ -400,6 +400,7 @@ Porto|Portugal|Europe/Lisbon|41.1500|-8.6100|1
 Porto Velho|Brazil|America/Porto_Velho|-8.7667|-63.9000|0
 Porto-Novo|Benin|Africa/Porto-Novo|6.4833|2.6167|0
 Prague|Czechia|Europe/Prague|50.0800|14.4400|1
+Praia|Cape Verde|Atlantic/Cape_Verde|14.9300|-23.5100|2
 Puerto Rico|Puerto Rico|America/Puerto_Rico|18.4683|-66.1061|0
 Pune|India|Asia/Kolkata|18.5200|73.8600|1
 Punta Arenas|Chile|America/Punta_Arenas|-53.1500|-70.9167|0
@@ -417,9 +418,9 @@ Reunion|Réunion|Indian/Reunion|-20.8667|55.4667|0
 Reykjavik|Iceland|Atlantic/Reykjavik|64.1500|-21.9400|2
 Riga|Latvia|Europe/Riga|56.9500|24.1100|1
 Rio Branco|Brazil|America/Rio_Branco|-9.9667|-67.8000|0
-Rio de Janeiro|Brazil|America/Sao_Paulo|-22.9100|-43.1700|2
+Rio de Janeiro|Brazil|America/Sao_Paulo|-22.9100|-43.1700|1
 Rio Gallegos|Argentina|America/Argentina/Rio_Gallegos|-51.6333|-69.2167|0
-Riyadh|Saudi Arabia|Asia/Riyadh|24.7100|46.6800|2
+Riyadh|Saudi Arabia|Asia/Riyadh|24.7100|46.6800|1
 Rome|Italy|Europe/Rome|41.9000|12.5000|2
 Rothera|Antarctica|Antarctica/Rothera|-67.5667|-68.1333|0
 Rotterdam|Netherlands|Europe/Amsterdam|51.9200|4.4800|1
@@ -433,7 +434,7 @@ Samara|Russia|Europe/Samara|53.2000|50.1500|0
 Samarkand|Uzbekistan|Asia/Samarkand|39.6667|66.8000|0
 San Antonio|United States|America/Chicago|29.4200|-98.4900|1
 San Diego|United States|America/Los_Angeles|32.7200|-117.1600|1
-San Francisco|United States|America/Los_Angeles|37.7700|-122.4200|2
+San Francisco|United States|America/Los_Angeles|37.7700|-122.4200|1
 San Jose|Costa Rica|America/Costa_Rica|9.9300|-84.0800|1
 San Jose|United States|America/Los_Angeles|37.3400|-121.8900|1
 San Juan|Argentina|America/Argentina/San_Juan|-31.5333|-68.5167|0
@@ -451,7 +452,7 @@ Sarajevo|Bosnia and Herzegovina|Europe/Sarajevo|43.8600|18.4100|1
 Saratov|Russia|Europe/Saratov|51.5667|46.0333|0
 Scoresbysund|Greenland|America/Scoresbysund|70.4833|-21.9667|0
 Seattle|United States|America/Los_Angeles|47.6100|-122.3300|1
-Seoul|South Korea|Asia/Seoul|37.5700|126.9800|2
+Seoul|South Korea|Asia/Seoul|37.5700|126.9800|1
 Seville|Spain|Europe/Madrid|37.3900|-5.9800|1
 Shanghai|China|Asia/Shanghai|31.2300|121.4700|2
 Shenzhen|China|Asia/Shanghai|22.5400|114.0600|1
@@ -470,16 +471,16 @@ St Lucia|St Lucia|America/St_Lucia|14.0167|-61.0000|0
 St Thomas|Virgin Islands (US)|America/St_Thomas|18.3500|-64.9333|0
 St Vincent|St Vincent|America/St_Vincent|13.1500|-61.2333|0
 Stanley|Falkland Islands|Atlantic/Stanley|-51.7000|-57.8500|0
-Stockholm|Sweden|Europe/Stockholm|59.3300|18.0700|2
+Stockholm|Sweden|Europe/Stockholm|59.3300|18.0700|1
 Suva|Fiji|Pacific/Fiji|-18.1400|178.4400|1
 Swift Current|Canada|America/Swift_Current|50.2833|-107.8333|0
 Sydney|Australia|Australia/Sydney|-33.8700|151.2100|2
 Syowa|Antarctica|Antarctica/Syowa|-69.0061|39.5900|0
 Tahiti|French Polynesia|Pacific/Tahiti|-17.5333|-149.5667|0
-Taipei|Taiwan|Asia/Taipei|25.0300|121.5700|2
+Taipei|Taiwan|Asia/Taipei|25.0300|121.5700|1
 Tallinn|Estonia|Europe/Tallinn|59.4400|24.7500|1
 Tarawa|Kiribati|Pacific/Tarawa|1.4167|173.0000|0
-Tashkent|Uzbekistan|Asia/Tashkent|41.3000|69.2400|2
+Tashkent|Uzbekistan|Asia/Tashkent|41.3000|69.2400|1
 Tbilisi|Georgia|Asia/Tbilisi|41.7200|44.7900|1
 Tegucigalpa|Honduras|America/Tegucigalpa|14.0700|-87.1900|1
 Tehran|Iran|Asia/Tehran|35.6900|51.3900|2
@@ -493,7 +494,7 @@ Tirane|Albania|Europe/Tirane|41.3333|19.8333|0
 Tokyo|Japan|Asia/Tokyo|35.6800|139.6500|2
 Tomsk|Russia|Asia/Tomsk|56.5000|84.9667|0
 Tongatapu|Tonga|Pacific/Tongatapu|-21.1333|-175.2000|0
-Toronto|Canada|America/Toronto|43.6500|-79.3800|2
+Toronto|Canada|America/Toronto|43.6500|-79.3800|1
 Tortola|Virgin Islands (UK)|America/Tortola|18.4500|-64.6167|0
 Tripoli|Libya|Africa/Tripoli|32.8900|13.1900|1
 Troll|Antarctica|Antarctica/Troll|-72.0114|2.5350|0
@@ -522,7 +523,7 @@ Vostok|Antarctica|Antarctica/Vostok|-78.4000|106.9000|0
 Wake|US minor outlying islands|Pacific/Wake|19.2833|166.6167|0
 Wallis|Wallis & Futuna|Pacific/Wallis|-13.3000|-176.1667|0
 Warsaw|Poland|Europe/Warsaw|52.2300|21.0100|1
-Washington|United States|America/New_York|38.9100|-77.0400|2
+Washington|United States|America/New_York|38.9100|-77.0400|1
 Wellington|New Zealand|Pacific/Auckland|-41.2900|174.7800|1
 Whitehorse|Canada|America/Whitehorse|60.7167|-135.0500|0
 Winamac|United States|America/Indiana/Winamac|41.0514|-86.6031|0

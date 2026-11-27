@@ -20,7 +20,14 @@ import org.json.JSONObject
 
 internal const val WORLD_MAX_CITIES = 8
 
-internal data class WorldCity(val name: String, val zoneId: String, val lat: Double, val lon: Double) {
+internal data class WorldCity(
+    val name: String,
+    val zoneId: String,
+    val lat: Double,
+    val lon: Double,
+    /** Free text the user attaches to a clock: names, @handles, anything. */
+    val note: String = ""
+) {
     val zone: ZoneId? get() = runCatching { ZoneId.of(zoneId) }.getOrNull()
 }
 
@@ -38,7 +45,8 @@ internal fun encodeWorldCities(cities: List<WorldCity>): String =
             c.name.replace(Regex("[\t\r\n]"), " "),
             c.zoneId,
             c.lat.toString(),
-            c.lon.toString()
+            c.lon.toString(),
+            c.note.replace(Regex("[\t\r\n]"), " ")
         ).joinToString("\t")
     }
 
@@ -47,11 +55,11 @@ internal fun decodeWorldCities(raw: String?): List<WorldCity> {
     if (raw == null) return DEFAULT_WORLD_CITIES
     return raw.split('\n').mapNotNull { line ->
         val f = line.split('\t')
-        if (f.size != 4) return@mapNotNull null
+        if (f.size != 4 && f.size != 5) return@mapNotNull null
         val lat = f[2].toDoubleOrNull() ?: return@mapNotNull null
         val lon = f[3].toDoubleOrNull() ?: return@mapNotNull null
         val zoneOk = runCatching { ZoneId.of(f[1]) }.isSuccess
-        if (!zoneOk || f[0].isBlank()) null else WorldCity(f[0], f[1], lat, lon)
+        if (!zoneOk || f[0].isBlank()) null else WorldCity(f[0], f[1], lat, lon, f.getOrElse(4) { "" })
     }.take(WORLD_MAX_CITIES)
 }
 

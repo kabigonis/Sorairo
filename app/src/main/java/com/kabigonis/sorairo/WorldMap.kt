@@ -115,16 +115,16 @@ internal object WorldMap {
         val la = ArrayList<Double>()
         val lo = ArrayList<Double>()
         val ld = ArrayList<Boolean>()
-        var lat = -85
-        while (lat <= 85) {
-            val n = maxOf(1, (72 * cos(Math.toRadians(lat.toDouble()))).roundToInt())
+        var lat = -86
+        while (lat <= 86) {
+            val n = maxOf(1, (90 * cos(Math.toRadians(lat.toDouble()))).roundToInt())
             for (k in 0 until n) {
                 val lon = -180.0 + 360.0 * k / n
                 la.add(Math.toRadians(lat.toDouble()))
                 lo.add(Math.toRadians(lon))
                 ld.add(isLand(lon, lat.toDouble()))
             }
-            lat += 5
+            lat += 4
         }
         val latArr = la.toDoubleArray()
         Dots(
