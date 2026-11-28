@@ -85,27 +85,58 @@ internal fun MainActivity.sudoStatusLine(): String = when {
     else -> "locked"
 }
 
+/**
+ * The sudo glyph's panel. Locked: UNLOCK asks for the device screen lock right here and KEEP UNLOCKED
+ * does the same and then stops asking (passwordless). Unlocked: LOCK NOW or KEEP UNLOCKED.
+ */
 internal fun MainActivity.showSudoPanel() {
     val p = pal
     val root = trayDialogRoot(p.cBg, p.cAnsi[1])
-    root.addView(txt(13f, p.cAnsi[1], "Disable Passwordless Sudo"))
-    val detail = if (sudoPasswordless()) {
-        "Passwordless sudo is enabled. Disable it to require your device screen lock for privileged actions."
-    } else {
-        "Passwordless sudo is disabled. Privileged Sorairo actions use your device screen lock; an unlock expires after 5 minutes."
+    val passwordless = sudoPasswordless()
+    val unlocked = !passwordless && sudoActive()
+    val noLock = !passwordless && !unlocked && !deviceHasLock()
+    root.addView(txt(13f, p.cAnsi[1], if (passwordless) "Disable Passwordless Sudo" else "Sudo"))
+    val detail = when {
+        passwordless ->
+            "Passwordless sudo is on: privileged Sorairo actions never ask. Turn it off to require your device screen lock again."
+        unlocked -> {
+            val left = ((sudoUntil - SystemClock.elapsedRealtime()) / 60_000L + 1L).coerceAtLeast(1L)
+            "Unlocked. Privileged Sorairo actions will not ask for your screen lock; it locks again in about $left min."
+        }
+        noLock ->
+            "This device has no screen lock, so privileged Sorairo actions run without asking. Set a screen lock in Android settings to protect them."
+        else ->
+            "Locked. Privileged Sorairo actions use your device screen lock. Unlock for 5 minutes, or keep it unlocked."
     }
     root.addView(txt(12f, p.cFg, detail).apply { setPadding(0, dp(8), 0, dp(10)) })
     val actions = ArrayList<Pair<String, () -> Unit>>()
-    if (sudoPasswordless()) {
-        actions.add("DISABLE PASSWORDLESS" to {
+    when {
+        passwordless -> actions.add("LOCK" to {
             setSudoPasswordless(false)
-            showSudoPanel()
-        })
-    } else if (sudoActive()) {
-        actions.add("LOCK NOW" to {
             lockSudo()
             showSudoPanel()
         })
+        unlocked -> {
+            actions.add("LOCK NOW" to {
+                lockSudo()
+                showSudoPanel()
+            })
+            actions.add("KEEP UNLOCKED" to {
+                setSudoPasswordless(true)
+                showSudoPanel()
+            })
+        }
+        !noLock -> {
+            actions.add("UNLOCK" to {
+                requireSudo("Unlock Sorairo sudo") { showSudoPanel() }
+            })
+            actions.add("KEEP UNLOCKED" to {
+                requireSudo("Keep Sorairo sudo unlocked") {
+                    setSudoPasswordless(true)
+                    showSudoPanel()
+                }
+            })
+        }
     }
     actions.add("CLOSE" to { dismissTrayDialog() })
     root.addView(trayDialogActions(*actions.toTypedArray()))

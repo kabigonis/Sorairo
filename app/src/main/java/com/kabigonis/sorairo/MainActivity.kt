@@ -868,12 +868,21 @@ class MainActivity : AppCompatActivity() {
         val centerGroup = FrameLayout(this)
         centerGroup.addView(clock, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
         val actionTray = createOmarchyActionTray()
+        // World clock: a globe right after the clock (mirrors the tray on the left).
+        val worldW = dp(30)
+        val worldBtn = BarIconButton(this, GlobeIconView(this, p.cFg), p.cBlue, dp(17), dp(17)).apply {
+            contentDescription = "World clock"
+            setOnClickListener { showWorldClockPanel() }
+        }
+        barButtons[BarKind.WORLD_CLOCK] = worldBtn
+        centerGroup.addView(worldBtn, FrameLayout.LayoutParams(worldW, dp(30), Gravity.CENTER))
         // Keep a generous invisible touch zone so tapping beside the clock reveals the tray.
         // Children are end-aligned, so the visible pinned glyph remains close to the clock.
-        val trayWidth = dp(150)
+        val trayWidth = dp(168)
         centerGroup.addView(actionTray, FrameLayout.LayoutParams(trayWidth, dp(30), Gravity.CENTER))
         fun positionActionTray() {
             actionTray.translationX = -(clock.width / 2f - dp(4) + trayWidth / 2f)
+            worldBtn.translationX = clock.width / 2f + dp(7)
         }
         centerGroup.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> positionActionTray() }
         clock.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> positionActionTray() }

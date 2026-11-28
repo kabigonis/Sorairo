@@ -8,6 +8,7 @@ import android.media.projection.MediaProjectionManager
 import android.app.Dialog
 import android.app.PendingIntent
 import android.app.NotificationManager
+import android.animation.ValueAnimator
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
@@ -18,6 +19,7 @@ import android.provider.Settings
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.animation.DecelerateInterpolator
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.PopupWindow
@@ -26,13 +28,79 @@ import android.widget.Toast
 import java.lang.ref.WeakReference
 import java.util.WeakHashMap
 
-private val actionIconViews = WeakHashMap<MainActivity, MutableMap<OmarchyGlyph, View>>()
+private val actionTrayItems = WeakHashMap<MainActivity, LinkedHashMap<OmarchyGlyph, TrayItem>>()
 private val actionTrayCollapseCallbacks = WeakHashMap<MainActivity, Runnable>()
 private val actionTooltipWindows = WeakHashMap<MainActivity, PopupWindow>()
 private val actionTooltipCallbacks = WeakHashMap<MainActivity, Runnable>()
 private val actionTrayExpanded = WeakHashMap<MainActivity, Boolean>()
 
-/** Tray stays in the right status group; only pinned/active glyphs show while collapsed. */
+/**
+ * One glyph in the tray. [progress] runs 0 (hidden, zero width) to 1 (fully shown) and drives width,
+ * alpha, slide and scale together, so an item can never be left half-faded: whatever interrupts an
+ * animation, the next change simply continues from the current progress.
+ */
+private class TrayItem(
+    val glyph: OmarchyGlyph,
+    val hit: android.widget.FrameLayout,
+    private val fullWidth: Int,
+    private val slide: Float
+) {
+    var progress = 0f
+        private set
+    var shown = false
+        private set
+    private var anim: ValueAnimator? = null
+
+    private fun apply() {
+        val w = (fullWidth * progress).toInt()
+        val lp = hit.layoutParams
+        if (lp != null && lp.width != w) {
+            lp.width = w
+            hit.layoutParams = lp
+        }
+        hit.alpha = progress
+        hit.translationY = (1f - progress) * slide
+        val sc = 0.88f + 0.12f * progress
+        hit.scaleX = sc
+        hit.scaleY = sc
+        hit.visibility = if (progress <= 0f && !shown) View.GONE else View.VISIBLE
+    }
+
+    fun snap(show: Boolean) {
+        anim?.cancel()
+        shown = show
+        progress = if (show) 1f else 0f
+        apply()
+    }
+
+    fun animateTo(show: Boolean, delayMs: Long) {
+        if (shown == show) return
+        shown = show
+        anim?.cancel()
+        val from = progress
+        val to = if (show) 1f else 0f
+        if (from == to) {
+            apply()
+            return
+        }
+        hit.visibility = View.VISIBLE
+        anim = ValueAnimator.ofFloat(from, to).apply {
+            duration = (230f * kotlin.math.abs(to - from)).toLong().coerceAtLeast(70L)
+            startDelay = delayMs
+            interpolator = DecelerateInterpolator(1.5f)
+            addUpdateListener {
+                progress = it.animatedValue as Float
+                apply()
+            }
+            start()
+        }
+    }
+}
+
+/**
+ * The tray sits just left of the clock. Collapsed, it shows the sudo glyph plus any option that is
+ * switched on; tapping the free space beside it slides the other options out (tap again to fold them away).
+ */
 internal fun MainActivity.createOmarchyActionTray(): View {
     val p = pal
     val row = LinearLayout(this).apply {
@@ -40,39 +108,44 @@ internal fun MainActivity.createOmarchyActionTray(): View {
         gravity = Gravity.CENTER_VERTICAL or Gravity.END
         setPadding(0, 0, 0, 0)
         isClickable = true
-        setOnClickListener { revealOmarchyActionTray() }
+        setOnClickListener { toggleOmarchyActionTray() }
         setOnHoverListener { _, event ->
             when (event.actionMasked) {
                 android.view.MotionEvent.ACTION_HOVER_ENTER,
                 android.view.MotionEvent.ACTION_HOVER_MOVE -> revealOmarchyActionTray()
-                android.view.MotionEvent.ACTION_HOVER_EXIT -> scheduleOmarchyActionTrayCollapse(650L)
+                android.view.MotionEvent.ACTION_HOVER_EXIT -> scheduleOmarchyActionTrayCollapse(900L)
             }
             false
         }
     }
-    val icons = linkedMapOf<OmarchyGlyph, View>()
+    val items = linkedMapOf<OmarchyGlyph, TrayItem>()
 
     fun add(glyph: OmarchyGlyph, label: () -> String, action: () -> Unit) {
-        val icon = OmarchyActionIconView(this, glyph, p.cDim, p.cBlue, p.cAnsi[1])
+        val activeColor = if (glyph == OmarchyGlyph.SUDO) p.cAnsi[1] else p.cBlue
+        val icon = OmarchyActionIconView(this, glyph, p.cDim, activeColor, p.cAnsi[1])
         val hit = android.widget.FrameLayout(this).apply {
             isClickable = true
             isFocusable = true
             contentDescription = label()
-            setOnClickListener {
-                icon.animate().scaleX(1.18f).scaleY(1.18f).setDuration(85L)
-                    .withEndAction { icon.animate().scaleX(1f).scaleY(1f).setDuration(110L).start() }.start()
-                action()
-                scheduleOmarchyActionTrayCollapse(900L)
-            }
-            setOnLongClickListener {
-                showOmarchyTooltip(this, label())
-                true
-            }
             addView(icon, android.widget.FrameLayout.LayoutParams(dp(14), dp(16), Gravity.CENTER))
         }
-        hit.tag = glyph
-        icons[glyph] = hit
-        row.addView(hit, LinearLayout.LayoutParams(dp(22), dp(30)))
+        val item = TrayItem(glyph, hit, dp(22), dp(4).toFloat())
+        hit.setOnClickListener {
+            if (item.progress < 0.6f) return@setOnClickListener
+            icon.animate().cancel()
+            icon.animate().scaleX(1.18f).scaleY(1.18f).setDuration(85L)
+                .withEndAction { icon.animate().scaleX(1f).scaleY(1f).setDuration(110L).start() }.start()
+            action()
+            // stay open a little longer so several options can be switched in a row
+            scheduleOmarchyActionTrayCollapse(3200L)
+        }
+        hit.setOnLongClickListener {
+            if (item.progress < 0.6f) return@setOnLongClickListener false
+            showOmarchyTooltip(hit, label())
+            true
+        }
+        items[glyph] = item
+        row.addView(hit, LinearLayout.LayoutParams(0, dp(30)))
     }
 
     add(OmarchyGlyph.RECORD, {
@@ -84,19 +157,36 @@ internal fun MainActivity.createOmarchyActionTray(): View {
     add(OmarchyGlyph.COFFEE, {
         if (prefs.getBoolean("tray_stay_awake", false)) "Allow Idle Lock & Screensaver" else "Stay Awake"
     }) { toggleStayAwake() }
-    add(OmarchyGlyph.SUDO, { "Disable Passwordless Sudo" }) { showSudoPanel() }
+    add(OmarchyGlyph.SUDO, {
+        when {
+            sudoPasswordless() -> "Disable Passwordless Sudo"
+            sudoActive() -> "Sudo is unlocked"
+            else -> "Unlock Sudo"
+        }
+    }) { showSudoPanel() }
 
-    actionIconViews[this] = icons
+    actionTrayItems[this] = items
     actionTrayExpanded[this] = false
     ScreenRecordService.listener = WeakReference(this)
-    refreshOmarchyActionTray()
+    refreshOmarchyActionTray(animated = false)
     return row
 }
 
 internal fun MainActivity.revealOmarchyActionTray() {
     actionTrayExpanded[this] = true
     refreshOmarchyActionTray()
-    scheduleOmarchyActionTrayCollapse(4200L)
+    scheduleOmarchyActionTrayCollapse(5000L)
+}
+
+/** Tap on the free space beside the glyphs: open the tray, or fold it away if it is already open. */
+internal fun MainActivity.toggleOmarchyActionTray() {
+    if (actionTrayExpanded[this] == true) {
+        actionTrayCollapseCallbacks[this]?.let { handler.removeCallbacks(it) }
+        actionTrayExpanded[this] = false
+        refreshOmarchyActionTray()
+    } else {
+        revealOmarchyActionTray()
+    }
 }
 
 internal fun MainActivity.scheduleOmarchyActionTrayCollapse(delay: Long) {
@@ -109,66 +199,43 @@ internal fun MainActivity.scheduleOmarchyActionTrayCollapse(delay: Long) {
     handler.postDelayed(callback, delay)
 }
 
-internal fun MainActivity.refreshOmarchyActionTray() {
-    val icons = actionIconViews[this] ?: return
+/**
+ * Brings the tray in line with the current state. Safe to call as often as you like (the clock tick
+ * does, every second): an item is only animated when it actually has to appear or disappear.
+ */
+internal fun MainActivity.refreshOmarchyActionTray(animated: Boolean = true) {
+    val items = actionTrayItems[this] ?: return
     val expanded = actionTrayExpanded[this] == true
     val awake = prefs.getBoolean("tray_stay_awake", false)
     val dnd = isDoNotDisturbEnabled()
     val night = isNightLightEnabled()
+    val recording = ScreenRecordService.recording
+    val reminding = reminderRemainingMs() > 0L
+    val sudoOn = sudoActive()
     val visible = mapOf(
-        OmarchyGlyph.RECORD to (expanded || ScreenRecordService.recording),
-        OmarchyGlyph.HAND to (expanded || reminderRemainingMs() > 0L),
+        OmarchyGlyph.RECORD to (expanded || recording),
+        OmarchyGlyph.HAND to (expanded || reminding),
         OmarchyGlyph.NIGHT_LIGHT to (expanded || night),
         OmarchyGlyph.MUTED_BELL to (expanded || dnd),
         OmarchyGlyph.COFFEE to (expanded || awake),
         OmarchyGlyph.SUDO to true
     )
-    icons.entries.forEachIndexed { index, (glyph, hit) ->
-        val shouldShow = visible[glyph] == true
-        hit.animate().cancel()
-        if (shouldShow) {
-            if (hit.visibility != View.VISIBLE) {
-                hit.visibility = View.VISIBLE
-                hit.alpha = 0f
-                hit.translationY = dp(4).toFloat()
-                hit.scaleX = 0.88f
-                hit.scaleY = 0.88f
-                hit.animate()
-                    .alpha(1f)
-                    .translationY(0f)
-                    .scaleX(1f)
-                    .scaleY(1f)
-                    .setStartDelay(if (expanded) (icons.size - index - 1) * 22L else 0L)
-                    .setDuration(190L)
-                    .start()
-            }
-        } else if (hit.visibility == View.VISIBLE) {
-            hit.animate()
-                .alpha(0f)
-                .translationY(dp(3).toFloat())
-                .scaleX(0.9f)
-                .scaleY(0.9f)
-                .setStartDelay(0L)
-                .setDuration(145L)
-                .withEndAction {
-                    if (visible[glyph] != true) {
-                        hit.visibility = View.GONE
-                        hit.alpha = 1f
-                        hit.translationY = 0f
-                        hit.scaleX = 1f
-                        hit.scaleY = 1f
-                    }
-                }
-                .start()
+    items.values.forEachIndexed { index, item ->
+        val show = visible[item.glyph] == true
+        if (!animated) {
+            item.snap(show)
+        } else if (item.shown != show) {
+            // the options nearest the clock arrive first
+            item.animateTo(show, if (show && expanded) (items.size - index - 1) * 26L else 0L)
         }
-        val icon = (hit as? ViewGroup)?.getChildAt(0) as? OmarchyActionIconView
-        when (glyph) {
+        val icon = item.hit.getChildAt(0) as? OmarchyActionIconView
+        when (item.glyph) {
             OmarchyGlyph.COFFEE -> icon?.active = awake
             OmarchyGlyph.MUTED_BELL -> icon?.active = dnd
             OmarchyGlyph.NIGHT_LIGHT -> icon?.active = night
-            OmarchyGlyph.RECORD -> icon?.active = ScreenRecordService.recording
-            OmarchyGlyph.HAND -> icon?.active = reminderRemainingMs() > 0L
-            OmarchyGlyph.SUDO -> icon?.active = sudoActive()
+            OmarchyGlyph.RECORD -> icon?.active = recording
+            OmarchyGlyph.HAND -> icon?.active = reminding
+            OmarchyGlyph.SUDO -> icon?.active = sudoOn
             else -> Unit
         }
     }
@@ -495,13 +562,15 @@ internal fun MainActivity.trayDialogRoot(bg: Int, border: Int): LinearLayout =
         background = GradientDrawable().apply { setColor(bg or (0xFF shl 24)); setStroke(dp(1), border); cornerRadius = 0f }
     }
 
+private val TRAY_PRIMARY_ACTIONS = setOf("SET", "CLOSE", "UNLOCK", "KEEP UNLOCKED")
+
 internal fun MainActivity.trayDialogActions(vararg actions: Pair<String, () -> Unit>): View =
     LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.END
         setPadding(0, dp(12), 0, 0)
         actions.forEach { (label, callback) ->
-            addView(txt(12f, if (label == "SET" || label == "CLOSE") pal.cBlue else pal.cDim, label).apply {
+            addView(txt(12f, if (label in TRAY_PRIMARY_ACTIONS) pal.cBlue else pal.cDim, label).apply {
                 setPadding(dp(12), dp(9), dp(4), dp(6))
                 setOnClickListener { callback() }
             })
