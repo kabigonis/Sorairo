@@ -121,8 +121,7 @@ internal fun MainActivity.createOmarchyActionTray(): View {
     val items = linkedMapOf<OmarchyGlyph, TrayItem>()
 
     fun add(glyph: OmarchyGlyph, label: () -> String, action: () -> Unit) {
-        val activeColor = if (glyph == OmarchyGlyph.SUDO) p.cAnsi[1] else p.cBlue
-        val icon = OmarchyActionIconView(this, glyph, p.cDim, activeColor, p.cAnsi[1])
+        val icon = OmarchyActionIconView(this, glyph, p.cDim, p.cBlue, p.cAnsi[1])
         val hit = android.widget.FrameLayout(this).apply {
             isClickable = true
             isFocusable = true
@@ -167,6 +166,7 @@ internal fun MainActivity.createOmarchyActionTray(): View {
 
     actionTrayItems[this] = items
     actionTrayExpanded[this] = false
+    restyleOmarchyActionTray()
     ScreenRecordService.listener = WeakReference(this)
     refreshOmarchyActionTray(animated = false)
     return row
@@ -675,4 +675,26 @@ private fun MainActivity.showSudoUnavailable() {
         .apply { setPadding(0, dp(8), 0, dp(12)) })
     root.addView(trayDialogActions("CLOSE" to { activeDialog?.dismiss() }))
     showTrayDialog(root, 480)
+}
+
+
+/**
+ * Colours the tray glyphs so they stay readable on the current top bar: every colour is pushed to a
+ * minimum contrast against the theme background, and on the see-through bars a soft outline in the
+ * background colour keeps them visible over bright wallpaper. Call after the bar mode or theme changes.
+ */
+internal fun MainActivity.restyleOmarchyActionTray() {
+    val items = actionTrayItems[this] ?: return
+    val bg = pal.cBg or (0xFF shl 24)
+    val idle = Contrast.ensure(Contrast.mix(pal.cDim, pal.cFg, 0.55f), bg, 4.5)
+    val active = Contrast.ensure(pal.cBlue, bg, 3.5)
+    val accent = Contrast.ensure(pal.cAnsi[1], bg, 3.5)
+    val halo = when (barMode()) {
+        BAR_SOLID -> 0
+        BAR_TRANSLUCENT -> (bg and 0x00FFFFFF) or (0x99 shl 24)
+        else -> (bg and 0x00FFFFFF) or (0xCC shl 24)
+    }
+    items.values.forEach { item ->
+        (item.hit.getChildAt(0) as? OmarchyActionIconView)?.setPalette(idle, active, accent, halo)
+    }
 }
