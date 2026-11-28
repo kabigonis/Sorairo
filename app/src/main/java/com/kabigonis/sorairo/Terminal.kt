@@ -216,6 +216,7 @@ internal fun MainActivity.runCommand(ws: Int, line: String) {
                 "  help           this list",
                 "  clear          clear screen",
                 "  barreset       put the top bar modules back (long-press a module to move it)",
+                "  win <mode>     open apps as windows: left/right/float/off",
                 "  fetch          refresh system info",
                 "  panel <mode>   set bottom window: monitor/player",
                 "  layout <name>  set layout: dwindle/master/columns/rows",
@@ -257,6 +258,18 @@ internal fun MainActivity.runCommand(ws: Int, line: String) {
             ).forEach { say(it) }
             "clear" -> sb.clear()
             "barreset" -> { resetBarLayout(); say("top bar layout reset", p.cGreen) }
+            "win" -> {
+                val setting = when (freeformSettingOn()) { true -> "on"; false -> "off"; null -> "unreadable" }
+                if (arg.isEmpty()) {
+                    say("app windows: ${appWindowMode()}", p.cGreen)
+                    say("freeform feature: ${if (freeformSupported()) "yes" else "no"}, setting: $setting", p.cDim)
+                } else if (arg.lowercase() in APP_WINDOW_MODES) {
+                    setAppWindowMode(arg.lowercase())
+                    say("app windows set to ${arg.lowercase()}", p.cGreen)
+                    if (!freeformSupported() && freeformSettingOn() != true)
+                        say("freeform looks off: enable it in Developer options or apps stay fullscreen", p.cDim)
+                } else say("usage: win left|right|float|off", p.cDim)
+            }
             "fetch", "fastfetch", "neofetch" -> refreshFetch(ws)
             "layout" -> {
                 if (arg.isEmpty()) say("layout: ${layoutModeFor(ws)}", p.cGreen)

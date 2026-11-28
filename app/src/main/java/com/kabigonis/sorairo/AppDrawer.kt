@@ -302,7 +302,7 @@ internal fun MainActivity.showRenameDialog(app: App) {
 
 internal fun MainActivity.launchApp(app: App) {
     closeDrawer()
-    packageManager.getLaunchIntentForPackage(app.pkg)?.let { startActivity(it) }
+    packageManager.getLaunchIntentForPackage(app.pkg)?.let { startAppWindowed(it) }
 }
 
 internal fun MainActivity.pins(ws: Int): List<String> =
