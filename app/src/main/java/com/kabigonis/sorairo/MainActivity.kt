@@ -891,8 +891,9 @@ class MainActivity : AppCompatActivity() {
         bar.addView(left, FrameLayout.LayoutParams(-2, -2, Gravity.START or Gravity.CENTER_VERTICAL))
         bar.addView(centerGroup, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
         bar.addView(right, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.CENTER_VERTICAL))
-        bar.setPadding(dp(12), 0, dp(12), 0)
-        content.addView(bar, LinearLayout.LayoutParams(-1, dp(34)))
+        // The bar background runs flush to the top edge; its 6dp top padding keeps the icons where they were.
+        bar.setPadding(dp(12), dp(6), dp(12), 0)
+        content.addView(bar, LinearLayout.LayoutParams(-1, dp(40)))
         content.addView(moveHint, LinearLayout.LayoutParams(-1, dp(22)).apply { leftMargin = dp(12); rightMargin = dp(12) })
 
         // ---- workspaces ----
@@ -1027,7 +1028,7 @@ class MainActivity : AppCompatActivity() {
             // No horizontal padding here: the pager must reach the screen edges so workspaces
             // slide in and out without a wallpaper gap. The bar and each page add their own 12dp.
             content.setPadding(
-                0, dp(6), 0,
+                0, 0, 0,
                 maxOf(stable.bottom, if (terminalOwnsIme()) ime.bottom else 0) + dp(12)
             )
         }
