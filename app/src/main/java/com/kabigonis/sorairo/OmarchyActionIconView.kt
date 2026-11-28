@@ -20,11 +20,23 @@ internal enum class OmarchyGlyph {
 internal class OmarchyActionIconView(
     context: Context,
     private val glyph: OmarchyGlyph,
-    private val idleColor: Int,
-    private val activeColor: Int,
-    private val accentColor: Int
+    private var idleColor: Int,
+    private var activeColor: Int,
+    private var accentColor: Int
 ) : View(context) {
     private var animatedTint: Int = idleColor
+    /** Soft outline drawn under the glyph so it reads on any wallpaper; 0 = none (solid bar). */
+    private var haloColor: Int = 0
+
+    /** Re-colours the glyph (e.g. when the bar switches between transparent, translucent and solid). */
+    fun setPalette(idle: Int, active: Int, accent: Int, halo: Int) {
+        idleColor = idle
+        activeColor = active
+        accentColor = accent
+        haloColor = halo
+        animatedTint = if (this.active) activeColor else idleColor
+        invalidate()
+    }
     var active: Boolean = false
         set(value) {
             if (field != value) {
@@ -61,8 +73,24 @@ internal class OmarchyActionIconView(
             OmarchyGlyph.SUDO -> accentColor
             else -> animatedTint
         }
+        if (haloColor != 0) {
+            stroke.color = haloColor
+            stroke.strokeWidth = 1.65f + 2.6f
+            fill.color = haloColor
+            fill.style = Paint.Style.FILL_AND_STROKE
+            fill.strokeWidth = 2.6f
+            drawGlyph(canvas)
+            stroke.strokeWidth = 1.65f
+            fill.style = Paint.Style.FILL
+            fill.strokeWidth = 0f
+        }
         stroke.color = color
         fill.color = color
+        drawGlyph(canvas)
+        canvas.restore()
+    }
+
+    private fun drawGlyph(canvas: Canvas) {
         when (glyph) {
             OmarchyGlyph.RECORD -> drawRecord(canvas)
             OmarchyGlyph.RECORD_VIDEO -> drawVideoCamera(canvas)
@@ -72,7 +100,6 @@ internal class OmarchyActionIconView(
             OmarchyGlyph.COFFEE -> drawCoffee(canvas)
             OmarchyGlyph.SUDO -> drawSudo(canvas)
         }
-        canvas.restore()
     }
 
     private fun drawRecord(c: Canvas) {

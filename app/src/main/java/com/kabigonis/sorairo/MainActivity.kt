@@ -791,7 +791,7 @@ class MainActivity : AppCompatActivity() {
 
         // ---- top bar ----
         val bar = FrameLayout(this)
-        if (isLightTheme(p)) bar.setBackgroundColor((p.cBg and 0x00FFFFFF) or (0xCC shl 24))
+        setupTopBar(bar)
         moveHint = txt(11f, p.cAccent, "move: tap another window").apply { visibility = View.GONE; gravity = Gravity.CENTER; setOnClickListener { endMove() } }
         val left = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
