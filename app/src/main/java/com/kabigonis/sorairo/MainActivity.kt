@@ -878,7 +878,7 @@ class MainActivity : AppCompatActivity() {
         centerGroup.addView(worldBtn, FrameLayout.LayoutParams(worldW, dp(30), Gravity.CENTER))
         // Keep a generous invisible touch zone so tapping beside the clock reveals the tray.
         // Children are end-aligned, so the visible pinned glyph remains close to the clock.
-        val trayWidth = dp(150)
+        val trayWidth = dp(168)
         centerGroup.addView(actionTray, FrameLayout.LayoutParams(trayWidth, dp(30), Gravity.CENTER))
         fun positionActionTray() {
             actionTray.translationX = -(clock.width / 2f - dp(4) + trayWidth / 2f)

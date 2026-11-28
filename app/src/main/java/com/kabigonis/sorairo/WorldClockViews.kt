@@ -720,6 +720,7 @@ internal class ReorderLayout(context: Context) : LinearLayout(context) {
     /** Return false to stop a long press at this screen point from starting a drag (sliders, text fields). */
     var canStartDrag: ((View, Float, Float) -> Boolean)? = null
     var onReordered: ((Int, Int) -> Unit)? = null
+    var onDragStart: (() -> Unit)? = null
 
     private val slop = ViewConfiguration.get(context).scaledTouchSlop
     private val uiHandler = android.os.Handler(Looper.getMainLooper())
@@ -732,6 +733,30 @@ internal class ReorderLayout(context: Context) : LinearLayout(context) {
     private var origTops = IntArray(0)
     private var savedTransition: LayoutTransition? = null
     private val longPress = Runnable { startDrag() }
+    private var lastRawY = 0f
+    private var dragScrollStart = 0
+    private val autoScroll = object : Runnable {
+        override fun run() {
+            val card = dragView ?: return
+            val sv = parent as? ScrollView
+            if (sv != null) {
+                val loc = IntArray(2)
+                sv.getLocationOnScreen(loc)
+                val edge = uiDp(40)
+                val step = uiDp(9)
+                val dy = when {
+                    lastRawY < loc[1] + edge -> -step
+                    lastRawY > loc[1] + sv.height - edge -> step
+                    else -> 0
+                }
+                if (dy != 0 && sv.canScrollVertically(if (dy < 0) -1 else 1)) {
+                    sv.scrollBy(0, dy)
+                    moveDragged(card)
+                }
+            }
+            uiHandler.postDelayed(this, 16L)
+        }
+    }
 
     init {
         orientation = VERTICAL
@@ -792,14 +817,28 @@ internal class ReorderLayout(context: Context) : LinearLayout(context) {
         savedTransition = layoutTransition
         layoutTransition = null
         origTops = IntArray(childCount) { getChildAt(it).top }
+        dragScrollStart = (parent as? ScrollView)?.scrollY ?: 0
+        lastRawY = downRawY
+        uiHandler.postDelayed(autoScroll, 16L)
         card.animate().cancel()
         card.animate().scaleX(1.03f).scaleY(1.03f).translationZ(uiDp(8).toFloat()).setDuration(140L).start()
         performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        onDragStart?.invoke()
     }
 
     private fun slotHeight(card: View): Float {
         val lp = card.layoutParams as? MarginLayoutParams
         return card.height + (lp?.bottomMargin ?: 0) + (lp?.topMargin ?: 0).toFloat()
+    }
+
+    /** Puts the dragged card under the finger, but never lets it leave the list. */
+    private fun moveDragged(card: View) {
+        val scrolled = ((parent as? ScrollView)?.scrollY ?: 0) - dragScrollStart
+        val lp = card.layoutParams as? MarginLayoutParams
+        val minTy = -origTops[dragFrom].toFloat()
+        val maxTy = (height - card.height - (lp?.bottomMargin ?: 0) - origTops[dragFrom]).toFloat()
+        card.translationY = (lastRawY - downRawY + scrolled).coerceIn(minTy, maxOf(minTy, maxTy))
+        updateTarget(card)
     }
 
     private fun updateTarget(card: View) {
@@ -829,6 +868,7 @@ internal class ReorderLayout(context: Context) : LinearLayout(context) {
     private fun endDrag(commit: Boolean) {
         val card = dragView ?: return
         dragView = null
+        uiHandler.removeCallbacks(autoScroll)
         val from = dragFrom
         val to = if (commit) dragTarget else dragFrom
         val before = HashMap<View, Float>()
@@ -868,8 +908,8 @@ internal class ReorderLayout(context: Context) : LinearLayout(context) {
         val card = dragView ?: return super.onTouchEvent(ev)
         when (ev.actionMasked) {
             MotionEvent.ACTION_MOVE -> {
-                card.translationY = ev.rawY - downRawY
-                updateTarget(card)
+                lastRawY = ev.rawY
+                moveDragged(card)
             }
             MotionEvent.ACTION_UP -> endDrag(true)
             MotionEvent.ACTION_CANCEL -> endDrag(false)
@@ -879,7 +919,7 @@ internal class ReorderLayout(context: Context) : LinearLayout(context) {
 }
 
 /** A ScrollView that stops growing at [maxHeightPx] so the popup never outgrows the screen. */
-internal class BoundedScrollView(context: Context, private val maxHeightPx: Int) : ScrollView(context) {
+internal class BoundedScrollView(context: Context, var maxHeightPx: Int) : ScrollView(context) {
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val cap = min(maxHeightPx, MeasureSpec.getSize(heightMeasureSpec).takeIf { it > 0 } ?: maxHeightPx)
         super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(cap, MeasureSpec.AT_MOST))

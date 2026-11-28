@@ -27,7 +27,7 @@ Anguilla|Anguilla|America/Anguilla|18.2000|-63.0667|0
 Ankara|Turkey|Europe/Istanbul|39.9300|32.8600|1
 Antananarivo|Madagascar|Indian/Antananarivo|-18.8800|47.5100|1
 Antigua|Antigua & Barbuda|America/Antigua|17.0500|-61.8000|0
-Apia|Samoa|Pacific/Apia|-13.8300|-171.7600|1
+Apia|Samoa|Pacific/Apia|-13.8300|-171.7600|2
 Aqtau|Kazakhstan|Asia/Aqtau|44.5167|50.2667|0
 Aqtobe|Kazakhstan|Asia/Aqtobe|50.2833|57.1667|0
 Araguaina|Brazil|America/Araguaina|-7.2000|-48.2000|0
@@ -85,7 +85,7 @@ Brunei|Brunei|Asia/Brunei|4.9333|114.9167|0
 Brussels|Belgium|Europe/Brussels|50.8500|4.3500|1
 Bucharest|Romania|Europe/Bucharest|44.4300|26.1000|1
 Budapest|Hungary|Europe/Budapest|47.5000|19.0400|1
-Buenos Aires|Argentina|America/Argentina/Buenos_Aires|-34.6000|-58.3800|1
+Buenos Aires|Argentina|America/Argentina/Buenos_Aires|-34.6000|-58.3800|2
 Bujumbura|Burundi|Africa/Bujumbura|-3.3833|29.3667|0
 Busan|South Korea|Asia/Seoul|35.1800|129.0800|1
 Busingen|Germany|Europe/Busingen|47.7000|8.6833|0
@@ -98,7 +98,7 @@ Canberra|Australia|Australia/Sydney|-35.2800|149.1300|1
 Cancun|Mexico|America/Cancun|21.1600|-86.8500|1
 Cape Town|South Africa|Africa/Johannesburg|-33.9200|18.4200|1
 Cape Verde|Cape Verde|Atlantic/Cape_Verde|14.9167|-23.5167|0
-Caracas|Venezuela|America/Caracas|10.4800|-66.9000|1
+Caracas|Venezuela|America/Caracas|10.4800|-66.9000|2
 Casablanca|Morocco|Africa/Casablanca|33.5700|-7.5900|1
 Casey|Antarctica|Antarctica/Casey|-66.2833|110.5167|0
 Catamarca|Argentina|America/Argentina/Catamarca|-28.4667|-65.7833|0
@@ -111,7 +111,7 @@ Charlotte|United States|America/New_York|35.2300|-80.8400|1
 Chatham|New Zealand|Pacific/Chatham|-43.9500|-176.5500|0
 Chengdu|China|Asia/Shanghai|30.5700|104.0700|1
 Chennai|India|Asia/Kolkata|13.0800|80.2700|1
-Chicago|United States|America/Chicago|41.8800|-87.6300|1
+Chicago|United States|America/Chicago|41.8800|-87.6300|2
 Chihuahua|Mexico|America/Chihuahua|28.6333|-106.0833|0
 Chisinau|Moldova|Europe/Chisinau|47.0100|28.8600|1
 Chita|Russia|Asia/Chita|52.0500|113.4667|0
@@ -136,7 +136,7 @@ Dallas|United States|America/Chicago|32.7800|-96.8000|1
 Damascus|Syria|Asia/Damascus|33.5100|36.2800|1
 Danmarkshavn|Greenland|America/Danmarkshavn|76.7667|-18.6667|0
 Dar es Salaam|Tanzania|Africa/Dar_es_Salaam|-6.7900|39.2100|1
-Darwin|Australia|Australia/Darwin|-12.4600|130.8400|1
+Darwin|Australia|Australia/Darwin|-12.4600|130.8400|2
 Davis|Antarctica|Antarctica/Davis|-68.5833|77.9667|0
 Dawson|Canada|America/Dawson|64.0667|-139.4167|0
 Dawson Creek|Canada|America/Dawson_Creek|55.7667|-120.2333|0
@@ -243,7 +243,7 @@ Khartoum|Sudan|Africa/Khartoum|15.5000|32.5600|1
 Kigali|Rwanda|Africa/Kigali|-1.9400|30.0600|1
 Kingston|Jamaica|America/Jamaica|17.9700|-76.7900|1
 Kinshasa|DR Congo|Africa/Kinshasa|-4.4400|15.2700|1
-Kiritimati|Kiribati|Pacific/Kiritimati|1.8667|-157.3333|0
+Kiritimati|Kiribati|Pacific/Kiritimati|1.8700|-157.4000|2
 Kirov|Russia|Europe/Kirov|58.6000|49.6500|0
 Knox|United States|America/Indiana/Knox|41.2958|-86.6250|0
 Kolkata|India|Asia/Kolkata|22.5700|88.3600|1
@@ -360,17 +360,17 @@ Nome|United States|America/Nome|64.5011|-165.4064|0
 Norfolk|Norfolk Island|Pacific/Norfolk|-29.0500|167.9667|0
 Noronha|Brazil|America/Noronha|-3.8500|-32.4167|0
 Nouakchott|Mauritania|Africa/Nouakchott|18.1000|-15.9500|0
-Noumea|New Caledonia|Pacific/Noumea|-22.2800|166.4600|1
+Noumea|New Caledonia|Pacific/Noumea|-22.2800|166.4600|2
 Novokuznetsk|Russia|Asia/Novokuznetsk|53.7500|87.1167|0
 Novosibirsk|Russia|Asia/Novosibirsk|55.0100|82.9300|1
-Nukualofa|Tonga|Pacific/Tongatapu|-21.1400|-175.2000|1
+Nukualofa|Tonga|Pacific/Tongatapu|-21.1400|-175.2000|2
 Nuuk|Greenland|America/Nuuk|64.1800|-51.7200|1
 Ojinaga|Mexico|America/Ojinaga|29.5667|-104.4167|0
 Omsk|Russia|Asia/Omsk|55.0000|73.4000|0
 Oral|Kazakhstan|Asia/Oral|51.2167|51.3500|0
 Orlando|United States|America/New_York|28.5400|-81.3800|1
 Osaka|Japan|Asia/Tokyo|34.6900|135.5000|1
-Oslo|Norway|Europe/Oslo|59.9100|10.7500|1
+Oslo|Norway|Europe/Oslo|59.9100|10.7500|2
 Ottawa|Canada|America/Toronto|45.4200|-75.7000|1
 Ouagadougou|Burkina Faso|Africa/Ouagadougou|12.3667|-1.5167|0
 Pago Pago|Samoa (American)|Pacific/Pago_Pago|-14.2667|-170.7000|0
@@ -378,7 +378,7 @@ Palau|Palau|Pacific/Palau|7.3333|134.4833|0
 Palmer|Antarctica|Antarctica/Palmer|-64.8000|-64.1000|0
 Panama|Panama|America/Panama|8.9667|-79.5333|0
 Panama City|Panama|America/Panama|8.9800|-79.5200|1
-Papeete|French Polynesia|Pacific/Tahiti|-17.5400|-149.5700|1
+Papeete|French Polynesia|Pacific/Tahiti|-17.5400|-149.5700|2
 Paramaribo|Suriname|America/Paramaribo|5.8500|-55.2000|1
 Paris|France|Europe/Paris|48.8600|2.3500|2
 Perth|Australia|Australia/Perth|-31.9500|115.8600|2
@@ -452,7 +452,7 @@ Sarajevo|Bosnia and Herzegovina|Europe/Sarajevo|43.8600|18.4100|1
 Saratov|Russia|Europe/Saratov|51.5667|46.0333|0
 Scoresbysund|Greenland|America/Scoresbysund|70.4833|-21.9667|0
 Seattle|United States|America/Los_Angeles|47.6100|-122.3300|1
-Seoul|South Korea|Asia/Seoul|37.5700|126.9800|1
+Seoul|South Korea|Asia/Seoul|37.5700|126.9800|2
 Seville|Spain|Europe/Madrid|37.3900|-5.9800|1
 Shanghai|China|Asia/Shanghai|31.2300|121.4700|2
 Shenzhen|China|Asia/Shanghai|22.5400|114.0600|1
@@ -465,6 +465,7 @@ South Georgia|South Georgia & the South Sandwich Islands|Atlantic/South_Georgia|
 Srednekolymsk|Russia|Asia/Srednekolymsk|67.4667|153.7167|0
 St Barthelemy|St Barthelemy|America/St_Barthelemy|17.8833|-62.8500|0
 St Helena|St Helena|Atlantic/St_Helena|-15.9167|-5.7000|0
+St John's|Canada|America/St_Johns|47.5600|-52.7100|2
 St Johns|Canada|America/St_Johns|47.5667|-52.7167|0
 St Kitts|St Kitts & Nevis|America/St_Kitts|17.3000|-62.7167|0
 St Lucia|St Lucia|America/St_Lucia|14.0167|-61.0000|0
@@ -472,7 +473,7 @@ St Thomas|Virgin Islands (US)|America/St_Thomas|18.3500|-64.9333|0
 St Vincent|St Vincent|America/St_Vincent|13.1500|-61.2333|0
 Stanley|Falkland Islands|Atlantic/Stanley|-51.7000|-57.8500|0
 Stockholm|Sweden|Europe/Stockholm|59.3300|18.0700|1
-Suva|Fiji|Pacific/Fiji|-18.1400|178.4400|1
+Suva|Fiji|Pacific/Fiji|-18.1400|178.4400|2
 Swift Current|Canada|America/Swift_Current|50.2833|-107.8333|0
 Sydney|Australia|Australia/Sydney|-33.8700|151.2100|2
 Syowa|Antarctica|Antarctica/Syowa|-69.0061|39.5900|0

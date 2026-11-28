@@ -49,10 +49,17 @@ private class WorldRow(
     val timeTv: TextView,
     val ampmTv: TextView,
     val zoneTv: TextView,
-    val track: DayTrackView
+    val track: DayTrackView,
+    val buttonsBox: LinearLayout
 ) {
     var weather: CityWeather? = null
     var noteEdit: EditText? = null
+
+    // the note / remove buttons slide out when the free space of the card is tapped
+    var actionsOn = false
+    var actionsProgress = 0f
+    var actionsAnim: ValueAnimator? = null
+    var actionsHide: Runnable? = null
 }
 
 /** Changes the text and, if [animate], dips the alpha so the change reads as a soft tick. */
@@ -146,12 +153,15 @@ internal fun MainActivity.showWorldClockPanel() {
         pill,
         FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(4) }
     )
-    val globeHeight = min(dp(390), (resources.displayMetrics.heightPixels * 0.55f).toInt())
+    val screenH = resources.displayMetrics.heightPixels
+    val globeHeight = min(dp(390), (screenH * 0.55f).toInt())
     root.addView(globeBox, lp(-1, globeHeight).apply { bottomMargin = dp(10) })
 
     // the clocks
     val cardsBox = ReorderLayout(this)
-    val scroll = BoundedScrollView(this, (resources.displayMetrics.heightPixels * 0.58f).toInt()).apply {
+    val scrollMax = (screenH * 0.58f).toInt()
+    val scrollMaxTyping = (screenH * 0.30f).toInt() // leaves room for the on-screen keyboard
+    val scroll = BoundedScrollView(this, scrollMax).apply {
         isVerticalScrollBarEnabled = false
         overScrollMode = View.OVER_SCROLL_NEVER
         addView(cardsBox, FrameLayout.LayoutParams(-1, -2))
@@ -255,7 +265,7 @@ internal fun MainActivity.showWorldClockPanel() {
         }
     }
     resultsList.adapter = cityAdapter
-    val listHeight = min(dp(250), (resources.displayMetrics.heightPixels * 0.34f).toInt())
+    val listHeight = min(dp(250), (screenH * 0.30f).toInt())
 
     addArea.addView(addBtn, lp(-1, -2))
     addArea.addView(searchRow, lp(-1, -2))
@@ -365,8 +375,42 @@ internal fun MainActivity.showWorldClockPanel() {
     }
     hereTv.setOnClickListener { resetShift() }
 
+    // ---- the note / remove buttons on a clock ----
+    fun setActions(r: WorldRow, show: Boolean) {
+        r.actionsHide?.let { handler.removeCallbacks(it) }
+        r.actionsHide = null
+        if (show) {
+            val job = Runnable { setActions(r, false) }
+            r.actionsHide = job
+            handler.postDelayed(job, 7000L)
+        }
+        if (r.actionsOn == show) return
+        r.actionsOn = show
+        r.actionsAnim?.cancel()
+        val full = dp(58)
+        r.actionsAnim = ValueAnimator.ofFloat(r.actionsProgress, if (show) 1f else 0f).apply {
+            duration = 230L
+            interpolator = DecelerateInterpolator(1.5f)
+            addUpdateListener {
+                val v = it.animatedValue as Float
+                r.actionsProgress = v
+                val lp = r.buttonsBox.layoutParams
+                lp.width = (full * v).toInt()
+                r.buttonsBox.layoutParams = lp
+                r.buttonsBox.alpha = v
+                r.buttonsBox.translationX = (1f - v) * dp(10)
+            }
+            start()
+        }
+    }
+
+    fun hideAllActions() {
+        for (r in rows) setActions(r, false)
+    }
+    cardsBox.onDragStart = { hideAllActions() }
+
     // ---- notes ----
-    val noteSize = 12f * uiScale * (uiTextSize / 13f)
+    val noteSize = 13f * uiScale * (uiTextSize / 13f)
 
     fun saveNote(r: WorldRow, text: String) {
         val clean = text.replace(Regex("[\t\r\n]+"), " ").trim().take(140)
@@ -382,6 +426,8 @@ internal fun MainActivity.showWorldClockPanel() {
         saveNote(r, e.text.toString())
         imm.hideSoftInputFromWindow(e.windowToken, 0)
         e.visibility = View.GONE
+        scroll.maxHeightPx = scrollMax
+        scroll.requestLayout()
     }
 
     fun noteEditFor(r: WorldRow): EditText {
@@ -426,12 +472,17 @@ internal fun MainActivity.showWorldClockPanel() {
         e.setSelection(e.text.length)
         e.visibility = View.VISIBLE
         r.noteTv.visibility = View.GONE
+        scroll.maxHeightPx = scrollMaxTyping
+        scroll.requestLayout()
+        scroll.post { scroll.smoothScrollTo(0, r.card.top) }
         e.requestFocus()
         e.postDelayed({ imm.showSoftInput(e, InputMethodManager.SHOW_IMPLICIT) }, 120L)
     }
 
     fun removeRow(r: WorldRow) {
         r.noteEdit?.let { imm.hideSoftInputFromWindow(it.windowToken, 0) }
+        r.actionsHide?.let { handler.removeCallbacks(it) }
+        r.actionsAnim?.cancel()
         rows.remove(r)
         persist()
         cardsBox.removeView(r.card)
@@ -457,15 +508,15 @@ internal fun MainActivity.showWorldClockPanel() {
             ellipsize = TextUtils.TruncateAt.END
         }
         val dateTv = txt(11f, p.cDim, "")
-        val greetTv = txt(11f, withAlpha(p.cFg, 0xB8), "")
-        val noteTv = txt(10f, p.cDim, city.note).apply {
+        val greetTv = txt(12f, withAlpha(p.cFg, 0xC8), "")
+        val noteTv = txt(13f, withAlpha(p.cFg, 0xF0), city.note).apply {
             visibility = if (city.note.isEmpty()) View.GONE else View.VISIBLE
         }
         val leftCol = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
         leftCol.addView(nameTv, lp(-1, -2))
         leftCol.addView(dateTv, lp(-1, -2).apply { topMargin = dp(2) })
         leftCol.addView(greetTv, lp(-1, -2).apply { topMargin = dp(1) })
-        leftCol.addView(noteTv, lp(-1, -2).apply { topMargin = dp(1) })
+        leftCol.addView(noteTv, lp(-1, -2).apply { topMargin = dp(3) })
 
         val tempTv = txt(11f, p.cDim, "")
         val weatherIcon = WeatherIconView(act, p.cDim)
@@ -486,13 +537,19 @@ internal fun MainActivity.showWorldClockPanel() {
             isClickable = true
             contentDescription = "Remove this clock"
         }
+        val buttonsBox = LinearLayout(act).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL or Gravity.END
+            alpha = 0f
+        }
+        buttonsBox.addView(noteBtn, lp(dp(26), dp(26)).apply { marginStart = dp(6) })
+        buttonsBox.addView(closeBtn, lp(dp(26), dp(26)))
         val actions = LinearLayout(act).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL or Gravity.END
         }
-        actions.addView(weatherBox, lp(-2, -2).apply { marginEnd = dp(6) })
-        actions.addView(noteBtn, lp(dp(26), dp(26)))
-        actions.addView(closeBtn, lp(dp(26), dp(26)))
+        actions.addView(weatherBox, lp(-2, dp(26)))
+        actions.addView(buttonsBox, lp(0, dp(26)))
 
         val timeTv = txt(22f, p.cFg, "").apply { setTypeface(typeface, Typeface.BOLD) }
         val ampmTv = txt(11f, p.cDim, "").apply { setPadding(dp(3), 0, 0, 0) }
@@ -530,10 +587,16 @@ internal fun MainActivity.showWorldClockPanel() {
 
         val row = WorldRow(
             city, z, country, card, dateTv, greetTv, noteTv, tempTv, weatherIcon, weatherBox,
-            timeTv, ampmTv, zoneTv, track
+            timeTv, ampmTv, zoneTv, track, buttonsBox
         )
-        noteBtn.setOnClickListener { toggleNote(row) }
-        closeBtn.setOnClickListener { removeRow(row) }
+        noteBtn.setOnClickListener { if (row.actionsProgress > 0.6f) toggleNote(row) }
+        closeBtn.setOnClickListener { if (row.actionsProgress > 0.6f) removeRow(row) }
+        // tapping free space on the card (anywhere that is not a control) shows or hides the buttons
+        card.setOnClickListener {
+            val show = !row.actionsOn
+            if (show) for (other in rows) if (other !== row) setActions(other, false)
+            setActions(row, show)
+        }
         track.onScrub = { f ->
             val now0 = dayFraction(ZonedDateTime.now(z))
             shiftMs = ((f - now0) * 86_400_000.0).toLong()
@@ -631,7 +694,7 @@ internal fun MainActivity.showWorldClockPanel() {
         setStatus(null)
         searchRow.visibility = View.GONE
         addBtn.visibility = View.VISIBLE
-        if (globeMode) globeBox.visibility = View.VISIBLE
+        if (globeMode) globeBox.visibility = View.VISIBLE else scroll.visibility = View.VISIBLE
     }
 
     fun addCity(c: WorldCity) {
@@ -730,6 +793,7 @@ internal fun MainActivity.showWorldClockPanel() {
         if (globeMode == on) return
         if (searchRow.visibility == View.VISIBLE) closeSearch()
         hidePick()
+        hideAllActions()
         globeMode = on
         globeBox.visibility = if (on) View.VISIBLE else View.GONE
         scroll.visibility = if (on) View.GONE else View.VISIBLE
@@ -818,9 +882,10 @@ internal fun MainActivity.showWorldClockPanel() {
         if (!globeMode && rows.size >= WORLD_MAX_CITIES) return@setOnClickListener
         hidePick()
         for (r in rows) finishNote(r)
+        hideAllActions()
         addBtn.visibility = View.GONE
         searchRow.visibility = View.VISIBLE
-        if (globeMode) globeBox.visibility = View.GONE
+        if (globeMode) globeBox.visibility = View.GONE else scroll.visibility = View.GONE
         onQueryChanged()
         input.requestFocus()
         input.postDelayed({ imm.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT) }, 160L)
@@ -841,6 +906,7 @@ internal fun MainActivity.showWorldClockPanel() {
         pickHide?.let { handler.removeCallbacks(it) }
         searchSeq++
         for (r in rows) {
+            r.actionsHide?.let { handler.removeCallbacks(it) }
             val e = r.noteEdit
             if (e != null && e.visibility == View.VISIBLE) saveNote(r, e.text.toString())
         }

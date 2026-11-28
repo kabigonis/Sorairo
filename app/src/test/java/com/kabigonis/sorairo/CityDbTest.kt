@@ -69,7 +69,7 @@ class CityDbTest {
         assertTrue(CityDb.popular.any { it.name == "Mumbai" })
         assertTrue(CityDb.popular.any { it.name == "Lagos" })
         assertTrue(CityDb.all.any { it.name == "Majuro" && it.tier == 0 })
-        assertTrue(CityDb.all.count { it.tier == 2 } in 30..40)
+        assertTrue(CityDb.all.count { it.tier == 2 } in 40..70)
     }
 
     @Test fun tappingPrefersPopularCities() {
