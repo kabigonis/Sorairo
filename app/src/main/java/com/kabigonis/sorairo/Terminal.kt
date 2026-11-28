@@ -22,7 +22,7 @@ import android.widget.ScrollView
 internal fun MainActivity.buildPage(ws: Int): View {
     val p = pal
     val row = TileLayout(this, dp(12)).apply {
-        setPadding(0, dp(8), 0, 0)
+        setPadding(dp(12), dp(8), dp(12), 0)
         setOnLongClickListener { showSettings(); true }
     }
     row.moveModeActive = { moveSource[ws] >= 0 }
