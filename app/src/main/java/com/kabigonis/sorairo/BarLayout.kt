@@ -10,6 +10,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.widget.FrameLayout
+import android.widget.TextView
 import java.util.WeakHashMap
 import kotlin.math.abs
 
@@ -69,6 +70,13 @@ internal class WaybarLayout(private val act: MainActivity) : FrameLayout(act) {
     private var trayGrowLeft = true
     private val slop = ViewConfiguration.get(act).scaledTouchSlop
     private val longPress = Runnable { pendingId?.let { startDrag(it) } }
+
+    private var elastic: Pair<String, TextView>? = null
+
+    /** Marks a text inside module [id] that may shrink (and end with "...") so it never runs under another zone. */
+    fun setElastic(id: String, text: TextView) {
+        elastic = id to text
+    }
 
     fun addModule(id: String, view: View, w: Int = LayoutParams.WRAP_CONTENT, h: Int = LayoutParams.WRAP_CONTENT) {
         modules[id] = view
@@ -221,7 +229,37 @@ internal class WaybarLayout(private val act: MainActivity) : FrameLayout(act) {
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
         super.onLayout(changed, l, t, r, b)
         place(false)
+        fitElastic()
         if (dragId != null) overlay.invalidate()
+    }
+
+    /**
+     * Keeps a long song title from running under the tray/clock (or under the left modules when the music
+     * module sits on the right): the text gets only the room up to the nearest module of another zone.
+     */
+    private fun fitElastic() {
+        val (id, tv) = elastic ?: return
+        if (!present(id) || tv.visibility == View.GONE || tv.width == 0) return
+        val t = targets(zones)
+        val left = t[id] ?: return
+        val module = modules.getValue(id)
+        val margin = dp(8)
+        val overhead = (module.width - tv.width).coerceAtLeast(0)
+        val avail: Float = when (zoneOf(id)) {
+            ZONE_LEFT -> {
+                val edge = (zones[ZONE_CENTER] + zones[ZONE_RIGHT]).filter { present(it) }
+                    .mapNotNull { t[it] }.minOrNull()
+                if (edge != null) edge - left - margin else width - left
+            }
+            ZONE_RIGHT -> {
+                val edge = (zones[ZONE_LEFT] + zones[ZONE_CENTER]).filter { present(it) }
+                    .mapNotNull { m -> t[m]?.plus(widthOf(m)) }.maxOrNull()
+                if (edge != null) left + module.width - edge - margin else left + module.width
+            }
+            else -> return
+        }
+        val max = (avail - overhead).toInt().coerceAtLeast(act.dp(60))
+        if (tv.maxWidth != max) post { tv.maxWidth = max }
     }
 
     // ---- tray direction ----
