@@ -790,10 +790,15 @@ class MainActivity : AppCompatActivity() {
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
         // ---- top bar ----
-        val bar = FrameLayout(this)
+        val bar = WaybarLayout(this)
         setupTopBar(bar)
         moveHint = txt(11f, p.cAccent, "move: tap another window").apply { visibility = View.GONE; gravity = Gravity.CENTER; setOnClickListener { endMove() } }
+        // Workspace numbers and the music label are separate bar modules, so each can be moved on its own.
         val left = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val music = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
@@ -810,7 +815,7 @@ class MainActivity : AppCompatActivity() {
             color = p.cGreen
             visibility = View.GONE
         }
-        left.addView(vis, LinearLayout.LayoutParams(dp(16), dp(14)).apply {
+        music.addView(vis, LinearLayout.LayoutParams(dp(16), dp(14)).apply {
             marginStart = dp(14); marginEnd = dp(8)
         })
         song = txt(13f, p.cFg).apply {
@@ -820,7 +825,7 @@ class MainActivity : AppCompatActivity() {
             visibility = View.GONE
             setOnClickListener { togglePlay() }
         }
-        left.addView(song)
+        music.addView(song)
         clock = ClockView(this, p.cBlue).apply {
             textSize = 13f * uiScale * (uiTextSize / 13f)
             setTextColor(p.cFg)
@@ -847,52 +852,36 @@ class MainActivity : AppCompatActivity() {
             barButtons[kind] = b
             return b
         }
-        iconBar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            val lp = { LinearLayout.LayoutParams(dp(38), dp(34)) }
-            // left to right: Wi-Fi, audio, display, battery (battery is the right-most)
-            addView(barButton(BarKind.WIFI, barWifi, 17, 15) { showNetworkPanel() }, lp())
-            addView(barButton(BarKind.AUDIO, barAudio, 17, 15) { showAudioPanel() }, lp())
-            addView(barButton(BarKind.DISPLAY, barDisplay, 17, 15) { showDisplayPanel() }, lp())
-            addView(barButton(BarKind.BATTERY, barBattery, 10, 17) { showBatteryPanel() }, lp())
-        }
-        val right = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        right.addView(status)
-        right.addView(iconBar)
-        // Match Omarchy: status actions sit immediately BEFORE the centered clock.
-        // The clock remains independently centered and never shifts with tray visibility.
-        val centerGroup = FrameLayout(this)
-        centerGroup.addView(clock, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+        // Each glyph is its own movable bar module. iconBar stays as an empty, zero-width marker the
+        // panels use to find the bar's bottom edge.
+        iconBar = LinearLayout(this)
+        val wifiBtn = barButton(BarKind.WIFI, barWifi, 17, 15) { showNetworkPanel() }
+        val audioBtn = barButton(BarKind.AUDIO, barAudio, 17, 15) { showAudioPanel() }
+        val displayBtn = barButton(BarKind.DISPLAY, barDisplay, 17, 15) { showDisplayPanel() }
+        val batteryBtn = barButton(BarKind.BATTERY, barBattery, 10, 17) { showBatteryPanel() }
+        // Every element of the bar is a movable module placed by WaybarLayout (see BarLayout.kt).
+        bar.addModule(MOD_WS, left)
+        bar.addModule(MOD_MUSIC, music)
+        bar.addModule(MOD_CLOCK, clock)
         val actionTray = createOmarchyActionTray()
-        // World clock: a globe right after the clock (mirrors the tray on the left).
-        val worldW = dp(30)
+        bar.addModule(MOD_TRAY, actionTray, -2, dp(30))
         val worldBtn = BarIconButton(this, GlobeIconView(this, p.cFg), p.cBlue, dp(17), dp(17)).apply {
             contentDescription = "World clock"
             setOnClickListener { showWorldClockPanel() }
         }
         barButtons[BarKind.WORLD_CLOCK] = worldBtn
-        centerGroup.addView(worldBtn, FrameLayout.LayoutParams(worldW, dp(30), Gravity.CENTER))
-        // Keep a generous invisible touch zone so tapping beside the clock reveals the tray.
-        // Children are end-aligned, so the visible pinned glyph remains close to the clock.
-        val trayWidth = dp(168)
-        centerGroup.addView(actionTray, FrameLayout.LayoutParams(trayWidth, dp(30), Gravity.CENTER))
-        fun positionActionTray() {
-            actionTray.translationX = -(clock.width / 2f - dp(4) + trayWidth / 2f)
-            worldBtn.translationX = clock.width / 2f + dp(7)
-        }
-        centerGroup.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> positionActionTray() }
-        clock.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> positionActionTray() }
-        centerGroup.post { positionActionTray() }
-
-        bar.addView(left, FrameLayout.LayoutParams(-2, -2, Gravity.START or Gravity.CENTER_VERTICAL))
-        bar.addView(centerGroup, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
-        bar.addView(right, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.CENTER_VERTICAL))
-        content.addView(bar, LinearLayout.LayoutParams(-1, dp(34)))
-        content.addView(moveHint, LinearLayout.LayoutParams(-1, dp(22)))
+        bar.addModule(MOD_GLOBE, worldBtn, dp(30), dp(30))
+        bar.addModule(MOD_STATUS, status)
+        // left to right by default: Wi-Fi, audio, display, battery (battery is the right-most)
+        bar.addModule(MOD_WIFI, wifiBtn, dp(38), dp(34))
+        bar.addModule(MOD_AUDIO, audioBtn, dp(38), dp(34))
+        bar.addModule(MOD_DISPLAY, displayBtn, dp(38), dp(34))
+        bar.addModule(MOD_BATTERY, batteryBtn, dp(38), dp(34))
+        bar.addView(iconBar, FrameLayout.LayoutParams(0, -1))
+        bar.finishSetup()
+        // Floating bar: inset 12dp from the sides (lined up with the window borders) and 6dp from the top.
+        content.addView(bar, LinearLayout.LayoutParams(-1, dp(34)).apply { setMargins(dp(12), dp(6), dp(12), 0) })
+        content.addView(moveHint, LinearLayout.LayoutParams(-1, dp(22)).apply { leftMargin = dp(12); rightMargin = dp(12) })
 
         // ---- workspaces ----
         pager = ViewPager2(this).apply {
@@ -1023,8 +1012,10 @@ class MainActivity : AppCompatActivity() {
         fun applyContentPadding(insets: WindowInsetsCompat) {
             val stable = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars())
             val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+            // No horizontal padding: the pager must reach the screen edges so workspaces slide in and out
+            // without a wallpaper gap. The bar and each page add their own 12dp.
             content.setPadding(
-                dp(12), dp(6), dp(12),
+                0, 0, 0,
                 maxOf(stable.bottom, if (terminalOwnsIme()) ime.bottom else 0) + dp(12)
             )
         }
