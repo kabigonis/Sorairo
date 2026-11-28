@@ -22,7 +22,7 @@ import android.widget.ScrollView
 internal fun MainActivity.buildPage(ws: Int): View {
     val p = pal
     val row = TileLayout(this, dp(12)).apply {
-        setPadding(0, dp(8), 0, 0)
+        setPadding(dp(12), dp(8), dp(12), 0)
         setOnLongClickListener { showSettings(); true }
     }
     row.moveModeActive = { moveSource[ws] >= 0 }
@@ -215,6 +215,7 @@ internal fun MainActivity.runCommand(ws: Int, line: String) {
             "help" -> listOf(
                 "  help           this list",
                 "  clear          clear screen",
+                "  barreset       put the top bar modules back (long-press a module to move it)",
                 "  fetch          refresh system info",
                 "  panel <mode>   set bottom window: monitor/player",
                 "  layout <name>  set layout: dwindle/master/columns/rows",
@@ -255,6 +256,7 @@ internal fun MainActivity.runCommand(ws: Int, line: String) {
                 "  <app name>     launch (fuzzy match)"
             ).forEach { say(it) }
             "clear" -> sb.clear()
+            "barreset" -> { resetBarLayout(); say("top bar layout reset", p.cGreen) }
             "fetch", "fastfetch", "neofetch" -> refreshFetch(ws)
             "layout" -> {
                 if (arg.isEmpty()) say("layout: ${layoutModeFor(ws)}", p.cGreen)

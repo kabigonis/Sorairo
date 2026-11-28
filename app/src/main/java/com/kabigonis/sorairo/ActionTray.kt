@@ -33,6 +33,8 @@ private val actionTrayCollapseCallbacks = WeakHashMap<MainActivity, Runnable>()
 private val actionTooltipWindows = WeakHashMap<MainActivity, PopupWindow>()
 private val actionTooltipCallbacks = WeakHashMap<MainActivity, Runnable>()
 private val actionTrayExpanded = WeakHashMap<MainActivity, Boolean>()
+private val actionTrayRows = WeakHashMap<MainActivity, LinearLayout>()
+private val actionTrayGrowLeft = WeakHashMap<MainActivity, Boolean>()
 
 /**
  * One glyph in the tray. [progress] runs 0 (hidden, zero width) to 1 (fully shown) and drives width,
@@ -105,8 +107,10 @@ internal fun MainActivity.createOmarchyActionTray(): View {
     val p = pal
     val row = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL or Gravity.END
-        setPadding(0, 0, 0, 0)
+        gravity = Gravity.CENTER_VERTICAL
+        // Free space beside the glyphs: tapping it opens/folds the options. It sits on the outer side
+        // (setOmarchyTrayGrowLeft moves it when the tray changes sides).
+        setPadding(dp(16), 0, 0, 0)
         isClickable = true
         setOnClickListener { toggleOmarchyActionTray() }
         setOnHoverListener { _, event ->
@@ -138,11 +142,6 @@ internal fun MainActivity.createOmarchyActionTray(): View {
             // stay open a little longer so several options can be switched in a row
             scheduleOmarchyActionTrayCollapse(3200L)
         }
-        hit.setOnLongClickListener {
-            if (item.progress < 0.6f) return@setOnLongClickListener false
-            showOmarchyTooltip(hit, label())
-            true
-        }
         items[glyph] = item
         row.addView(hit, LinearLayout.LayoutParams(0, dp(30)))
     }
@@ -165,11 +164,29 @@ internal fun MainActivity.createOmarchyActionTray(): View {
     }) { showSudoPanel() }
 
     actionTrayItems[this] = items
+    actionTrayRows[this] = row
+    actionTrayGrowLeft[this] = true
     actionTrayExpanded[this] = false
     restyleOmarchyActionTray()
     ScreenRecordService.listener = WeakReference(this)
     refreshOmarchyActionTray(animated = false)
     return row
+}
+
+/**
+ * Chooses which way the tray opens. Growing left: the sudo glyph is the right-most item and the options
+ * appear to its left. Growing right: the row is mirrored (sudo first, options to its right). The free tap
+ * zone always sits on the outer, open side.
+ */
+internal fun MainActivity.setOmarchyTrayGrowLeft(growLeft: Boolean) {
+    val row = actionTrayRows[this] ?: return
+    val items = actionTrayItems[this] ?: return
+    actionTrayGrowLeft[this] = growLeft
+    row.removeAllViews()
+    val ordered = if (growLeft) items.values.toList() else items.values.toList().asReversed()
+    ordered.forEach { row.addView(it.hit) }
+    val extra = dp(16)
+    row.setPadding(if (growLeft) extra else 0, 0, if (growLeft) 0 else extra, 0)
 }
 
 internal fun MainActivity.revealOmarchyActionTray() {
@@ -225,8 +242,9 @@ internal fun MainActivity.refreshOmarchyActionTray(animated: Boolean = true) {
         if (!animated) {
             item.snap(show)
         } else if (item.shown != show) {
-            // the options nearest the clock arrive first
-            item.animateTo(show, if (show && expanded) (items.size - index - 1) * 26L else 0L)
+            // the options nearest the sudo glyph arrive first
+            val order = if (actionTrayGrowLeft[this] != false) items.size - index - 1 else index
+            item.animateTo(show, if (show && expanded) order * 26L else 0L)
         }
         val icon = item.hit.getChildAt(0) as? OmarchyActionIconView
         when (item.glyph) {
