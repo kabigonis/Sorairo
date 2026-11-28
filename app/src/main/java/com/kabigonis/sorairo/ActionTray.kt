@@ -68,11 +68,11 @@ internal fun MainActivity.createOmarchyActionTray(): View {
                 showOmarchyTooltip(this, label())
                 true
             }
-            addView(icon, android.widget.FrameLayout.LayoutParams(dp(14), dp(16), Gravity.CENTER))
+            addView(icon, android.widget.FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER))
         }
         hit.tag = glyph
         icons[glyph] = hit
-        row.addView(hit, LinearLayout.LayoutParams(dp(22), dp(30)))
+        row.addView(hit, LinearLayout.LayoutParams(dp(26), dp(32)))
     }
 
     add(OmarchyGlyph.RECORD, {
