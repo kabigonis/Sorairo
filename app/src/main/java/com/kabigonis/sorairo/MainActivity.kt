@@ -866,27 +866,22 @@ class MainActivity : AppCompatActivity() {
         // Match Omarchy: status actions sit immediately BEFORE the centered clock.
         // The clock remains independently centered and never shifts with tray visibility.
         val centerGroup = FrameLayout(this)
-        centerGroup.addView(clock, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+        val moduleGravity = Gravity.START or Gravity.CENTER_VERTICAL
+        centerGroup.addView(clock, FrameLayout.LayoutParams(-2, -2, moduleGravity))
         val actionTray = createOmarchyActionTray()
-        // World clock: a globe right after the clock (mirrors the tray on the left).
+        // World clock: a globe next to the clock.
         val worldW = dp(30)
         val worldBtn = BarIconButton(this, GlobeIconView(this, p.cFg), p.cBlue, dp(17), dp(17)).apply {
             contentDescription = "World clock"
             setOnClickListener { showWorldClockPanel() }
         }
         barButtons[BarKind.WORLD_CLOCK] = worldBtn
-        centerGroup.addView(worldBtn, FrameLayout.LayoutParams(worldW, dp(30), Gravity.CENTER))
-        // Keep a generous invisible touch zone so tapping beside the clock reveals the tray.
-        // Children are end-aligned, so the visible pinned glyph remains close to the clock.
+        centerGroup.addView(worldBtn, FrameLayout.LayoutParams(worldW, dp(30), moduleGravity))
+        // The tray row keeps a generous invisible touch zone so tapping beside the glyphs reveals the options.
         val trayWidth = dp(168)
-        centerGroup.addView(actionTray, FrameLayout.LayoutParams(trayWidth, dp(30), Gravity.CENTER))
-        fun positionActionTray() {
-            actionTray.translationX = -(clock.width / 2f - dp(4) + trayWidth / 2f)
-            worldBtn.translationX = clock.width / 2f + dp(7)
-        }
-        centerGroup.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> positionActionTray() }
-        clock.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> positionActionTray() }
-        centerGroup.post { positionActionTray() }
+        centerGroup.addView(actionTray, FrameLayout.LayoutParams(trayWidth, dp(30), moduleGravity))
+        // Tray, clock and globe can be long-pressed and dragged into a new order (saved); the clock stays centred.
+        setupCenterBar(centerGroup, actionTray as LinearLayout, worldBtn)
 
         bar.addView(left, FrameLayout.LayoutParams(-2, -2, Gravity.START or Gravity.CENTER_VERTICAL))
         bar.addView(centerGroup, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))

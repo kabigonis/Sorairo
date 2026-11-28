@@ -43,7 +43,8 @@ private class TrayItem(
     val glyph: OmarchyGlyph,
     val hit: android.widget.FrameLayout,
     private val fullWidth: Int,
-    private val slide: Float
+    private val slide: Float,
+    private val onResize: () -> Unit = {}
 ) {
     var progress = 0f
         private set
@@ -57,6 +58,7 @@ private class TrayItem(
         if (lp != null && lp.width != w) {
             lp.width = w
             hit.layoutParams = lp
+            onResize()
         }
         hit.alpha = progress
         hit.translationY = (1f - progress) * slide
@@ -128,7 +130,7 @@ internal fun MainActivity.createOmarchyActionTray(): View {
             contentDescription = label()
             addView(icon, android.widget.FrameLayout.LayoutParams(dp(14), dp(16), Gravity.CENTER))
         }
-        val item = TrayItem(glyph, hit, dp(22), dp(4).toFloat())
+        val item = TrayItem(glyph, hit, dp(22), dp(4).toFloat()) { layoutCenterBar() }
         hit.setOnClickListener {
             if (item.progress < 0.6f) return@setOnClickListener
             icon.animate().cancel()
