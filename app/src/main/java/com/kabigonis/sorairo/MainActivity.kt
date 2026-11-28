@@ -862,6 +862,7 @@ class MainActivity : AppCompatActivity() {
         // Every element of the bar is a movable module placed by WaybarLayout (see BarLayout.kt).
         bar.addModule(MOD_WS, left)
         bar.addModule(MOD_MUSIC, music)
+        bar.setElastic(MOD_MUSIC, song)
         bar.addModule(MOD_CLOCK, clock)
         val actionTray = createOmarchyActionTray()
         bar.addModule(MOD_TRAY, actionTray, -2, dp(30))
